@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+# uv.lock 不忽略（依赖锁定必须入库）
+
+# 环境与密钥
+.env
+
+# 运行产物（git 只留 manifest，大文件走共享网盘）
+runs/
+outputs/
+evidence_store/
+
+# 镜像与虚拟机文件
+*.iso
+*.vmdk
+*.qcow2
+*.ova
+
+# 录屏与素材
+*.mp4
+*.mkv
+
+# OS
+.DS_Store
+Thumbs.db
