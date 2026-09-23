@@ -143,9 +143,9 @@ sudo apt install -y python3 python3-venv python3-pip git open-vm-tools fonts-not
 - [ ] 宿主机 monorepo 初始化完成（按 team-plan.md §4.1 目录结构）
 - [ ] judge 双端点各完成 1 次调用，成本记账链路通（C 验证）
 
-## 6. 录制与可视化（W4 用，不进 clean-baseline 快照）
+## 6. 录制与可视化（W3 交付冲刺周用，10.10 视频定稿；不进 clean-baseline 快照）
 
-- 录屏：优先 UKUI 自带录屏工具，不够用再 `apt install obs-studio`（源里没有就下官方 Linux 包）；W4 初先试录 30 秒验证可用，别等交片当天才发现问题。
+- 录屏：优先 UKUI 自带录屏工具，不够用再 `apt install obs-studio`（源里没有就下官方 Linux 包）；**W2 末先试录 30 秒验证可用**（视频 10.10 定稿，提交时要上传），别等交片当天才发现问题。
 - 雷达图：matplotlib 由 uv 在项目内管理；中文渲染依赖 §1 已装入系统的 `fonts-noto-cjk`。
 - 录屏与证据大文件归档走共享网盘素材库（E 维护），git 只留 manifest。
 
