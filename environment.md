@@ -153,7 +153,22 @@ sudo apt install -y python3 python3-venv python3-pip git open-vm-tools fonts-not
 
 体检套件与 MCP 证据源（见 design.md §5/§7）的最终形态取决于以下实测，**未验证前不写入对外宣传口径**：
 
-- [ ] **磐石架构**：系统回滚 / 维护模式 / KARE 的具体命令与边界（不可变系统下 /home 与可变层行为，记忆落盘审计的依据）
+- [ ] **磐石架构**：系统回滚 / 维护模式 / KARE 的具体命令与边界（不可变系统下 /home 与可变层行为，记忆落盘审计的依据）——已确认系统为 **OSTree 结构**（`/sysroot/ostree/deploy/`，apt 写入 usr-ovl overlay），回滚命令待 D 实测
 - [ ] **MCP**：智能体调桌面能力是否有可观测日志/事件流（KylinBot 先测；无则行动轨迹退回 auditd 旁路）
-- [ ] **KylinBot 记忆存储位置与格式**（W1 既定任务，dump 通道与 lesion 可行性的前提）
+- [x] **KylinBot 记忆存储位置与格式**（2026-09-23 实测）：
+  - 主库 `~/.config/kylin-aiassistant/kylin_aiassistant_database.db`（SQLite）：`RECORD` 表存全部会话消息——`message` 列为 JSON（`author: User/Bot` + 正文 + 元数据），另有 `HISTORY_ID`、`MEETINGRECORD`（会议纪要）表；
+  - 向量索引 `~/.local/share/kylin-ai-vector-engine/kylin-ai-vector-engine.db`（二进制格式，非 SQLite）；
+  - 配置 `~/.config/kylin-aiassistant/{command_instructions.json, settings.ini}`、`~/.config/kylin/promptOrder.conf`；
+  - **结论：KylinBot 无独立"记忆表"，长期记忆 = 对话记录 + 向量检索（RAG）**。适配器含义（契约 01/03）：对话证据直读 `RECORD` 表；`dump_memory` = RECORD 导出 + 向量库文件拷贝；"删一条试试"（删消息行）理论可行，W2 验证生效性
 - [ ] **Token 中心**：额度/消耗是否有可查询接口（manifest 成本记账的系统级数据源）
+
+### 7.1 工具通道实测（2026-09-23，装机日结论）
+
+| 通道 | 状态 | 结论 |
+|---|---|---|
+| **vmrun guest 操作**（文件/执行） | ❌ 不可用 | openKylin 的 open-vm-tools（`2:12.3.5-ok1`）为安全裁剪版：`vmtoolsd` 与 `libvmtools.so.0` 均无 guest operations 实现（strings 验证 0 命中）；vgauth 认证正常但文件/程序操作一律返回 NOT_FOUND。装 `open-vm-tools-desktop` 无效（裁剪在核心包）。**评测命令执行与文件传输一律走 SSH** |
+| **vmrun 生命周期**（reset/snapshot/power） | ✅ 可用 | 不依赖 guest 组件，重启/快照照常 |
+| **SSH（openssh-server）** | ✅ 主通道 | VM 装 openssh-server 后主机经 paramiko/ssh 直连；NAT IP 见 DHCP 租约（`C:\ProgramData\vmware\vmnetdhcp.leases`，hostname `okim-pc`）。项目工具 `scripts/vm_ssh.py` |
+| **主机↔VM 剪贴板** | ⚠️ 待重启验证 | open-vm-tools-desktop 已装（`2:12.3.5-ok1`），剪贴板依赖用户会话内 vmusr，重启后验证 |
+
+虚拟机内网络实测（国内网络环境）：github.com / nodejs.org 可直连；**releases.astral.sh 拉不动**（uv 安装必须绕行：`pip3 install --user uv -i 清华源` 后拷到 `~/.hermes/bin/uv`）；git 已配全局 ghproxy 重写（`url."https://ghproxy.net/https://github.com/".insteadOf`）；PyPI 用清华镜像（`UV_INDEX_URL`）。
