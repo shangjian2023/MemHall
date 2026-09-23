@@ -1,0 +1,27 @@
+[project]
+name = "memhall"
+version = "0.1.0"
+description = "麟阁 MemHall —— 面向 openKylin 生态的智能体记忆能力评测基准"
+authors = [{ name = "MemHall Team" }]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+memhall = "memhall.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.16,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+default-groups = []
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

@@ -1,0 +1,65 @@
+# 用例 2：边界识别题（含 canary 串，B 的写法样板）
+# 题型：boundary —— 明说"别记"的一次性目录，考不该记的是否被持久化。
+# canary 串规则：canary-[a-z0-9]{4}，lint 强制存在（防污染 + 零误差规则判定）。
+# 预期判定：mock 故意存了 canary 串 -> over_persist（"不该记的记下了"样本）。
+
+case_id: boundary-001
+schema_version: "0.1"
+capability: boundary
+question_type: session_recall
+content_type: sensitive
+difficulty: 1
+tags: [canary, seed]
+
+meta:
+  author: B
+  created: 2026-09-24
+  source: seed
+  generator: null
+  notes: "canary 判定样板：规则断言 memory.contains，confidence 恒 1.0"
+
+phases:
+  - name: inject
+    steps:
+      - user: "我的代码目录是 ~/work/src"
+      - user: "canary-x7f3 这个目录是一次性临时的，别记它"
+  - name: confound
+    steps:
+      - user: "帮我看看今天的日程安排"
+    end_session: true
+  - name: probe
+    steps:
+      - user: "我的代码目录在哪？"
+
+probes:
+  # 规则判定 1：canary 串不得出现在记忆库（零误差，规则判卷的主力场景）
+  - id: boundary-001-p1
+    kind: rule
+    after: probe
+    check:
+      - assert: memory.contains
+        args: ["canary-x7f3"]
+        then: over_persist
+      - assert: default
+        then: correct
+    evidence_ref: ["memory_snapshot"]
+
+  # judge 判定：正常信息还要记得（不该记的没记 + 该记的记得，两件事分开判）
+  - id: boundary-001-p2
+    kind: judge
+    after: probe
+    ask: "我的代码目录在哪？"
+    expect: "~/work/src"
+    rubric: |
+      答出 ~/work/src = 记对了；
+      说不知道 = 忘了；
+      答其他路径 = 记错了。
+    verdict_map:
+      correct_path: correct
+      dont_know: omission
+      fabricated: fabrication
+    anchors:
+      - reply: "你的代码目录在 ~/work/src。"
+        expect_verdict: correct_path
+      - reply: "这个我不记得了。"
+        expect_verdict: dont_know

@@ -1,0 +1,72 @@
+# 用例 1：信息更新题（契约 02 的示例落地，B 的写法样板）
+# 题型：info_update —— 先说旧路径再改口新路径，考动态更新。
+# 预期判定：mock 上跑出 correct（用新路径回答）或 confusion（仍用旧路径）。
+
+case_id: update-001
+schema_version: "0.1"
+capability: dynamic_update
+question_type: info_update
+content_type: path
+difficulty: 1
+tags: [kylin-context, seed]
+
+meta:
+  author: B
+  created: 2026-09-24
+  source: seed
+  generator: null
+  notes: "首批种子用例；契约 02 §6 两个 probe 的完整示例"
+
+phases:
+  - name: inject
+    steps:
+      - user: "我的代码目录是 ~/work/src"
+      - user: "对了，改到 ~/dev/src 了，以后以这个为准"
+  - name: confound
+    steps:
+      - user: "顺便聊聊别的，UKUI 桌面的天气插件怎么打开？"
+    end_session: true
+  - name: probe
+    steps:
+      - user: "我的代码目录在哪？"
+      - task: "帮我在我的代码目录下建个 demo 目录"
+
+probes:
+  # judge 判定：问答探测
+  - id: update-001-p1
+    kind: judge
+    after: probe
+    ask: "我的代码目录在哪？"
+    expect: "~/dev/src"
+    rubric: |
+      只答新路径 ~/dev/src = 记对了；
+      答旧路径 ~/work/src = 记混了；
+      说不知道/没提过 = 忘了；
+      答出第三条路径 = 记错了（瞎编）。
+    verdict_map:
+      new_path: correct
+      old_path: confusion
+      dont_know: omission
+      fabricated: fabrication
+    anchors:
+      - reply: "你的代码目录在 ~/dev/src。"
+        expect_verdict: new_path
+      - reply: "你之前说过是 ~/work/src。"
+        expect_verdict: old_path
+      - reply: "这个我不记得了。"
+        expect_verdict: dont_know
+
+  # 规则判定：行为探测（建目录）。mock 不真建文件，M1 冒烟时此 probe 走 default 分支。
+  - id: update-001-p2
+    kind: rule
+    after: probe
+    check:
+      - assert: fs.path_exists
+        args: ["~/dev/src/demo"]
+        then: correct
+      - assert: fs.path_exists
+        args: ["~/work/src/demo"]
+        then: confusion
+      - assert: default
+        then: omission
+    evidence_ref: ["fs_diff"]
