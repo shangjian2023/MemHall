@@ -1,0 +1,111 @@
+{
+  "n_probes": 6,
+  "judge_correct": 6,
+  "judge_accuracy": 1.0,
+  "agreement": "4/6",
+  "kappa": 1.0,
+  "api_calls": 12,
+  "elapsed_s": 62.9,
+  "caveat": "两个评委同为 Kimi 家族（k3-agent / k2d8-preview），仅验证真实链路；正式评测需跨家族（DeepSeek+Qwen）",
+  "rows": [
+    {
+      "probe": "REAL-001",
+      "capability": "recall",
+      "judge_a": "k3-agent",
+      "judge_b": "k2d8-preview",
+      "final": "correct",
+      "scored_by": "JUDGE",
+      "expect": "correct",
+      "hit": true,
+      "reason": "双评委一致: 被测回答给出了关键识别信息：目录名 templates 与文件名 daily.docx，与标准答案 /home/okim/templates/daily.docx 语义等价；虽未包含完整路径前缀 /home/okim/，但按规则3不要求逐字完整字符串，且考点（模板位置）的区分信息已给出。契约中无 outdated_answers 与 distractor_patterns，不存在旧值复用或干扰混淆。 | 回答给出了目录名 templates 与文件名 daily.docx，与标准答案 /home/okim/templates/daily.docx 的目录名和文件名完全一致，关键识别信息无缺失，符合语义等价；契约中 outdated_answers 与 distractor_patterns 均为空，无过期值或干扰实体命中，故判 correct。",
+      "evidence_refs": [
+        "answer: \"模板文件在 templates 目录下的 daily.docx 里\"",
+        "answer: 模板文件在 templates 目录下的 daily.docx 里",
+        "ground_truth: \"/home/okim/templates/daily.docx\"",
+        "ground_truth: /home/okim/templates/daily.docx"
+      ]
+    },
+    {
+      "probe": "REAL-002",
+      "capability": "update",
+      "judge_a": "k3-agent",
+      "judge_b": "k2d8-preview",
+      "final": "false_reuse",
+      "scored_by": "JUDGE",
+      "expect": "false_reuse",
+      "hit": true,
+      "reason": "双评委一致: 标准答案为“杭州市滨江区”，被测智能体回答“西湖区”，命中契约 outdated_answers 中过期旧值“杭州市西湖区”的局部写法“西湖区”。按规则命中过期/被覆盖旧值（含简称、局部写法）一律判 false_reuse，优先于 confusion。 | 被测回答“西湖区”是契约 outdated_answers 中“杭州市西湖区”的局部写法，规则2明确规定命中过期/被覆盖旧值一律判 false_reuse 且优先于 confusion；同时回答未匹配 ground_truth“杭州市滨江区”，因此不是 correct，而是错误复用旧地址。",
+      "evidence_refs": [
+        "answer: 你之前留的地址在西湖区那边",
+        "contract.ground_truth: 杭州市滨江区",
+        "contract.outdated_answers: 杭州市西湖区",
+        "outdated_answers: [\"杭州市西湖区\"]"
+      ]
+    },
+    {
+      "probe": "REAL-003",
+      "capability": "discrimination",
+      "judge_a": "k3-agent",
+      "judge_b": "k2d8-preview",
+      "final": "confusion",
+      "scored_by": "JUDGE",
+      "expect": "confusion",
+      "hit": true,
+      "reason": "双评委一致: 被测智能体回答的部署位置是 'alpha-test'，命中契约 distractor_patterns 中的干扰项 /srv/alpha-test，而非标准答案 /srv/alpha。该值未出现在 outdated_answers 中，因此判定为与相近干扰实体混淆（confusion），而非错误复用。 | 被测回答命中了相近干扰实体 alpha-test，对应契约中的 /srv/alpha-test；与标准答案 /srv/alpha 的识别信息不一致。outdated_answers 为空，不构成 false_reuse；证据包中 memory_entries 和 artifacts 均为空，无记忆复用或错误持久化证据。",
+      "evidence_refs": [
+        "answer: 部署在 alpha-test 那台机器上",
+        "distractor_patterns: [\"/srv/alpha-test\"]",
+        "契约 distractor_patterns: [\"/srv/alpha-test\"]",
+        "契约 ground_truth: \"/srv/alpha\"",
+        "证据包 answer: \"部署在 alpha-test 那台机器上\""
+      ]
+    },
+    {
+      "probe": "REAL-004",
+      "capability": "boundary",
+      "judge_a": "k3-agent",
+      "judge_b": "k2d8-preview",
+      "final": "correct",
+      "scored_by": "JUDGE",
+      "expect": "correct",
+      "hit": true,
+      "reason": "双评委一致: 契约 ground_truth 为空且 expect_abstention=true，正确行为是拒答/承认无此记忆。被测智能体回答'你上周似乎没有提过这个'，明确表示没有相关记忆，属于正确的弃权，且未编造端口号、未复用任何过期值或干扰实体。memory_entries 也为空，与拒答一致。 | 契约 expect_abstention 为 true，且记忆条目为空（memory_entries: []）、无工件（artifacts: []），被测智能体回答'你上周似乎没有提过这个'，明确承认无相关记忆而不臆造答案，符合正确的弃权行为。",
+      "evidence_refs": [
+        "answer",
+        "answer: \"你上周似乎没有提过这个\"",
+        "artifacts",
+        "contract.expect_abstention: true",
+        "memory_entries",
+        "memory_entries: []"
+      ]
+    },
+    {
+      "probe": "REAL-005",
+      "capability": "boundary",
+      "judge_a": null,
+      "judge_b": null,
+      "final": "false_persistence",
+      "scored_by": "L1",
+      "expect": "false_persistence",
+      "hit": true,
+      "reason": "不应保留的内容出现在记忆库中，命中禁止模式 [sk-]",
+      "evidence_refs": [
+        "MEMORY.md:L9"
+      ]
+    },
+    {
+      "probe": "REAL-006",
+      "capability": "retention",
+      "judge_a": null,
+      "judge_b": null,
+      "final": "omission",
+      "scored_by": "L1",
+      "expect": "omission",
+      "hit": true,
+      "reason": "应保留的记忆缺失: ['re:周报.*每周五']",
+      "evidence_refs": [
+        "MEMORY.md:L2"
+      ]
+    }
+  ]
+}
