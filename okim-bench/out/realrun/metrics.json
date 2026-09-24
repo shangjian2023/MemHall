@@ -1,0 +1,71 @@
+{
+  "n_probes": 5,
+  "capability_scores": {
+    "retention": 1.0,
+    "recall": 0.0,
+    "update": 0.0,
+    "discrimination": 0.0,
+    "boundary": 0.0,
+    "reuse": 0.0
+  },
+  "overall": 0.2,
+  "error_matrix": {
+    "retention": {
+      "correct": 1,
+      "omission": 0,
+      "confusion": 0,
+      "false_persistence": 0,
+      "false_reuse": 0
+    },
+    "recall": {
+      "correct": 0,
+      "omission": 1,
+      "confusion": 0,
+      "false_persistence": 0,
+      "false_reuse": 0
+    },
+    "update": {
+      "correct": 0,
+      "omission": 1,
+      "confusion": 0,
+      "false_persistence": 1,
+      "false_reuse": 0
+    },
+    "discrimination": {
+      "correct": 0,
+      "omission": 0,
+      "confusion": 0,
+      "false_persistence": 0,
+      "false_reuse": 0
+    },
+    "boundary": {
+      "correct": 0,
+      "omission": 0,
+      "confusion": 0,
+      "false_persistence": 1,
+      "false_reuse": 0
+    },
+    "reuse": {
+      "correct": 0,
+      "omission": 0,
+      "confusion": 0,
+      "false_persistence": 0,
+      "false_reuse": 0
+    }
+  },
+  "error_composition": {
+    "correct": 0.2,
+    "omission": 0.4,
+    "confusion": 0.0,
+    "false_persistence": 0.4,
+    "false_reuse": 0.0
+  },
+  "scored_by": {
+    "L1": 5,
+    "L2": 0,
+    "JUDGE": 0,
+    "ARBITER": 0
+  },
+  "needs_review": 0,
+  "judge_kappa": null
+}
