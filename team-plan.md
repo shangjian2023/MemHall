@@ -232,7 +232,7 @@ probes:
 
 ### W1 · 接口冻结 + 报名（09.23 三 – 09.27 日）
 
-- 全员：吃透赛题与评分表（本文档已定稿）；报名 ✅ 已完成（09.23）；A/E 本周建 Gitee 镜像仓库并配双推（提交硬要求，见 §4.1）
+- 全员：吃透赛题与评分表（本文档已定稿）；报名 ✅ 已完成（09.23）；A/E 本周建 Gitee 镜像仓库并配双推 ✅ 已完成（09.24，见 §4.1）
 - A：AgentAdapter 接口 + MockAdapter（能发消息、能吐假记忆 dump）+ 同步摸 KylinBot 记忆存储位置（原 W2 任务提前）
 - B：MemoryCase schema v0.1 **冻结**（3 个种子用例）
 - C：Evidence/Verdict schema v0.1 **冻结** + 规则验证器原型
@@ -298,7 +298,7 @@ memhall/
 └── tests/           # 端到端测试
 ```
 
-- 平台：**GitHub 主开发 + Gitee 镜像双推**——提交作品须在官网提交页**关联 gitee 仓库**（2026-09-23 赛题帖核实，硬要求）；W1 由 A/E 建 Gitee 仓库并配好双远端推送，日常保证 Gitee 不落后 GitHub 超过一天
+- 平台：**GitHub 主开发 + Gitee 镜像双推**——提交作品须在官网提交页**关联 gitee 仓库**（2026-09-23 赛题帖核实，硬要求）；✅ 已配好（2026-09-24）：镜像 = **https://gitee.com/mazhuoran23/MemHall**，走 Gitee 网页端的 GitHub 强制同步（不是本地双远端推送）；同步非实时（实测滞后约十几分钟），重要提交后去仓库页点一次「同步」，日常保证 Gitee 不落后 GitHub 超过一天
 - 分支：`main` 保护；`feat/<模块>-<内容>` 短命分支；PR 须 1 人 review 才可合并
 - **跨模块 review 规则**：schema 类文件改动必须由消费方 owner 过审（case schema → C+D；adapter 接口 → D；evidence schema → C）
 - commit 规范：`module(scope): what`，如 `scoring(judge): add dual-judge arbitration`
