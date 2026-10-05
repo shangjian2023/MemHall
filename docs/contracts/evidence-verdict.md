@@ -187,7 +187,7 @@ v0.2 按实现重写（R52：旧示例的 case_sample_seed/repeat_of/vm_snapshot
   "n_probes_total": 95,
   "failed_cases": ["update-014"],       // R23：单 case 异常隔离记录（可缺省）
   "clock_restore_failed": [],           // R33：时钟残留警报（可缺省）
-  "judge": {"mode": "dual", "model_a": "qwen3.7-plus", "model_b": "",
+  "judge": {"mode": "dual", "model_a": "qwen3.7-plus", "model_b": null,
             "prompt_version": "2026-10-04"},   // R27：scripted run 不写 model_a/model_b
   "model_backend": {"mode": "gateway|direct|unknown", "...": "..."},  // 统一模型对账
   "token_usage": {...},                 // 网关记账差值（无记账时不写键）

@@ -73,9 +73,11 @@ def _finish_run(run_dir: Path, run_id: str, manifest: dict,
     # 误读为 LLM 判卷（判卷方式与模型口径是两回事，decided_by 同步区分）
     judge_info: dict = {"mode": judge_mode, "prompt_version": JUDGE_PROMPT_VERSION}
     if judge_mode == "dual":
+        # model_b 为 null = JUDGE_B 未配（单判降级，A/B 轮值仲裁不触发）；
+        # 网关限额放开后配 JUDGE_B_* 即恢复双判——null 别写 ""，审计要能区分
         judge_info.update({
             "model_a": os.environ.get("JUDGE_A_MODEL", ""),
-            "model_b": os.environ.get("JUDGE_B_MODEL", ""),
+            "model_b": os.environ.get("JUDGE_B_MODEL"),
         })
     manifest["judge"] = judge_info  # 依赖锁定：判卷口径可追溯（design.md §10）
     (run_dir / "manifest.json").write_text(
@@ -235,8 +237,12 @@ def cmd_report(args: argparse.Namespace) -> int:
         manifest["n_cases_no_evidence"] = len(skipped)
         print(f"{len(skipped)} 个 case 无证据未计分: {', '.join(skipped[:8])}"
               f"{'…' if len(skipped) > 8 else ''}")
+    # 纯重渲染（verdicts 已在、非 --rejudge）不得篡改判卷口径标签：
+    # 口径跟着已有 verdicts/manifest 走，--judge 只在真判卷时生效
+    effective_mode = (args.judge if (judges is not None or args.rejudge)
+                      else manifest.get("judge", {}).get("mode", args.judge))
     metrics = _finish_run(run_dir, manifest["run_id"], manifest, verdicts, cases,
-                          judge_mode=args.judge)
+                          judge_mode=effective_mode)
     score = metrics["overall_score"]
     print(f"报告已出: {run_dir / 'report.md'}"
           f"（总体 {'未测' if score is None else f'{score:.1%}'}）")

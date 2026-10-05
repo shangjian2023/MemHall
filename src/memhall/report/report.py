@@ -55,8 +55,10 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
             extra.append(f"按用例等权 {cw:.1%}")
         lines.append(f"  （{'，'.join(extra)}，规则判卷率 {metrics['rule_scoring_rate']:.0%}）")
     if metrics.get("n_human_review"):
-        lines.append(f"- ⚠️ 判卷未决 {metrics['n_human_review']} 个已剔出分母"
-                     "——脚本判卷天花板，正式口径建议 `--judge dual` 收尾")
+        dual = (manifest.get("judge") or {}).get("mode") == "dual"
+        hint = ("dual 仲裁后仍未决，转人工复核" if dual
+                else "脚本判卷天花板，正式口径建议 `--judge dual` 收尾")
+        lines.append(f"- ⚠️ 判卷未决 {metrics['n_human_review']} 个已剔出分母——{hint}")
     wh = metrics.get("write_hygiene")
     if wh is not None:
         lines.append(f"- 写入卫生（不该记的记了）：{wh:.1%}")
