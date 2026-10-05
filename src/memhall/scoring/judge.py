@@ -70,6 +70,20 @@ def _norm(s: str) -> str:
 
 _ABSTAIN = re.compile(r"不记得|不知道|没提过|没有记录|没听说过|无法确认|不清楚")
 
+
+def _has_superstring_conflict(ans_vals: set[str], exp_vals: set[str]) -> bool:
+    """R26：回答值集中存在与某期望值互含/前缀、但自身不是任何期望值的异值。
+    discriminate-001 实测形态：问 ~/proj/api 答 ~/proj/api-v3 / ~/proj/api/backup
+    ——规范化（去标点）后期望值是其子串，旧 expect 命中判 correct 属假阳性。"""
+    for v in ans_vals:
+        if v in exp_vals:
+            continue
+        for e in exp_vals:
+            if len(e) >= 3 and (v.startswith(e) or e.startswith(v)
+                                or e in v or v in e):
+                return True
+    return False
+
 # 拒答类键名约定：出题人在 verdict_map 里显式声明拒答如何判
 _REFUSAL_KEYS = {"abstain", "refused", "forgot"}
 
@@ -137,6 +151,13 @@ class ScriptedJudge:
                 return _hit_anchor(anchor.expect_verdict,
                                    f"锚例命中（重叠率 {overlap}/{len(toks)}）")
         if exp_n and exp_n in ans_n:
+            # R26 值级复查：expect 子串命中可能是"规范化超串"假阳性——回答里
+            # 另有与期望值互为前缀/包含的异值（~/proj/api vs ~/proj/api-v3、
+            # ~/proj/api/backup）时脚本不定案，转 LLM/人工
+            if _has_superstring_conflict(ans_vals, exp_vals):
+                return JudgeOutcome(None, 0.0, refs,
+                                    "回答含期望值的近形异值（超串/前缀关系），"
+                                    "子串命中可能是假阳性，转 LLM/人工")
             return JudgeOutcome(correct_keys[0] if correct_keys else "correct",
                                 0.95, refs, f"回答包含期望答案 {probe.expect}")
         if _ABSTAIN.search(answer):

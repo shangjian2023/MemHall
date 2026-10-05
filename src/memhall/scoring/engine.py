@@ -58,7 +58,9 @@ def _answer_for(store: EvidenceStore, ask: str) -> str:
                 if in_probe:
                     fuzzy_probe = rep.get("text", "")
                 fuzzy_any = rep.get("text", "")
-    return exact_probe or exact_any or fuzzy_probe or fuzzy_any
+    # R56 优先级：探测段精确 > 探测段模糊 > 全库精确 > 全库模糊——
+    # confound 段逐字同文（exact_any）不得压过 probe 段的近似复现（fuzzy_probe）
+    return exact_probe or fuzzy_probe or exact_any or fuzzy_any
 
 
 def _norm_pair(message: str, ask: str) -> bool:
@@ -78,8 +80,8 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
     answer = _answer_for(store, probe.ask)
     if "[RUNTIME_ERROR]" in answer:
         return Verdict(
-            verdict_id=f"v-{seq:04d}", probe_id=probe.id,
-            case_id=probe.id.rsplit("-", 1)[0], run_id=run_id,
+            verdict_id=f"v-{probe.id.rsplit('-', 1)[0]}-{seq:04d}", probe_id=probe.id,
+            case_id=probe.id.rsplit('-', 1)[0], run_id=run_id,
             verdict=VerdictValue.INVALID_RUN, confidence=0.0,
             decided_by=DecidedBy.RULE, evidence_refs=["transcript:answer"],
             explanation="运行无效：被测智能体后端不可用，不计入分母",
@@ -94,26 +96,34 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
             decided_by = (DecidedBy(outcome.decided_by) if outcome.decided_by
                           else (DecidedBy.ARBITRATION if outcome.arbitrated
                                 else DecidedBy.JUDGE_A))
+            from memhall.scoring.judge import JUDGE_PROMPT_VERSION
             meta = JudgeMeta(
                 judge_a=JudgeMetaItem(model=outcome.judge_a or "",
                                       verdict=_raw_verdict(outcome.judge_a_raw, probe),
-                                      agreed=(outcome.judge_a_raw == outcome.judge_b_raw)),
+                                      # R56：agreed 只在双票均有效时有定义，
+                                      # 双票皆无效(None==None)不得误报 True
+                                      agreed=(outcome.judge_a_raw is not None
+                                              and outcome.judge_a_raw == outcome.judge_b_raw)),
                 judge_b=JudgeMetaItem(model=outcome.judge_b or "",
                                       verdict=_raw_verdict(outcome.judge_b_raw, probe),
-                                      agreed=(outcome.judge_a_raw == outcome.judge_b_raw)),
-                prompt_version="judge-prompt-v1",
+                                      agreed=(outcome.judge_a_raw is not None
+                                              and outcome.judge_a_raw == outcome.judge_b_raw)),
+                prompt_version=JUDGE_PROMPT_VERSION,
                 arbiter="arbitration（A/B 轮值，见 reason）" if outcome.arbitrated else None,
             )
         except RuntimeError as e:
-            # judge 端点彻底不可用：降级脚本判卷，评测不因 judge 挂而报废
+            # judge 端点彻底不可用：降级脚本判卷，评测不因 judge 挂而报废。
+            # R27：按实际打标 scripted（explanation 带 [judge 降级]），不再贴
+            # human_review——机器判定混进人工未决率会污染 human_review_rate
             outcome = _scripted.judge(probe, answer)
-            decided_by = DecidedBy.HUMAN_REVIEW
+            decided_by = DecidedBy.SCRIPTED
             meta = None
             reason = f"[judge 降级] {e}: {outcome.reason}"
             outcome = JudgeOutcome(outcome.key, 0.0, outcome.evidence_refs, reason)
     else:
         outcome = _scripted.judge(probe, answer)
-        decided_by = DecidedBy.JUDGE_A
+        # R27：脚本判卷按实际打标 scripted，不再冒名 judge_a
+        decided_by = DecidedBy.SCRIPTED
         meta = None
 
     if outcome.key is None:
@@ -125,9 +135,9 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
         confidence = outcome.confidence
 
     return Verdict(
-        verdict_id=f"v-{seq:04d}",
+        verdict_id=f"v-{probe.id.rsplit('-', 1)[0]}-{seq:04d}",
         probe_id=probe.id,
-        case_id=probe.id.rsplit("-", 1)[0],
+        case_id=probe.id.rsplit('-', 1)[0],
         run_id=run_id,
         verdict=value,
         confidence=confidence,
@@ -145,9 +155,9 @@ def _rule_verdict(probe: RuleProbe, store: EvidenceStore, run_id: str, seq: int)
     except EvidenceMissing as e:
         # 所需证据不在场（适配器不支持该证据源）——运行无效，不计入分母
         return Verdict(
-            verdict_id=f"v-{seq:04d}",
+            verdict_id=f"v-{probe.id.rsplit('-', 1)[0]}-{seq:04d}",
             probe_id=probe.id,
-            case_id=probe.id.rsplit("-", 1)[0],
+            case_id=probe.id.rsplit('-', 1)[0],
             run_id=run_id,
             verdict=VerdictValue.INVALID_RUN,
             confidence=0.0,
@@ -157,9 +167,9 @@ def _rule_verdict(probe: RuleProbe, store: EvidenceStore, run_id: str, seq: int)
         )
     branch = probe.check[idx]
     return Verdict(
-        verdict_id=f"v-{seq:04d}",
+        verdict_id=f"v-{probe.id.rsplit('-', 1)[0]}-{seq:04d}",
         probe_id=probe.id,
-        case_id=probe.id.rsplit("-", 1)[0],
+        case_id=probe.id.rsplit('-', 1)[0],
         run_id=run_id,
         verdict=VerdictValue(value),
         confidence=1.0,
@@ -181,8 +191,8 @@ def evaluate_case(case: MemoryCase, store: EvidenceStore, run_id: str,
     for i, probe in enumerate(case.probes, start=1):
         if poisoned:
             out.append(Verdict(
-                verdict_id=f"v-{i:04d}", probe_id=probe.id,
-                case_id=probe.id.rsplit("-", 1)[0], run_id=run_id,
+                verdict_id=f"v-{probe.id.rsplit('-', 1)[0]}-{i:04d}", probe_id=probe.id,
+                case_id=probe.id.rsplit('-', 1)[0], run_id=run_id,
                 verdict=VerdictValue.INVALID_RUN, confidence=0.0,
                 decided_by=DecidedBy.RULE, evidence_refs=["transcript:answer"],
                 explanation="运行无效：被测智能体后端不可用，不计入分母"))

@@ -69,12 +69,15 @@ def _finish_run(run_dir: Path, run_id: str, manifest: dict,
                 verdicts: list[Verdict], cases: dict[str, MemoryCase],
                 judge_mode: str = "scripted") -> dict:
     from memhall.scoring.judge import JUDGE_PROMPT_VERSION
-    manifest["judge"] = {  # 依赖锁定：判卷口径可追溯（design.md §10）
-        "mode": judge_mode,
-        "model_a": os.environ.get("JUDGE_A_MODEL", ""),
-        "model_b": os.environ.get("JUDGE_B_MODEL", ""),
-        "prompt_version": JUDGE_PROMPT_VERSION,
-    }
+    # R27：scripted run 不写 model_a/model_b——写了第三方审计会把脚本判卷
+    # 误读为 LLM 判卷（判卷方式与模型口径是两回事，decided_by 同步区分）
+    judge_info: dict = {"mode": judge_mode, "prompt_version": JUDGE_PROMPT_VERSION}
+    if judge_mode == "dual":
+        judge_info.update({
+            "model_a": os.environ.get("JUDGE_A_MODEL", ""),
+            "model_b": os.environ.get("JUDGE_B_MODEL", ""),
+        })
+    manifest["judge"] = judge_info  # 依赖锁定：判卷口径可追溯（design.md §10）
     (run_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     metrics = compute_metrics(verdicts, cases)
@@ -141,27 +144,44 @@ def cmd_run(args: argparse.Namespace) -> int:
     notify_run_done(args.adapter, metrics["overall_score"],
                     metrics["n_valid"], metrics["n_probes_total"],
                     str(run_dir), radar=str(run_dir / "radar.png"))
+    # R57：全废轮（无一 case 出证据）返回非零——马拉松脚本此前无法感知废轮
+    if not stores and cases:
+        print("全部用例无证据产出（全废轮），退出码 3", file=sys.stderr)
+        return 3
     return 0
 
 
 def _load_verdicts(run_dir: Path, manifest: dict,
-                   cases: dict[str, MemoryCase], judges) -> list[Verdict]:
-    """优先读已落盘 verdicts；缺则从证据 JSONL 重放评分（评测贵、评分便宜）。"""
+                   cases: dict[str, MemoryCase], judges,
+                   rejudge: bool = False) -> tuple[list[Verdict], list[str]]:
+    """优先读已落盘 verdicts；缺则（或 --re-judge 强制时）从证据 JSONL 重放评分。
+
+    R35：failed_cases 与证据缺失的 case 跳过（对齐 pair_stores 语义），
+    返回 (verdicts, skipped)——R23 后"部分 case 无证据"是合法产物，报告
+    不再因此崩溃，恰是最需要重放评分的 run 也能出报告。"""
     vpath = run_dir / "verdicts.jsonl"
-    if vpath.exists():
+    if vpath.exists() and not rejudge:
         return [Verdict.model_validate(json.loads(line))
-                for line in vpath.read_text(encoding="utf-8").splitlines()]
+                for line in vpath.read_text(encoding="utf-8").splitlines()], []
     from memhall.schema.evidence import Evidence
     from memhall.scoring.engine import evaluate_case
     from memhall.scoring.rules import EvidenceStore
     verdicts: list[Verdict] = []
-    for cid in manifest["cases"]:
-        case = cases[cid]
+    skipped: list[str] = []
+    failed = set(manifest.get("failed_cases", []))
+    for cid in manifest.get("cases", []):
+        if cid in failed:
+            skipped.append(cid)
+            continue
+        case = cases.get(cid)
         ev_path = run_dir / "cases" / cid / "evidence.jsonl"
+        if case is None or not ev_path.exists():
+            skipped.append(cid)
+            continue
         store = EvidenceStore([Evidence.model_validate(json.loads(line))
                                for line in ev_path.read_text(encoding="utf-8").splitlines()])
         verdicts.extend(evaluate_case(case, store, manifest["run_id"], judges))
-    return verdicts
+    return verdicts, skipped
 
 
 def _resolve_run(p: str) -> Path:
@@ -194,13 +214,32 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir)
+    run_dir = _resolve_run(args.run_dir)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     cases = load_cases_for_run(run_dir)
     judges = OpenAICompatJudge.pair_from_env() if args.judge == "dual" else None
-    verdicts = _load_verdicts(run_dir, manifest, cases, judges)
-    metrics = _finish_run(run_dir, manifest["run_id"], manifest, verdicts, cases)
-    print(f"报告已出: {run_dir / 'report.md'}（总体 {metrics['overall_score']:.1%}）")
+    if args.judge == "dual" and judges is None:
+        print("缺少 JUDGE_A_ 环境变量，无法 dual 判卷", file=sys.stderr)
+        return 1
+    vpath = run_dir / "verdicts.jsonl"
+    if args.rejudge and vpath.exists():
+        # 备份旧口径 verdicts（R25 离线重判：scripted → dual 可对账可回退）
+        old_mode = manifest.get("judge", {}).get("mode", "scripted")
+        backup = run_dir / f"verdicts.{old_mode}.jsonl"
+        vpath.replace(backup)
+        print(f"旧 verdicts 备份: {backup.name}")
+    verdicts, skipped = _load_verdicts(run_dir, manifest, cases, judges,
+                                       rejudge=args.rejudge)
+    if skipped:
+        # R35：无证据 case 单列，不悄悄缩水（报告头/控制台都可见）
+        manifest["n_cases_no_evidence"] = len(skipped)
+        print(f"{len(skipped)} 个 case 无证据未计分: {', '.join(skipped[:8])}"
+              f"{'…' if len(skipped) > 8 else ''}")
+    metrics = _finish_run(run_dir, manifest["run_id"], manifest, verdicts, cases,
+                          judge_mode=args.judge)
+    score = metrics["overall_score"]
+    print(f"报告已出: {run_dir / 'report.md'}"
+          f"（总体 {'未测' if score is None else f'{score:.1%}'}）")
     return 0
 
 
@@ -420,6 +459,8 @@ def main() -> None:
     p_rep.add_argument("run_dir", help="runs/ 下的 run 目录")
     p_rep.add_argument("--judge", choices=["scripted", "dual"], default="scripted",
                        help="重放评分时的判卷方式")
+    p_rep.add_argument("--rejudge", action="store_true",
+                       help="忽略已落盘 verdicts，从证据重放评分（旧 verdicts 自动备份）")
     p_rep.set_defaults(func=cmd_report)
 
     p_cmp = sub.add_parser("compare", help="对比两次运行：对比雷达 + 判定翻转明细",

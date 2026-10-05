@@ -8,6 +8,8 @@
 - swap      张冠李戴：拿另一题的期望答案回答本题
 - fabricate 瞎编：把期望答案改一个字符（既破坏子串匹配，也测语义判卷）
 - hedge     含糊其辞：自信口吻包装错误答案（"我记得应该是 X 吧"）
+- superstring 超串近形：给期望值添后缀（~/proj/api → ~/proj/api-v3）——
+  规范化后期望值仍是子串，专打 expect 子串回退的假阳性面（R26）
 """
 
 from __future__ import annotations
@@ -47,6 +49,17 @@ def _mutate(expect: str) -> str:
     return expect + "0"
 
 
+def _superstring(expect: str) -> str:
+    """超串近形：首个 ASCII 值 token 添 -v2 后缀。纯中文期望无此形态，返回空。"""
+    m = re.search(r"[A-Za-z0-9_~/.\-]{3,}", expect)
+    if not m:
+        return ""
+    tok = m.group(0)
+    if tok.endswith(("-v2", "v2")):
+        return ""
+    return expect.replace(tok, tok + "-v2")
+
+
 def _is_refusal_probe(probe: JudgeProbe) -> bool:
     """正确答案=拒答的题（"别记"类）：改拒答句还是拒答句，fabricate/hedge 无意义。"""
     correct_keys = [k for k, v in probe.verdict_map.items() if v == "correct"]
@@ -71,6 +84,9 @@ def build_decoys(probes: list[JudgeProbe]) -> list[tuple[JudgeProbe, str, str]]:
         if fab != p.expect:
             out.append((p, "fabricate(瞎编)", fab))
             out.append((p, "hedge(含糊其辞)", f"我记得应该是 {fab} 吧"))
+        sup = _superstring(p.expect)
+        if sup and sup != p.expect:
+            out.append((p, "superstring(超串)", sup))
     return out
 
 

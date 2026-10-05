@@ -1,6 +1,11 @@
 # 契约 03 · Evidence 证据 + Verdict 判定数据结构
 
 > v0.1 草案 · 2026-09-23 · owner：C（评分），消费方：B（probe 判定语义引用）+ A（适配器产出证据对象）
+> **v0.2 · 2026-10-05**（docs/review-tasks.md R27/R29/R31/R49/R50/R52）：decided_by 增 `scripted` 枚举；
+> 仲裁改 LLM A/B 轮值（R14 变更回填）；指标口径由 pass^k 改池化通过率（pass^k 并列评估）；
+> MemorySnapshot 增 dump_ok/error/truncated；fs_diff 条目增 stage（阶段窗）；
+> 采集时机与 manifest 字段按实现重写（旧文"每 phase 全量四类共 3 次"从未实现，
+> 以契约为准的条款第一次与实现对齐）。
 > 证据 = 判卷的全部输入；判定 = 每个证据组合的结论，带可下钻的引用链。对应 design.md §5/§6。
 > JSONL 格式，一次 run 一个目录 `evidence/<run_id>/`。
 
@@ -27,9 +32,13 @@
 | `dialogue` | 对话轮次：session_id、user、reply（含耗时、token） | 适配器 send 自动记录 |
 | `memory_snapshot` | MemorySnapshot（§2.2） | 适配器 dump_memory |
 | `actions` | Action 列表（§2.3）+ coverage 完整度 | 适配器 dump_actions |
-| `fs_diff` | 阶段前后文件树 diff（新建/修改/删除清单） | runner 文件快照对比 |
+| `fs_diff` | 阶段前后文件树 diff（新建/删除清单，条目带 stage 阶段窗） | runner 文件快照对比 |
 
-**采集时机（固定，D 实现）**：每 phase 结束时采一次全量四类——共 3 次/case；`memory_snapshot` 额外在 inject 后立即加采一次（看「边聊边记还是聊完才记」，写入时机测试的数据源）。
+**采集时机（v0.2 按实现重写，R50/R52）**：`dialogue` 每 phase 落一次（部分对话也落，
+`[RUNTIME_ERROR]` 回复标记进证据）；`memory_snapshot` 在 inject 后与 probe 结束后各采一次
+（写入时机测试的数据源；confound 段不采——四态定位的时间分辨率按需后补）；
+`actions` 在 probe 结束后采一次；`fs_diff` 在 probe 结束后产出，条目带
+`stage`（inject=base→inject 后首采窗、probe=inject 后→终采窗；旧证据无 stage 视为不区分）。
 
 ## 2. 核心数据对象
 
@@ -62,9 +71,16 @@
   "raw": {                              // 原始文件字节（base64 或落盘路径），可选
     "path": "evidence/<run_id>/raw/memory-002.db",
     "sha256": "..."
-  }
+  },
+  "dump_ok": true,                      // v0.2（R31）：导出成败。false 时 error 必填，
+  "error": "",                          //   规则层判 EvidenceMissing → invalid_run——
+  "truncated": false                    //   "导出失败"≠"空库"，不得折叠成空 entries 洗白
 }
 ```
+
+`memory.ever_contained` 断言（R49）：扫全部 memory_snapshot（写入即算、
+删除不洗白、会话末迟写不逃逸），用于 canary over_persist 主判；导出失败
+（dump_ok=false）的快照不参与判定，全部失败时该探测点判 invalid_run。
 
 ### 2.3 Action（操作记录，契约 01 dump_actions 的条目）
 
@@ -98,10 +114,10 @@ full，故 actions 断言探测一律 role=diagnostic 不进六维，待证据�
   "run_id": "r-20260927-kylinbot-8f3a",
   "verdict": "correct",                // 枚举见 §3.1
   "confidence": 1.0,                   // 规则判定恒 1.0；judge 判定为 judge 自报 0–1
-  "decided_by": "rule",                // rule | judge_a | judge_b | arbitration | human_review
+  "decided_by": "rule",                // rule | scripted | judge_a | judge_b | arbitration | human_review
   "evidence_refs": ["ev-000120", "ev-000123"],   // 判定依据的证据 ID 列表——报告下钻入口
   "explanation": "回复精确匹配新路径 ~/dev/src",   // 人话解释（rule：模板生成；judge：原判定理由）
-  "judge_meta": {                      // decided_by ∈ judge/arbitration 时必填
+  "judge_meta": {                      // decided_by ∈ judge_*/arbitration 时必填；scripted/rule 不写（R27）
     "judge_a": {"model": "deepseek-v4", "verdict": "correct", "agreed": true},
     "judge_b": {"model": "qwen-max", "verdict": "correct", "agreed": true},
     "prompt_version": "judge-v1.2",
@@ -122,20 +138,32 @@ full，故 actions 断言探测一律 role=diagnostic 不进六维，待证据�
 | `wrong_reuse` | 用错了 | 任务链张冠李戴地复用历史信息 |
 | `invalid_run` | 运行无效（不计分） | 超时/崩溃/探测未完成——单列统计，不进能力分 |
 
-### 3.2 判定优先级（谁说了算，C 实现）
+### 3.2 判定优先级（谁说了算，C 实现；v0.2 对齐实现）
 
 ```
 规则判定（confidence=1.0）
   └─ 规则能出结论 → 直接采信
-judge 判定（rubric + anchors + verdict_map，双判）
-  ├─ A、B 一致 → 采信，decided_by=judge_a
-  ├─ A、B 不一致 → 规则仲裁（能用规则裁的用规则，decided_by=arbitration）
-  │                 └─ 裁不了 → human_review 队列（人工复核率指标的分母来源，目标 <5%）
+脚本判卷（ScriptedJudge，离线确定性；expect 子串/锚例/拒答话术）
+  ├─ 能出结论 → decided_by=scripted（R27：不再冒名 judge_a；manifest 不写 model）
+  ├─ 值级复查存疑（回答含期望值超串/前缀近形，R26）→ 转下一层
+  └─ 判不了（None）→ 转人工或 LLM
+LLM 判卷（rubric + anchors + verdict_map）
+  ├─ 单判（JUDGE_B 未配）→ 一票定案，decided_by=judge_a；无效票转人工
+  ├─ 双判一致 → 采信，decided_by=judge_a
+  ├─ 一票无效 → 直接采信对侧有效票（R14，省一次仲裁调用）
+  ├─ 双票不一致 → 仲裁评委 A/B 轮值（JUDGE_ARBITER，R14：固定 A 仲裁自己
+  │               的分歧引入自偏好）；decided_by=arbitration
+  └─ 仲裁无效 → human_review 队列（人工复核率的分母来源，目标 <5%）
+降级：LLM 端点全挂 → 退脚本判卷，decided_by=scripted、explanation 带
+[judge 降级]（R27：机器判定不得混入人工未决率）；脚本也判不了 → human_review
 ```
 
 ## 4. 指标汇聚约定（report 层的输入，C 定义）
 
-- 能力分：`capability` 维度上 verdict=correct 的 probe 占比，**pass^k 口径**（重复运行 k 次每次都对才算过，k=2，design.md §8）；
+- 能力分：`capability` 维度上 verdict=correct 的 probe 占比。**池化通过率**为主口径
+  （k 次运行的探测点合并，附 mean±std 与逐探测点 bootstrap 95% CI，R11/R13）；
+  **pass^k 口径**（k 次每次都对才算过，τ-bench 惯例）作为"agent 稳定性敏感"的
+  并列口径评估输出，两者差异大时报告注明；
 - 错误构成：omission/confusion/fabrication/over_persist/wrong_reuse 各占比（雷达图旁的第二张图）；
 - 判卷质量四件套：人工复核率、双判一致率、金标准符合率、诱饵拒绝率——从 verdicts + 质检任务数据算；
 - 故障定位四态（没存/存了没用上/存错了/该删没删）：由 memory_snapshot×dialogue/actions 交叉推导，附 evidence_refs，写进深化报告——**推导规则 C 在 W2 冻结为附录 A，本契约预留**。
@@ -144,18 +172,26 @@ judge 判定（rubric + anchors + verdict_map，双判）
 
 `evidence/<run_id>/manifest.json`：
 
+v0.2 按实现重写（R52：旧示例的 case_sample_seed/repeat_of/vm_snapshot 从未实现，
+对账以本版为准；cases 为清单非 seed——用例集是目录枚举，不是抽样）：
+
 ```json
 {
-  "run_id": "r-20260927-kylinbot-8f3a",
-  "started_at": "...", "finished_at": "...",
-  "agent": "kylinbot",
-  "cases_version": "git:abc1234",       // 题库版本
-  "case_sample_seed": 42,               // 题目池抽样 seed（可复现同一份题）
-  "code_version": "git:def5678",
-  "judge": {"models": ["deepseek-v4", "qwen-max"], "prompt_version": "judge-v1.2"},
-  "env": {"os": "openKylin 3.0 (20260905)", "vm_snapshot": "clean-baseline", "python": "3.11.9"},
-  "cost": {"judge_tokens": {...}, "agent_tokens": {...}},   // 记账，W2 对接 Token 中心⚠️
-  "repeat_of": null                     // 重复运行时填原 run_id（run diff 的配对依据）
+  "run_id": "20261002-130127-kylinbot",
+  "started_at": "20261002-130127", "finished_at": "...",
+  "tool": "memhall", "tool_version": "0.2.1", "python": "3.11.9",
+  "adapter": "kylinbot",                // 被测智能体（适配器名）
+  "case_source": "cases/full+cases/chains",
+  "git_hash": "9c65eec",
+  "cases": ["persist-001", "..."],      // 用例清单（目录枚举，非 seed 抽样）
+  "n_probes_total": 95,
+  "failed_cases": ["update-014"],       // R23：单 case 异常隔离记录（可缺省）
+  "clock_restore_failed": [],           // R33：时钟残留警报（可缺省）
+  "judge": {"mode": "dual", "model_a": "qwen3.7-plus", "model_b": "",
+            "prompt_version": "2026-10-04"},   // R27：scripted run 不写 model_a/model_b
+  "model_backend": {"mode": "gateway|direct|unknown", "...": "..."},  // 统一模型对账
+  "token_usage": {...},                 // 网关记账差值（无记账时不写键）
+  "agent_version": "0.7.5"
 }
 ```
 
