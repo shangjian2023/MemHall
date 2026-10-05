@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -82,13 +83,22 @@ class _RunAborted(Exception):
 
 
 class RunSession:
-    """单例运行会话：后台线程 + asyncio.Queue 供 SSE 消费。"""
+    """单例运行会话：后台线程跑评测，SSE 每连接一份订阅队列（R57 广播）。"""
 
     def __init__(self) -> None:
         self.q: asyncio.Queue = asyncio.Queue()
+        self.subscribers: list[asyncio.Queue] = []
         self.active = False
         self.stop = False
         self.lock = threading.Lock()
+
+    def publish(self, payload: dict) -> None:
+        """事件广播：兼容旧 q（无订阅者时的落点），并 fan-out 到全部订阅者。"""
+        with contextlib.suppress(asyncio.QueueFull):
+            self.q.put_nowait(payload)
+        for sub in list(self.subscribers):
+            with contextlib.suppress(asyncio.QueueFull):
+                sub.put_nowait(payload)
 
     def reset(self) -> None:
         while not self.q.empty():
@@ -115,9 +125,17 @@ def _cached_vm_findings(ttl_s: float = 60.0) -> list:
 
 
 def _safe_run_id(run_id: str) -> Path:
-    if not re.fullmatch(r"[\w.-]+", run_id):
+    # R57：旧正则 \w.- 放行 ".."/"." 等纯点路径，可越出 runs 根
+    if ".." in run_id or not re.fullmatch(r"[\w.-]+", run_id):
         raise HTTPException(400, "非法 run_id")
     return _runs_root() / run_id
+
+
+# SPA 单页且资源名不带版本号：响应不给 Cache-Control 时浏览器按启发式缓存，
+# deb 升级换脑后仍可能不回源、拿旧页面打新接口（10-05 "下拉只剩未检出"事故，
+# 旧 loadAdapters 遍历新版 {mode,adapters} 响应渲染出伪条目）。no-cache 强制
+# 回源验证，ETag 命中走 304，不增加流量。
+NO_CACHE = {"Cache-Control": "no-cache"}
 
 
 def create_app() -> FastAPI:
@@ -126,14 +144,21 @@ def create_app() -> FastAPI:
     # ---------- 页面 ----------
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE)
 
     @app.get("/static/{name:path}")
     def static_file(name: str) -> FileResponse:
-        p = (STATIC_DIR / name).resolve()
-        if not str(p).startswith(str(STATIC_DIR.resolve())) or not p.is_file():
+        # R57：startswith 前缀匹配可被同前缀目录逃逸（/static../ 等），
+        # 改 relative_to 严格边界校验
+        root = STATIC_DIR.resolve()
+        p = (root / name).resolve()
+        try:
+            p.relative_to(root)
+        except ValueError:
+            raise HTTPException(404, "not found") from None
+        if not p.is_file():
             raise HTTPException(404, "not found")
-        return FileResponse(p)
+        return FileResponse(p, headers=NO_CACHE)
 
     # ---------- 体检 ----------
     @app.get("/api/doctor")
@@ -261,7 +286,7 @@ def create_app() -> FastAPI:
         loop = asyncio.get_running_loop()
 
         def emit(payload: dict) -> None:
-            loop.call_soon_threadsafe(session.q.put_nowait, payload)
+            loop.call_soon_threadsafe(session.publish, payload)
 
         def worker() -> None:
             from memhall.adapters import create_adapter
@@ -336,13 +361,32 @@ def create_app() -> FastAPI:
 
     @app.get("/api/events")
     async def events() -> StreamingResponse:
+        """SSE 进度流（R57：广播 + 心跳）。
+
+        此前单 asyncio.Queue 被多个 EventSource 连接互抢事件（开两个页面
+        一边有进度一边死寂）；改为每连接一份订阅队列，发布方 fan-out；
+        15s 心跳注释帧防代理掐空闲连接，也让断连可被发现。
+        """
+        sub: asyncio.Queue = asyncio.Queue(maxsize=512)
+        session.subscribers.append(sub)
+
         async def gen():
-            yield f"data: {json.dumps({'type': 'connected'}, ensure_ascii=False)}\n\n"
-            while True:
-                item = await session.q.get()
-                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
-                if item.get("type") in ("done", "stopped", "error"):
-                    break
+            try:
+                yield "data: " + json.dumps(
+                    {"type": "connected"}, ensure_ascii=False) + "\n\n"
+                while True:
+                    try:
+                        item = await asyncio.wait_for(sub.get(), timeout=15.0)
+                    except TimeoutError:
+                        yield ": ping\n\n"   # 心跳注释帧
+                        continue
+                    yield "data: " + json.dumps(item, ensure_ascii=False) + "\n\n"
+                    if item.get("type") in ("done", "stopped", "error"):
+                        break
+            finally:
+                with contextlib.suppress(ValueError):
+                    session.subscribers.remove(sub)
+
         return StreamingResponse(gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-store"})
 

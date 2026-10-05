@@ -91,6 +91,7 @@ ADAPTER_CLI: dict[str, list[str]] = {
     # openKylin 侧智能体：绝对路径兜底（SSH/桌面起的进程 PATH 不含用户安装位）
     "kylinbot": ["kylin-bot", "/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"],
     "openclaw": ["openclaw", "~/.local/bin/openclaw"],
+    "opencode": ["opencode"],   # R57：UI 下拉曾漏 opencode（适配器早已注册）
 }
 
 
@@ -112,7 +113,7 @@ LOCAL_AGENTS: list[tuple[str, list[str], list[str], str, str]] = [
     ("codex", ["codex"], ["~/.codex"], "", "cli"),
     ("dsh (DeepSeek Harness)", ["dsh"], ["~/.dsh"], "", "cli"),
     ("gemini-cli", ["gemini"], ["~/.gemini"], "", "cli"),
-    ("opencode", ["opencode"], ["~/.config/opencode"], "", "cli"),
+    ("opencode", ADAPTER_CLI["opencode"], ["~/.config/opencode"], "opencode", "cli"),
     ("mimocode", ["mimocode"], ["~/.config/mimocode"], "", "cli"),
     ("qwen-code", ADAPTER_CLI["qwen"], ["~/.qwen"], "", "cli"),
     ("qwenpaw", ["qwenpaw"], ["~/.qwenpaw"], "", "cli"),
@@ -330,7 +331,7 @@ _VM_PROBE = (
     "echo \"$n|$($(eval echo $p) --version 2>/dev/null | head -1 | cut -c1-40)|$p\"; "
     "done; "
     "ls ~/.kylinbot/workspace/memory/brain.db "
-    "~/hermes/memories/MEMORY.md 2>/dev/null | head -2"
+    "~/.hermes/memories/MEMORY.md 2>/dev/null | head -2"   # R59：~/.hermes 笔误
 )
 
 
@@ -364,6 +365,10 @@ def scan_vm() -> tuple[list[Finding], str]:
         rc, out, _ = ch.run(_VM_PROBE, timeout=30)
     except Exception as e:  # SSH 不通是"警告"不是崩溃
         return [], f"评测机不可达: {str(e)[:120]}"
+    if rc != 0:
+        # R59：rc 非 0 不再静默当"未发现"——探测脚本自身失败（shell/权限）
+        # 与"真没装"是两回事，报出来别让用户误诊
+        return [], f"评测机探测命令失败 rc={rc}（shell/权限问题？）"
 
     findings: dict[str, Finding] = {}
     for line in out.splitlines():
@@ -385,52 +390,68 @@ def scan_vm() -> tuple[list[Finding], str]:
 def adapter_availability(vm_probe=None) -> dict:
     """跑页下拉框的真实可跑性（UI /api/adapter-status 数据源，不装不骗人）。
 
-    部署形态决定口径（UI 描述随形态切换，Windows 侧与 openKylin 侧看到的不一样）：
-    - native：VM_HOST 指向本机 = openKylin 原生模式，本机即评测机。hermes/
-      kylinbot/openclaw 驱动的是本机智能体（回环 SSH 只是驱动通道），label 按
-      "本机"口径，可跑 = 本机检出二进制 + 回环通道（VM_HOST/VM_PASS）配好。
-    - remote：Windows 宿主 + 评测 VM。label 按"VM 真机"口径，可跑由 VM 内
-      SSH 实测决定（vm_probe 返回 list[Finding]，可注入；缺省走 scan_vm）。
-    mock 恒可用；本机适配器一律按 find_cli 真探测。未检出即 ok=False，
-    由前端从下拉里剔除（完整名单与原因在体检页）。
+    部署形态决定口径与可见车道（UI 描述随形态切换，一套形态一套列表）：
+    - native：VM_HOST 指向本机 = openKylin 原生模式，本机即评测机。只列评测
+      车道：hermes/kylinbot/openclaw 走回环 SSH 驱动本机智能体，label 按
+      "本机"讲；可跑 = 本机检出二进制 + 回环通道（VM_HOST/VM_PASS）配好。
+      本机直连车道不进列表（宿主机冒烟备胎，原生形态下列出只会重复扰视）。
+    - remote：Windows 宿主 + 评测 VM。列本机直连车道（hermes-local/claude/
+      qwen）+ VM 车道，后者可跑由 VM 内 SSH 实测决定（vm_probe 返回
+      list[Finding]，可注入；缺省走 scan_vm）。
+    mock 恒可用；未检出即 ok=False，由前端从下拉里剔除（完整名单与原因
+    在体检页）。
     """
     native = vm_is_self()
     channel = bool(os.environ.get("VM_HOST") and os.environ.get("VM_PASS"))
     local = {k: bool(find_cli(*cands)) for k, cands in ADAPTER_CLI.items()}
+    if native:
+        # 原生模式只列评测车道（mock + 回环 SSH 三家）：本机直连车道
+        # （hermes-local/claude/qwen）是宿主机无 SSH 时的冒烟备胎，在 VM 里
+        # 与评测车道重复列出只会让人困惑"两个 hermes 有什么区别"（10-05 反馈）。
+        # 原生侧只有一套车道，label 不带后缀（全是本机，后缀是噪音）
+        return {"mode": "native", "adapters": {
+            "mock": {"label": "mock（离线演示）", "ok": True},
+            "hermes": {"label": "hermes", "ok": channel and local["hermes"]},
+            "kylinbot": {"label": "kylinbot", "ok": channel and local["kylinbot"]},
+            "openclaw": {"label": "openclaw", "ok": channel and local["openclaw"]},
+        }}
     adapters = {
         "mock": {"label": "mock（离线演示）", "ok": True},
-        "hermes-local": {"label": "hermes（本机直连）" if native else "hermes（本机）",
-                         "ok": local["hermes"]},
+        "hermes-local": {"label": "hermes（本机直连）", "ok": local["hermes"]},
         "claude-local": {"label": "claude code（本机）", "ok": local["claude"]},
         "qwen-local": {"label": "qwen code（本机）", "ok": local["qwen"]},
+        "opencode": {"label": "opencode（本机）", "ok": local["opencode"]},
     }
-    if native:
-        adapters.update({
-            "hermes": {"label": "hermes（本机）", "ok": channel and local["hermes"]},
-            "kylinbot": {"label": "kylinbot（本机）", "ok": channel and local["kylinbot"]},
-            "openclaw": {"label": "openclaw（本机）", "ok": channel and local["openclaw"]},
-        })
-    else:
-        vm = vm_probe() if vm_probe else scan_vm()[0]
-        found = {f.adapter for f in vm if f.found and f.adapter}
-        adapters.update({
-            "hermes": {"label": "hermes（VM 真机）", "ok": "hermes" in found},
-            "kylinbot": {"label": "kylinbot（VM 真机）", "ok": "kylinbot" in found},
-            "openclaw": {"label": "openclaw（VM 真机）", "ok": "openclaw" in found},
-        })
-    return {"mode": "native" if native else "remote", "adapters": adapters}
+    vm = vm_probe() if vm_probe else scan_vm()[0]
+    found = {f.adapter for f in vm if f.found and f.adapter}
+    adapters.update({
+        "hermes": {"label": "hermes（VM 连接）", "ok": "hermes" in found},
+        "kylinbot": {"label": "kylinbot（VM 连接）", "ok": "kylinbot" in found},
+        "openclaw": {"label": "openclaw（VM 连接）", "ok": "openclaw" in found},
+    })
+    return {"mode": "remote", "adapters": adapters}
 
 
 def check_env() -> list[EnvCheck]:
     checks: list[EnvCheck] = []
+    # R59：统一网关模式（GATEWAY_URL/GATEWAY_VM_URL）下 AGENT_LLM_* 允许留空——
+    # 适配器凭据由网关派生，此前把该模式误报成"缺配置"
+    gw_url = (os.environ.get("GATEWAY_URL") or os.environ.get("GATEWAY_VM_URL")
+              or "").strip()
     need = ["AGENT_LLM_KEY", "AGENT_LLM_BASE_URL", "AGENT_LLM_MODEL"]
     missing = [k for k in need if not os.environ.get(k)]
-    checks.append(EnvCheck(
-        "LLM 网关配置", not missing,
-        "齐全" if not missing else f"缺 {', '.join(missing)}（source .env）"))
-    if not missing:
-        u = urlparse(os.environ["AGENT_LLM_BASE_URL"])
-        host, port = u.hostname, u.port or 443
+    if missing and gw_url:
+        checks.append(EnvCheck("LLM 网关配置", True,
+                               f"统一网关模式（{gw_url}），AGENT_LLM_* 留空正常"))
+    elif missing:
+        checks.append(EnvCheck("LLM 网关配置", False,
+                               f"缺 {', '.join(missing)}（source .env）"))
+    else:
+        checks.append(EnvCheck("LLM 网关配置", True, "齐全"))
+    probe_url = (os.environ.get("AGENT_LLM_BASE_URL") or gw_url).strip()
+    if probe_url:
+        u = urlparse(probe_url)
+        host, port = u.hostname, u.port or (443 if u.scheme == "https" else 80)
         try:
             with socket.create_connection((host, port), timeout=4):
                 checks.append(EnvCheck("LLM 网关可达", True, f"{host}:{port}"))
