@@ -81,6 +81,8 @@ export GATEWAY_UPSTREAM_URL=... GATEWAY_UPSTREAM_KEY=... GATEWAY_MODEL=qwen3.7-p
 uv run memhall gateway --host 0.0.0.0    # 监听 8311；模型一律网关说了算
 export GATEWAY_MIN_INTERVAL=8                # 转发最小间隔秒（默认 8 ≈ 7.5 RPM
                                              #  防上游限流掐线；超速请求网关内排队，0 关闭）
+export GATEWAY_BACKOFF_BASE=2 GATEWAY_BACKOFF_MAX=30   # 上游 429/5xx 指数退避（2·2ⁿ 封顶 30s，
+                                                       #  等抖动 + 尊重 Retry-After，被测侧无感）
 # 智能体侧只需两个变量（.env），dummy key 自动按 memhall-<适配器> 派生：
 export GATEWAY_URL=http://127.0.0.1:8311/v1          # 本机智能体
 export GATEWAY_VM_URL=http://192.168.61.1:8311/v1    # VM 内智能体（hermes/kylinbot）

@@ -9,7 +9,9 @@ fastapi/httpx 已是项目依赖，零新增。
 - **凭据单点**：真上游 key 只在网关进程环境（GATEWAY_UPSTREAM_KEY），智能体只拿
   各自 dummy key（memhall-<agent>）——入站 Bearer 兼作智能体身份标记（记账归因用，
   不满足前缀的 Bearer 记 unknown，且绝不把入站凭据写进日志/转发给上游）；
-- **记账**：每请求一行 JSONL（agent/model/tokens/耗时/状态码），GET /usage 出聚合。
+- **记账**：每请求一行 JSONL（agent/model/tokens/耗时/状态码/重试数），GET /usage 出聚合；
+- **安全节奏与退避**：转发最小间隔（GATEWAY_MIN_INTERVAL，默认 8s）+ 上游
+  429/5xx 指数退避重试（等抖动、尊重 Retry-After），超限信号还会把节奏门整体冷却。
 
 协议面：OpenAI Chat Completions（含流式 SSE 中继，注入 include_usage 抓用量）。
 anthropic 面（claude-local）v1 不做——该适配器走 anthropic 端点直连（如 bigmodel），
@@ -23,10 +25,12 @@ import contextlib
 import json
 import logging
 import os
+import random
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import httpx
@@ -55,6 +59,46 @@ def _inbound_ok(bearer: str) -> bool:
         return True
     token = os.environ.get("GATEWAY_INBOUND_TOKEN", "")
     return bool(token) and bearer == token
+
+
+# 指数退避（上游瞬态错误吸收）：限流/容量窗口直接 502 给被测智能体
+# = 白白废一个 case（invalid_run），网关内退避重试把它吃掉
+_UPSTREAM_ATTEMPTS = 4                       # 1 次原始 + 3 次退避重试
+_RETRYABLE = frozenset({429, 500, 502, 503, 504})
+
+
+def _retry_after_seconds(retry_after: str | None) -> float | None:
+    """Retry-After 头 → 秒。秒数直读；HTTP 日期算差值；解析不了当没有。"""
+    if not retry_after:
+        return None
+    s = retry_after.strip()
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    try:
+        dt = parsedate_to_datetime(s)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        return None
+    return (dt - datetime.now(UTC)).total_seconds()
+
+
+def _backoff_delay(attempt: int, retry_after: str | None,
+                   base: float, cap: float) -> float:
+    """指数退避 + 等抖动 + Retry-After。
+
+    delay = min(base·2^attempt, cap) 再取 [d/2, d) 等抖动——多客户端同拍
+    重试会互相撞限流，抖动把重试摊开；上游 Retry-After（秒/HTTP 日期）
+    优先于公式值，但同样封顶 cap——上游异常大的指示不跟着陪葬。
+    """
+    d = min(base * (2 ** attempt), cap)
+    d = random.uniform(d / 2, d)
+    ra = _retry_after_seconds(retry_after)
+    if ra is not None:
+        d = max(d, min(max(ra, 0.0), cap))
+    return d
 
 
 def create_gateway_app(upstream: str, api_key: str, model: str,
@@ -102,6 +146,8 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
     iv = float(min_interval)
     pace_lock = asyncio.Lock()
     pace_state = {"t": 0.0}
+    backoff_base = float(os.environ.get("GATEWAY_BACKOFF_BASE", "") or 2.0)
+    backoff_cap = float(os.environ.get("GATEWAY_BACKOFF_MAX", "") or 30.0)
 
     async def _pace() -> None:
         if iv <= 0:
@@ -112,10 +158,21 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
                 await asyncio.sleep(wait)
             pace_state["t"] = time.monotonic()
 
-    def _record(tag: str, asked: str, usage: dict | None, ms: float, status: int) -> None:
+    async def _pace_bump(delay: float) -> None:
+        """限流信号 → 全局冷却：把节奏门整体后移 delay——并发客户端一起慢
+        （429 是"我们整体太快"的信号，只退避当前请求治标）；节奏关着时不干预。"""
+        if iv <= 0:
+            return
+        async with pace_lock:
+            pace_state["t"] = max(pace_state["t"], time.monotonic() + delay)
+
+    def _record(tag: str, asked: str, usage: dict | None, ms: float, status: int,
+                retries: int = 0) -> None:
         rec = {"ts": datetime.now(UTC).isoformat(),
                "agent": tag, "model": model, "asked_model": asked,
                "status": status, "ms": round(ms)}
+        if retries:
+            rec["retries"] = retries   # 上游瞬态被退避重试吸收的次数（可观测）
         if usage:
             rec.update({k: usage.get(k) for k in
                         ("prompt_tokens", "completion_tokens", "total_tokens")})
@@ -157,13 +214,15 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
         await _pace()  # 安全节奏压在转发前（拒绝/坏请求早退，不占节奏额度；
         # 放 t0 前面，等待时间不进记账耗时）
         t0 = time.monotonic()
-        # 上游腿 TLS 断流（bad record mac 坏窗口）重试：aclose 是永久关闭，
-        # 必须弃旧建新客户端（复用已关客户端=整站 500，全量跑实逮）；
-        # 重试只覆盖建连/发请求阶段，流中途断不重发
+        # 上游腿两路瞬态都在这吸收：①建连/发送异常（TLS 断流 bad record mac
+        # 坏窗口；aclose 是永久关闭，必须弃旧建新客户端，复用已关客户端=整站
+        # 500，全量跑实逮）②429/5xx（限流/容量窗口）→ 指数退避重试，耗尽才
+        # 把最后一棒透传给调用方。重试只覆盖建连/发请求阶段，流中途断不重发。
         nonlocal client
         up = None
         last_err: Exception | None = None
-        for attempt in range(3):
+        n_retry = 0
+        for attempt in range(_UPSTREAM_ATTEMPTS):
             c = client
             assert c is not None  # init 已兜底
             try:
@@ -171,8 +230,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
                     "POST", "/chat/completions", json=payload,
                     headers={"Authorization": f"Bearer {api_key}",  # 真凭据只在这出现
                              "Content-Type": "application/json"})
-                up = await c.send(up_req, stream=stream)
-                break
+                resp = await c.send(up_req, stream=stream)
             except Exception as e:  # noqa: BLE001 TLS 断流常以裸 ssl.SSLError 冒出（实测）
                 last_err = e
                 log.warning("网关上游断流（第 %d 次）: %s", attempt + 1, e)
@@ -180,16 +238,36 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
                     await client.aclose()
                 if own_client:
                     client = _new_client()
-                await asyncio.sleep(0.5 * (attempt + 1))
+                if attempt < _UPSTREAM_ATTEMPTS - 1:
+                    n_retry += 1
+                    await asyncio.sleep(
+                        _backoff_delay(attempt, None, backoff_base, backoff_cap))
+                continue
+            if (resp.status_code in _RETRYABLE
+                    and attempt < _UPSTREAM_ATTEMPTS - 1):
+                body = (await resp.aread()).decode("utf-8", "replace")[:200]
+                await resp.aclose()
+                n_retry += 1
+                delay = _backoff_delay(attempt, resp.headers.get("retry-after"),
+                                       backoff_base, backoff_cap)
+                log.warning("网关上游 %d，退避 %.1fs 后重试（第 %d 次）: %s",
+                            resp.status_code, delay, attempt + 1, body)
+                await _pace_bump(delay)  # 全局冷却：并发客户端同步慢下来
+                await asyncio.sleep(delay)
+                continue
+            up = resp
+            break
         if up is None:
-            _record(tag, asked, None, (time.monotonic() - t0) * 1000, 599)
+            _record(tag, asked, None, (time.monotonic() - t0) * 1000, 599,
+                    retries=n_retry)
             return JSONResponse({"error": {"message": f"上游不可达: {last_err}",
                                            "type": "gateway_upstream_unreachable"}},
                                 status_code=502)
         if up.status_code >= 400:
             text = (await up.aread()).decode("utf-8", "replace")[:500]
             await up.aclose()
-            _record(tag, asked, None, (time.monotonic() - t0) * 1000, up.status_code)
+            _record(tag, asked, None, (time.monotonic() - t0) * 1000, up.status_code,
+                    retries=n_retry)
             log.warning("网关转发失败 %d: %s", up.status_code, text[:200])
             return JSONResponse({"error": {
                 "message": f"上游 {up.status_code}: {text}",
@@ -198,7 +276,8 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
         if not stream:
             data = up.json()
             await up.aclose()
-            _record(tag, asked, data.get("usage"), (time.monotonic() - t0) * 1000, 200)
+            _record(tag, asked, data.get("usage"), (time.monotonic() - t0) * 1000, 200,
+                    retries=n_retry)
             return JSONResponse(data)
 
         async def relay():
@@ -209,7 +288,8 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
                     yield chunk
             finally:
                 usage = _usage_from_sse(bytes(buf))
-                _record(tag, asked, usage, (time.monotonic() - t0) * 1000, 200)
+                _record(tag, asked, usage, (time.monotonic() - t0) * 1000, 200,
+                        retries=n_retry)
                 with contextlib.suppress(Exception):
                     await up.aclose()
 

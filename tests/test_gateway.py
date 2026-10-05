@@ -16,7 +16,13 @@ import httpx
 import pytest
 
 from memhall.adapters.base import AgentUnavailable
-from memhall.gateway import aggregate_usage, create_gateway_app, gateway_settings, model_backend
+from memhall.gateway import (
+    _backoff_delay,
+    aggregate_usage,
+    create_gateway_app,
+    gateway_settings,
+    model_backend,
+)
 
 UPSTREAM = "https://upstream.example/v1"
 REAL_KEY = "sk-real-secret"
@@ -122,8 +128,13 @@ def test_gateway_agent_tag_privacy_and_models(tmp_path):
     assert "sk-real-looking-key" not in log_text
 
 
-def test_gateway_upstream_failure_recorded(tmp_path):
+def test_gateway_upstream_failure_recorded(tmp_path, monkeypatch):
+    """重试耗尽：仍是最后一棒 502 透传（错误码在消息里），记账一行含 retries。"""
+    monkeypatch.setenv("GATEWAY_BACKOFF_BASE", "0.01")  # 默认 2s 会让测试白等
+    n = {"n": 0}
+
     def upstream(request: httpx.Request) -> httpx.Response:
+        n["n"] += 1
         return httpx.Response(429, json={"error": "rate limited"})
 
     async def go():
@@ -134,9 +145,11 @@ def test_gateway_upstream_failure_recorded(tmp_path):
 
     status, body = asyncio.run(go())
     assert status == 502 and "429" in body["error"]["message"]
+    assert n["n"] == 4  # 1 次原始 + 3 次退避重试
     rec = json.loads((tmp_path / "usage.jsonl")
                      .read_text(encoding="utf-8").splitlines()[0])
     assert rec["status"] == 429 and rec["agent"] == "memhall-opencode"
+    assert rec["retries"] == 3
     agg = aggregate_usage(tmp_path / "usage.jsonl")
     assert agg["agents"]["memhall-opencode"]["errors"] == 1
 
@@ -261,6 +274,7 @@ def test_compare_model_parity(tmp_path):
 def test_gateway_tls_error_rebuilds_client(tmp_path, monkeypatch):
     """上游 TLS 断流 → aclose 旧客户端后必须重建（复用已关客户端=整站 500，
     全量跑实逮：一次抖动砖死网关，kylinbot 两轮全灭）。"""
+    monkeypatch.setenv("GATEWAY_BACKOFF_BASE", "0.01")  # 断流重试同走退避曲线
     calls = {"n": 0}
 
     def upstream(request: httpx.Request) -> httpx.Response:
@@ -442,3 +456,74 @@ def test_gateway_pace_off_with_zero_interval(tmp_path):
         return codes
 
     assert asyncio.run(go()) == [200, 200, 200]
+
+
+def test_backoff_delay_schedule():
+    """指数退避曲线：base·2^n 封顶 cap，等抖动取 [d/2, d]，Retry-After 优先且封顶。"""
+    for _ in range(30):  # 抖动是随机的，多次采样验证边界
+        assert 1.0 <= _backoff_delay(0, None, 2.0, 30.0) <= 2.0      # 2^0·2=2
+        assert 8.0 <= _backoff_delay(3, None, 2.0, 30.0) <= 16.0     # 2^3·2=16
+        assert 15.0 <= _backoff_delay(9, None, 2.0, 30.0) <= 30.0    # 512 封顶 30
+    assert _backoff_delay(0, "120", 2.0, 30.0) == 30.0    # Retry-After 大值 → 封顶
+    assert _backoff_delay(3, "0.001", 2.0, 30.0) >= 8.0   # Retry-After 小值 → 公式优先
+    assert _backoff_delay(0, "garbage", 2.0, 30.0) <= 2.0  # 头解析不了当没有
+    assert 3.0 <= _backoff_delay(0, "6", 2.0, 30.0) <= 6.0  # 秒数指示被尊重
+
+
+def test_gateway_retries_transient_503(tmp_path, monkeypatch):
+    """瞬态 503 → 网关内退避重试吸收，被测侧无感拿 200；记账一行含 retries。"""
+    import time as _time
+    monkeypatch.setenv("GATEWAY_BACKOFF_BASE", "0.05")
+    calls = {"n": 0}
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return httpx.Response(503, json={"error": "upstream busy"})
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"total_tokens": 2}})
+
+    async def go():
+        async with _mk_app(tmp_path, upstream) as c:
+            r = await c.post("/v1/chat/completions", json={"model": "m"},
+                             headers={"Authorization": "Bearer memhall-hermes"})
+            return r.status_code
+
+    t0 = _time.monotonic()
+    status = asyncio.run(go())
+    dt = _time.monotonic() - t0
+    assert status == 200 and calls["n"] == 3
+    assert dt >= 0.05  # 两次退避至少各等 base/2
+    rec = json.loads((tmp_path / "usage.jsonl")
+                     .read_text(encoding="utf-8").splitlines()[0])
+    assert rec["retries"] == 2 and rec["status"] == 200
+
+
+def test_gateway_429_honors_retry_after(tmp_path, monkeypatch):
+    """上游 Retry-After 指示优先于公式退避（仍封顶 GATEWAY_BACKOFF_MAX）。"""
+    import time as _time
+    monkeypatch.setenv("GATEWAY_BACKOFF_BASE", "0.01")
+    monkeypatch.setenv("GATEWAY_BACKOFF_MAX", "5")
+    calls = {"n": 0}
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, json={"error": "rate limited"},
+                                  headers={"Retry-After": "0.5"})
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"total_tokens": 1}})
+
+    async def go():
+        async with _mk_app(tmp_path, upstream) as c:
+            r = await c.post("/v1/chat/completions", json={"model": "m"},
+                             headers={"Authorization": "Bearer memhall-qwen-local"})
+            return r.status_code
+
+    t0 = _time.monotonic()
+    status = asyncio.run(go())
+    dt = _time.monotonic() - t0
+    assert status == 200 and calls["n"] == 2
+    assert dt >= 0.45  # 公式值 ~0.005s，等待来自 Retry-After
