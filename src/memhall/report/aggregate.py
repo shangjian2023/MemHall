@@ -114,10 +114,14 @@ def aggregate_runs(run_dirs: list[Path], out_dir: Path) -> dict:
         raise ValueError(f"口径混杂，拒绝聚合：{sorted(map(str, keys))}（应同智能体同题库）")
 
     caps = {}
+    dropped: dict[str, dict] = {}
     probe_pooled = _load_probe_pool(run_dirs)
     for cap in _CAP_ORDER:
         scores = [mt["capability_scores"].get(cap) for _, mt in runs]
         if any(s is None for s in scores):
+            # R56：缺维不再静默消失——哪轮未测要可见（未测≠0 分，也不该蒸发）
+            dropped[cap] = {"label_zh": CAP_LABELS_ZH[cap],
+                            "n_missing_runs": sum(s is None for s in scores)}
             continue
         mean, std = _mean_std(scores)
         entry = {"label_zh": CAP_LABELS_ZH[cap], "n": len(scores),
@@ -138,6 +142,7 @@ def aggregate_runs(run_dirs: list[Path], out_dir: Path) -> dict:
         "overall": {"mean": round(overall_m, 4), "std": round(overall_s, 4),
                     **overall_ci},
         "capabilities": caps,
+        "dropped_capabilities": dropped,   # R56：缺维标注（含哪几轮未测）
         "runs": [{"run_id": m.get("run_id"),
                   "overall_score": round(mt["overall_score"], 4)
                   if mt.get("overall_score") is not None else None,
@@ -160,6 +165,10 @@ def format_table(result: dict) -> str:
     if ci:
         n_probe = result["overall"].get("n_score_probes", "?")
         lines[-1] += f"（95% CI {ci[0]:.0%}~{ci[1]:.0%}，bootstrap {n_probe} 探测点）"
+    if result.get("dropped_capabilities"):
+        miss = "、".join(f"{d['label_zh']}({d['n_missing_runs']} 轮未测)"
+                         for d in result["dropped_capabilities"].values())
+        lines.append(f"未入表维度：{miss}（未测≠0 分）")
     lines.append("维度｜均值±标准差（min~max）")
     for c in result["capabilities"].values():
         row = (f"  {c['label_zh']}：{c['mean']:.1%} ± {c['std']:.1%}"
