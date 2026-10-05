@@ -88,6 +88,9 @@ ADAPTER_CLI: dict[str, list[str]] = {
     "hermes": _hermes_candidates(),
     "claude": ["claude", "~/.local/bin/claude"],
     "qwen": ["qwen", "~/.local/bin/qwen"],
+    # openKylin 侧智能体：绝对路径兜底（SSH/桌面起的进程 PATH 不含用户安装位）
+    "kylinbot": ["kylin-bot", "/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"],
+    "openclaw": ["openclaw", "~/.local/bin/openclaw"],
 }
 
 
@@ -122,7 +125,7 @@ LOCAL_AGENTS: list[tuple[str, list[str], list[str], str, str]] = [
     ("cursor-agent", ["cursor-agent", "cursor"], ["~/.cursor"], "", "cli"),
     ("copilot-cli", ["copilot"], ["~/.copilot"], "", "cli"),
     ("codebuddy", ["codebuddy"], ["~/.codebuddy"], "", "cli"),
-    ("openclaw", ["openclaw", "~/.local/bin/openclaw"], ["~/.openclaw"], "openclaw", "cli"),
+    ("openclaw", ADAPTER_CLI["openclaw"], ["~/.openclaw"], "openclaw", "cli"),
     ("qoder", ["qoder"], ["~/.qoder"], "", "cli"),
     ("qoderwork", ["qoderwork"], ["~/.qoderwork"], "", "cli"),
     ("qwenwork", ["qwenwork"], ["~/.QwenWorkCN"], "", "cli"),
@@ -130,7 +133,7 @@ LOCAL_AGENTS: list[tuple[str, list[str], list[str], str, str]] = [
     ("goose", ["goose"], ["~/.config/goose"], "", "cli"),
     ("crush", ["crush"], ["~/.config/crush"], "", "cli"),
     ("hermes", ADAPTER_CLI["hermes"], ["~/.hermes"], "hermes-local", "cli"),
-    ("kylin-bot", ["kylin-bot"], ["~/.kylinbot"], "kylinbot", "cli"),
+    ("kylin-bot", ADAPTER_CLI["kylinbot"], ["~/.kylinbot"], "kylinbot", "cli"),
     # --- IDE / 编辑器内智能体 ---
     ("cline", ["cline"], ["~/.cline"], "", "ide"),
     ("continue", ["continue"], ["~/.continue"], "", "ide"),
@@ -160,6 +163,7 @@ EXTRA_TOOLS: list[tuple[str, list[str], list[str], str, str]] = [
 VM_AGENTS: list[tuple[str, list[str], str]] = [
     ("hermes", ["~/.hermes/bin/hermes", "/usr/local/bin/hermes"], "hermes"),
     ("kylin-bot", ["/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"], "kylinbot"),
+    ("openclaw", ["~/.local/bin/openclaw"], "openclaw"),
 ]
 
 
@@ -319,7 +323,8 @@ _VM_PROBE = (
     "'hermes|~/.hermes/bin/hermes' "
     "'hermes|/usr/local/bin/hermes' "
     "'kylin-bot|/usr/bin/kylin-bot' "
-    "'kylin-bot|/usr/local/bin/kylin-bot'; do "
+    "'kylin-bot|/usr/local/bin/kylin-bot' "
+    "'openclaw|~/.local/bin/openclaw'; do "
     "n=${spec%%|*}; p=${spec##*|}; "
     "[ -x $(eval echo $p) ] && "
     "echo \"$n|$($(eval echo $p) --version 2>/dev/null | head -1 | cut -c1-40)|$p\"; "
@@ -329,9 +334,10 @@ _VM_PROBE = (
 )
 
 
-def _vm_is_self() -> bool:
+def vm_is_self() -> bool:
     """VM_HOST 指向本机（openKylin 原生模式）：本机扫描已覆盖全部智能体，
-    "评测机"段是 Windows 宿主 + 远端 VM 架构才需要的区分。"""
+    "评测机"段是 Windows 宿主 + 远端 VM 架构才需要的区分。
+    UI（deploy-mode/adapter-status）也按它切换页面口径。"""
     host = os.environ.get("VM_HOST", "").strip()
     if not host:
         return False
@@ -348,7 +354,7 @@ def _vm_is_self() -> bool:
 
 
 def scan_vm() -> tuple[list[Finding], str]:
-    if _vm_is_self():
+    if vm_is_self():
         return [], "SAME-MACHINE"
     if not os.environ.get("VM_PASS"):
         return [], "缺 VM_PASS（.env 未加载），跳过评测机扫描"
@@ -374,6 +380,45 @@ def scan_vm() -> tuple[list[Finding], str]:
                                                      adapter="kylinbot"))
         f.hint = "brain.db 记忆库在位"
     return list(findings.values()), ""
+
+
+def adapter_availability(vm_probe=None) -> dict:
+    """跑页下拉框的真实可跑性（UI /api/adapter-status 数据源，不装不骗人）。
+
+    部署形态决定口径（UI 描述随形态切换，Windows 侧与 openKylin 侧看到的不一样）：
+    - native：VM_HOST 指向本机 = openKylin 原生模式，本机即评测机。hermes/
+      kylinbot/openclaw 驱动的是本机智能体（回环 SSH 只是驱动通道），label 按
+      "本机"口径，可跑 = 本机检出二进制 + 回环通道（VM_HOST/VM_PASS）配好。
+    - remote：Windows 宿主 + 评测 VM。label 按"VM 真机"口径，可跑由 VM 内
+      SSH 实测决定（vm_probe 返回 list[Finding]，可注入；缺省走 scan_vm）。
+    mock 恒可用；本机适配器一律按 find_cli 真探测。未检出即 ok=False，
+    由前端从下拉里剔除（完整名单与原因在体检页）。
+    """
+    native = vm_is_self()
+    channel = bool(os.environ.get("VM_HOST") and os.environ.get("VM_PASS"))
+    local = {k: bool(find_cli(*cands)) for k, cands in ADAPTER_CLI.items()}
+    adapters = {
+        "mock": {"label": "mock（离线演示）", "ok": True},
+        "hermes-local": {"label": "hermes（本机直连）" if native else "hermes（本机）",
+                         "ok": local["hermes"]},
+        "claude-local": {"label": "claude code（本机）", "ok": local["claude"]},
+        "qwen-local": {"label": "qwen code（本机）", "ok": local["qwen"]},
+    }
+    if native:
+        adapters.update({
+            "hermes": {"label": "hermes（本机）", "ok": channel and local["hermes"]},
+            "kylinbot": {"label": "kylinbot（本机）", "ok": channel and local["kylinbot"]},
+            "openclaw": {"label": "openclaw（本机）", "ok": channel and local["openclaw"]},
+        })
+    else:
+        vm = vm_probe() if vm_probe else scan_vm()[0]
+        found = {f.adapter for f in vm if f.found and f.adapter}
+        adapters.update({
+            "hermes": {"label": "hermes（VM 真机）", "ok": "hermes" in found},
+            "kylinbot": {"label": "kylinbot（VM 真机）", "ok": "kylinbot" in found},
+            "openclaw": {"label": "openclaw（VM 真机）", "ok": "openclaw" in found},
+        })
+    return {"mode": "native" if native else "remote", "adapters": adapters}
 
 
 def check_env() -> list[EnvCheck]:
