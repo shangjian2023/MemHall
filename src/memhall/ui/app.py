@@ -27,6 +27,7 @@ import os
 import re
 import sys
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -96,6 +97,21 @@ class RunSession:
 
 
 session = RunSession()
+
+# scan_vm 结果短缓存：页面加载会同时触发体检与下拉两条 VM 探测，SSH 不通时
+# 连接超时最长 15s，别让下拉跟着干等第二遍。
+_vm_probe_cache: tuple[float, list] = (0.0, [])
+
+
+def _cached_vm_findings(ttl_s: float = 60.0) -> list:
+    global _vm_probe_cache
+    now = time.monotonic()
+    if now - _vm_probe_cache[0] < ttl_s:
+        return _vm_probe_cache[1]
+    from memhall.discovery import scan_vm
+    vm, _err = scan_vm()
+    _vm_probe_cache = (now, vm)
+    return vm
 
 
 def _safe_run_id(run_id: str) -> Path:
@@ -168,21 +184,20 @@ def create_app() -> FastAPI:
         from memhall.discovery import LOCAL_AGENTS
         return {"names": [a[0] for a in LOCAL_AGENTS]}
 
+    @app.get("/api/deploy-mode")
+    def deploy_mode() -> dict:
+        """部署形态（毫秒级、无 SSH）：native = 本机即评测机（openKylin 原生，
+        VM_HOST 指向本机），remote = 宿主机 + 评测 VM。配置页文案据此切换口径。"""
+        from memhall.discovery import vm_is_self
+        return {"mode": "native" if vm_is_self() else "remote",
+                "host": os.environ.get("VM_HOST", "")}
+
     @app.get("/api/adapter-status")
     def adapter_status() -> dict:
-        """跑页下拉框的真实可跑性：与适配器同款 find_cli 探测（PATH+已知安装位），
-        不装不骗人。mock 内置恒可用；VM 型取决于 VM_HOST 通道配置。"""
-        from memhall.discovery import ADAPTER_CLI, find_cli
-        vm = bool(os.environ.get("VM_HOST"))
-        return {
-            "mock": {"label": "mock（离线演示）", "ok": True},
-            "hermes-local": {"label": "hermes（本机）", "ok": bool(find_cli(*ADAPTER_CLI["hermes"]))},
-            "claude-local": {"label": "claude code（本机）", "ok": bool(find_cli(*ADAPTER_CLI["claude"]))},
-            "qwen-local": {"label": "qwen code（本机）", "ok": bool(find_cli(*ADAPTER_CLI["qwen"]))},
-            "hermes": {"label": "hermes（VM 真机）", "ok": vm},
-            "kylinbot": {"label": "kylinbot（VM 真机）", "ok": vm},
-            "openclaw": {"label": "openclaw（VM 真机）", "ok": vm},
-        }
+        """跑页下拉框数据源：按部署形态切换 label 口径与探测方式
+        （native 探本机、remote SSH 探 VM），逻辑单源在 discovery.adapter_availability。"""
+        from memhall.discovery import adapter_availability
+        return adapter_availability(vm_probe=_cached_vm_findings)
 
     @app.get("/api/meta")
     def meta() -> dict:

@@ -328,11 +328,7 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
         <div class="cardtitle" style="margin-bottom:14px">评测</div>
         <div class="formrow">
           <div class="field"><label>被测智能体</label>
-            <select id="fAdapter"><option value="mock">mock（离线演示）</option>
-              <option value="hermes-local">hermes（本机）</option>
-              <option value="claude-local">claude code（本机）</option>
-              <option value="qwen-local">qwen code（本机）</option>
-              <option value="hermes">hermes（VM）</option><option value="kylinbot">kylinbot（VM）</option><option value="openclaw">openclaw（VM）</option></select></div>
+            <select id="fAdapter"><option value="mock">mock（离线演示）</option></select></div>
           <div class="field"><label>用例集</label><select id="fCases"></select></div>
           <div class="field"><label>判卷</label>
             <select id="fJudge"><option value="scripted">脚本判卷（离线）</option>
@@ -403,8 +399,8 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
               写入 <span class="mono" id="cfgPath"></span>（不入 git）；密钥只回显「已设置」，留空即保持不变</div></div>
           <button class="act" id="btnSaveCfg">保存配置</button>
         </div>
-        <h2.sec>评测机 SSH —— hermes / kylinbot 走这条通道</h2>
-        <div class="cfg-sub">被测智能体跑在 openKylin VM 里：麟阁靠这条 SSH 驱动它发消息、取记忆证据，体检页"评测机"段同源</div>
+        <h2.sec id="cfgVmHead">评测机 SSH —— hermes / kylinbot / openclaw 走这条通道</h2.sec>
+        <div class="cfg-sub" id="cfgVmSub">被测智能体跑在 openKylin VM 里：麟阁靠这条 SSH 驱动它发消息、取记忆证据，体检页"评测机"段同源</div>
         <div class="cfg-grid" id="cfgVM"></div>
         <h2.sec>判卷 LLM —— 选「LLM 判卷」时才联网</h2>
         <div class="cfg-sub">脚本判卷离线零成本。选 LLM 判卷时用 JUDGE_A 组打分（当前 qwen 单判），JUDGE_B 配置后才启用双判仲裁。被测智能体自己的模型后端不在这里——各智能体安装时就已配好（如 kylinbot 的 config.toml）</div>
@@ -688,10 +684,15 @@ async function loadCaseDirs(){
   }catch(e){$("#fCases").innerHTML='<option value="cases/full">cases/full</option>';}
 }
 async function loadAdapters(){
-  /* 静态 option 是兜底；接口给出真实可跑性，未检出的标注出来防误选 */
+  /* 下拉只列真实可跑的：本机检出 / 评测机（VM）内检出 / mock——未检出的
+     不进名单（谁没装、什么原因，体检页有完整清单）。label 口径随部署形态：
+     openKylin 原生跑（本机即评测机）显示"本机"，宿主机远程驱动显示"VM 真机"。
+     接口失败退回静态兜底（仅 mock）。 */
   try{const st=await api("/api/adapter-status");
-    $("#fAdapter").innerHTML=Object.entries(st).map(([id,v])=>
-      `<option value="${id}">${esc(v.label)}${v.ok?"":"（未检出）"}</option>`).join("");
+    const opts=Object.entries(st.adapters).filter(([,v])=>v.ok);
+    if(opts.length)
+      $("#fAdapter").innerHTML=opts.map(([id,v])=>
+        `<option value="${id}">${esc(v.label)}</option>`).join("");
   }catch(e){}
 }
 function logLine(cls,msg,title){
@@ -965,6 +966,13 @@ async function loadConfig(){
   try{
     const d=await api("/api/config");cfgLoaded=true;
     $("#cfgPath").textContent=d.env_path;
+    /* 部署形态切换口径：openKylin 原生跑时本机即评测机，SSH 段描述按"本机"
+       讲（回环驱动本机装的智能体），不再是宿主机视角的"跑在 VM 里" */
+    api("/api/deploy-mode").then(m=>{
+      if(m.mode!=="native")return;
+      $("#cfgVmHead").textContent="本机智能体驱动 —— hermes / kylinbot / openclaw 走本机回环 SSH";
+      $("#cfgVmSub").textContent="openKylin 原生模式：本机即评测机，被测智能体就装在本机。麟阁经本机回环 SSH（127.0.0.1）驱动它们发消息、取记忆证据，VM_USER / VM_PASS 填本机 SSH 账号即可";
+    }).catch(()=>{});
     for(const[grid,re]of CFG_GROUPS){
       const box=$("#"+grid);
       const items=d.items.filter(i=>re.test(i.key));
