@@ -24,7 +24,7 @@ import os
 import threading
 import time
 
-from memhall.adapters.base import AgentAdapter, AgentUnavailable
+from memhall.adapters.base import AdapterError, AgentAdapter, AgentUnavailable
 from memhall.adapters.remote import SshChannel, elapsed_ms, now_utc
 from memhall.schema.evidence import (
     ActionDump,
@@ -44,6 +44,11 @@ _SEND_MIN_INTERVAL = float(os.environ.get("OPENCLAW_SEND_INTERVAL", "5"))
 _send_lock = threading.Lock()
 _last_send = 0.0
 
+# R37：沙箱模型参数可外置——评测器替被测者硬编码 contextWindow/maxTokens
+# 属于"适配器替被测者做配置选择"，默认值对齐当前实测，可用环境变量覆盖
+_OC_CONTEXT = int(os.environ.get("OPENCLAW_CONTEXT_WINDOW", "131072"))
+_OC_MAX_TOKENS = int(os.environ.get("OPENCLAW_MAX_TOKENS", "8192"))
+
 
 def _send_throttle() -> None:
     global _last_send
@@ -55,12 +60,13 @@ def _send_throttle() -> None:
 
 
 # sqlite 记忆导出（read-only 连接；列序见模块 docstring）
+# R58：导出截断如实上报——count(*) 对照 limit，超限标 truncated
 _DUMP_SRC = (
     "import json,sqlite3,os\n"
     f"db=os.path.expanduser('{AGENT_DB}')\n"
     "c=sqlite3.connect('file:'+db+'?mode=ro',uri=True)\n"
     "rows=c.execute(\"select path,source,start_line,text from memory_index_chunks "
-    "order by path,start_line limit 400\").fetchall()\n"
+    "order by path,start_line limit 401\").fetchall()\n"
     "print(json.dumps(rows,ensure_ascii=False))\n"
 )
 
@@ -105,8 +111,8 @@ class OpenClawAdapter(AgentAdapter):
                             "name": s["model"],
                             "reasoning": False,
                             "input": ["text"],
-                            "contextWindow": 131072,
-                            "maxTokens": 8192,
+                            "contextWindow": _OC_CONTEXT,
+                            "maxTokens": _OC_MAX_TOKENS,
                             "cost": {"input": 0, "output": 0,
                                      "cacheRead": 0, "cacheWrite": 0},
                         }],
@@ -173,19 +179,23 @@ class OpenClawAdapter(AgentAdapter):
 
     def dump_memory(self) -> MemorySnapshot:
         script = "python3 -c '" + _DUMP_SRC.replace("'", "'\\''") + "'"
+        # R31：导出失败如实标注 dump_ok=False（规则层判运行无效），
+        # 不再折叠成空 entries（canary 泄漏洗白面）
         try:
             rows = self.ch.run_json(script)
-        except RuntimeError:
+        except RuntimeError as e:
             return MemorySnapshot(format="sqlite", dumped_at=now_utc(),
-                                  entries=[], raw=None)
+                                  entries=[], raw=None, dump_ok=False,
+                                  error=str(e)[:200])
+        truncated = len(rows) > 400   # R58：limit 401 探测超限
         entries = [
             MemoryEntry(entry_id=f"c{rowid}", content=text,
                         created_at=None, source_turn=path)
-            for rowid, (path, _source, _line, text) in enumerate(rows, 1)
+            for rowid, (path, _source, _line, text) in enumerate(rows[:400], 1)
             if text.strip()
         ]
         return MemorySnapshot(format="sqlite", dumped_at=now_utc(),
-                              entries=entries, raw=None)
+                              entries=entries, raw=None, truncated=truncated)
 
     def dump_actions(self) -> ActionDump:
         return ActionDump(actions=[], coverage="unknown")
@@ -198,22 +208,30 @@ class OpenClawAdapter(AgentAdapter):
         return line or None
 
     def clock_shift(self, days: int) -> None:
-        """VM 拨钟（sudo date -s），记录原时刻供恢复。"""
+        """VM 拨钟（sudo date -s），记录原时刻供恢复。
+        R33：失败抛 AdapterError——orchestrator 只兜 AdapterError。"""
         if days == 0:
             return
         rc, out, _ = self.ch.run("date +%s")
         if rc != 0:
-            raise RuntimeError("拨钟前读取系统时间失败")
+            raise AdapterError("拨钟前读取系统时间失败")
         self._clock_epoch = int(out.strip())
         rc, _, err = self.ch.sudo(f"date -s '+{days} days' >/dev/null 2>&1 && echo ok")
         if rc != 0:
-            raise RuntimeError(f"拨钟失败: {err.strip()[:200]}")
+            raise AdapterError(f"拨钟失败: {err.strip()[:200]}")
 
     def clock_restore(self) -> None:
-        if self._clock_epoch is None:
+        """R33：恢复校验 rc，失败暴露（时钟残留会污染后续所有 case）。"""
+        epoch = getattr(self, "_clock_epoch", None)
+        if epoch is None:
             return
-        self.ch.sudo(f"date -s @{self._clock_epoch} >/dev/null 2>&1 && echo ok")
         self._clock_epoch = None
+        rc, _, err = self.ch.sudo(f"date -s @{epoch} >/dev/null 2>&1 && echo ok")
+        if rc != 0:
+            raise AdapterError(f"时钟恢复失败: {err.strip()[:200]}")
+
+    def close(self) -> None:
+        self.ch.close()
 
     def fs_snapshot(self) -> list[str] | None:
         """~ 用户区 + 沙箱 workspace 子树（R24：chain 任务建在沙箱内也要被

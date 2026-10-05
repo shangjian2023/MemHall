@@ -100,7 +100,8 @@ def test_gateway_stream_relay_and_usage(tmp_path):
 
 
 def test_gateway_agent_tag_privacy_and_models(tmp_path):
-    """非 dummy Bearer（误配真 key）→ 记 unknown 且真 key 不落日志；/models 列统一模型。"""
+    """非 dummy Bearer（误配真 key）→ R34 起 401 拒转（不再照转+记 unknown）；
+    真凭据既不转发也不落日志；/models 列统一模型。"""
     def upstream(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [], "usage": None})
 
@@ -112,11 +113,9 @@ def test_gateway_agent_tag_privacy_and_models(tmp_path):
             return r1.status_code, r2.json()
 
     s1, models = asyncio.run(go())
-    assert s1 == 200
+    assert s1 == 401          # R34：入站鉴权 fail closed
     assert [m["id"] for m in models["data"]] == ["unified-m"]
     log_text = (tmp_path / "usage.jsonl").read_text(encoding="utf-8")
-    rec = json.loads(log_text.splitlines()[0])
-    assert rec["agent"] == "unknown"
     assert "sk-real-looking-key" not in log_text
 
 

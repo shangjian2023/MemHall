@@ -98,11 +98,22 @@ class AgentAdapter(ABC):
         return None
 
     def clock_shift(self, days: int) -> None:
-        """拨动被测环境系统时钟 N 天（模拟隔天/隔周，temporal 题前提）。默认 no-op。"""
-        return
+        """拨动被测环境系统时钟 N 天（模拟隔天/隔周，temporal 题前提）。
+
+        R38：默认 fail-closed——不覆写就把 temporal 题当普通题跑，智能体在
+        零时间间隔下作答分数虚高，还会让"拨钟题分组呈现"的口径失真。
+        未实现的适配器在此抛错，temporal 用例判运行无效（单列，不算 0 分）。
+        """
+        if days == 0:
+            return
+        raise AdapterError("本适配器未实现拨钟，temporal 用例判运行无效")
 
     def clock_restore(self) -> None:
         """恢复系统时钟（case 结束由 runner 调用）。默认 no-op。"""
+        return
+
+    def close(self) -> None:
+        """释放底层资源（SSH 连接等）。run_suite 结束时统一调用；默认 no-op。"""
         return
 
     def verify_reset(self) -> None:
@@ -110,8 +121,12 @@ class AgentAdapter(ABC):
 
         默认校验 dump_memory 为空；适配器有 dump 覆盖不到的记忆源
         （会话转录、其他存储文件）时应覆写加强。reset 不彻底 = 跨用例
-        污染——同问异答的题库里上一个 case 的答案是定向毒药，宁可中止。"""
+        污染——同问异答的题库里上一个 case 的答案是定向毒药，宁可中止。
+        R31：导出失败（dump_ok=False）无法验证清零，同样 fail fast。"""
         snap = self.dump_memory()
+        if not snap.dump_ok:
+            raise AdapterError(
+                f"reset 后记忆导出失败，无法验证清零: {snap.error[:120]}")
         if snap.entries:
             raise AdapterError(
                 f"reset 后记忆非空（{len(snap.entries)} 条残留）："

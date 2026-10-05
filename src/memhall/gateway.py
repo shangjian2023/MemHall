@@ -47,6 +47,16 @@ def _agent_tag(bearer: str) -> str:
     return bearer if bearer.startswith("memhall-") else "unknown"
 
 
+def _inbound_ok(bearer: str) -> bool:
+    """R34：入站鉴权——Bearer 必须是 memhall-* 派生 dummy 或 GATEWAY_INBOUND_TOKEN。
+    此前任何 Bearer（含空）都照转：网关绑 0.0.0.0 时 LAN 任何主机可白嫖真 key
+    刷量、伪造 memhall-* tag 污染记账。不匹配 401 不转发。"""
+    if bearer.startswith("memhall-"):
+        return True
+    token = os.environ.get("GATEWAY_INBOUND_TOKEN", "")
+    return bool(token) and bearer == token
+
+
 def create_gateway_app(upstream: str, api_key: str, model: str,
                        log_path: Path | None = None,
                        client: httpx.AsyncClient | None = None,
@@ -97,6 +107,14 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
         state["n_req"] += 1
         raw = await request.body()
         bearer = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        # R34：入站鉴权 fail closed——不匹配的 Bearer 不转发（防 LAN 白嫖真 key
+        # 与伪造 tag 污染记账）；memhall-* dummy 或 GATEWAY_INBOUND_TOKEN 放行
+        if not _inbound_ok(bearer):
+            _record("rejected", "", None, 0.0, 401)
+            return JSONResponse({"error": {"message": "入站凭据不合法：Bearer 应为 "
+                                           "memhall-* 派生 dummy 或 GATEWAY_INBOUND_TOKEN",
+                                           "type": "gateway_unauthorized"}},
+                                status_code=401)
         tag = _agent_tag(bearer)
         if tag == "unknown":
             # 某些智能体（hermes 部分内部调用）用 x-api-key 带 key——同样识别
@@ -195,7 +213,10 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
         app.get(path)(_models)
 
     @app.get("/usage")
-    async def _usage() -> JSONResponse:
+    async def _usage(request: Request) -> JSONResponse:
+        # R34：记账数据同样不裸奔——回环免token，外部访问须带合法凭据
+        if not _loopback(request) and not _req_inbound_ok(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         return JSONResponse(aggregate_usage(log_path))
 
     @app.post("/v1/messages")
@@ -206,7 +227,10 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             "type": "gateway_protocol_unsupported"}}, status_code=501)
 
     @app.get("/health")
-    async def _health() -> JSONResponse:
+    async def _health(request: Request) -> JSONResponse:
+        # R34：同 /usage——回环免 token，外部访问须带合法凭据
+        if not _loopback(request) and not _req_inbound_ok(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         return JSONResponse({"ok": True, "model": model, "upstream": upstream,
                              "n_req": state["n_req"]})
 
@@ -214,19 +238,39 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
 
 
 def _usage_from_sse(buf: bytes) -> dict | None:
-    """从 SSE 流原文里抓最后一个 usage 块（include_usage 注入的产出）。"""
+    """从 SSE 流原文里抓最后一个 usage 块（include_usage 注入的产出）。
+
+    R59：按 \\n\\n 分帧、帧内逐行剥 data: 前缀——回复正文含 "data: " 字面量
+    （如让模型输出原始 SSE 示例文本）时，旧的全文劈分法会把 usage 解析切碎，
+    流式记账静默丢失。"""
     usage = None
-    for part in buf.split(b"data: "):
-        part = part.strip()
-        if not part or part == b"[DONE]":
-            continue
-        try:
-            chunk = json.loads(part)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(chunk, dict) and chunk.get("usage"):
-            usage = chunk["usage"]
+    for frame in buf.split(b"\n\n"):
+        for line in frame.split(b"\n"):
+            line = line.strip()
+            if not line.startswith(b"data:"):
+                continue
+            part = line[5:].strip()
+            if not part or part == b"[DONE]":
+                continue
+            try:
+                chunk = json.loads(part)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(chunk, dict) and chunk.get("usage"):
+                usage = chunk["usage"]
     return usage
+
+
+def _loopback(request: Request) -> bool:
+    host = (request.client.host if request.client else "") or ""
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
+def _req_inbound_ok(request: Request) -> bool:
+    bearer = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not bearer:
+        bearer = request.headers.get("x-api-key", "").strip()
+    return _inbound_ok(bearer)
 
 
 def aggregate_usage(log_path: Path) -> dict:
