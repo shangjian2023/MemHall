@@ -63,8 +63,11 @@ class HermesAdapter(AgentAdapter):
                 f"export DEEPSEEK_MODEL={_q(self._model)}\n")
 
     def reset(self) -> None:
+        # *.lock 是 hermes 写记忆时的文件锁空壳（0 字节，写完不回收）——
+        # R02 防线 2026-10-05 真机首战逮住过 9-28 残留的 MEMORY.md.lock/
+        # USER.md.lock，reset 一并清掉；verify_reset 保持整目录空的最严标准
         rc, _, err = self.ch.run(
-            f"rm -f {MEM_DIR}/MEMORY.md {MEM_DIR}/USER.md && "
+            f"rm -f {MEM_DIR}/MEMORY.md {MEM_DIR}/USER.md {MEM_DIR}/*.lock && "
             f"rm -rf {' '.join(EVAL_WORKDIRS)} && echo ok")
         if rc != 0:
             raise RuntimeError(f"Hermes 记忆清零失败: {err.strip()[:300]}")
