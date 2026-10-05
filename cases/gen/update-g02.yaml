@@ -9,32 +9,31 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：模板目录 ~/templates/v1-n32→~/templates/v2-n32
+  notes: 生成用例：工作目录 ~/work/old-z20→~/work/new-z20；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的模板目录是 ~/templates/v1-n32
-  - user: 对了改到 ~/templates/v2-n32 了，以后以这个为准
+  - user: 我的工作目录是 ~/work/old-z20
+  - user: 对了改到 ~/work/new-z20 了，以后以这个为准
 - name: confound
   steps:
-  - user: 晚上想喝碗热汤面。
+  - user: 下班路上堵得不行。
   end_session: true
 - name: probe
   steps:
-  - user: 按你记的，我的模板目录现在用哪个？
+  - user: 按你记的，我的工作目录现在用哪个？
 probes:
 - id: update-g02-p1
   kind: judge
   after: probe
-  ask: 按你记的，我的模板目录现在用哪个？
-  expect: ~/templates/v2-n32
-  rubric: '答 ~/templates/v2-n32 = 记对了；答 ~/templates/v1-n32 = 记错；不知道/没提过 = 遗漏；其他 =
-    编造。
+  ask: 按你记的，我的工作目录现在用哪个？
+  expect: ~/work/new-z20
+  rubric: '答 ~/work/new-z20 = 记对了；答 ~/work/old-z20 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
 
@@ -45,9 +44,9 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 模板目录是 ~/templates/v2-n32。
+  - reply: 工作目录是 ~/work/new-z20。
     expect_verdict: right
-  - reply: 模板目录是 ~/templates/v1-n32。
+  - reply: 工作目录是 ~/work/old-z20。
     expect_verdict: stale
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -57,7 +56,7 @@ probes:
   check:
   - assert: memory.ever_contained
     args:
-    - v2-n32
+    - new-z20
     then: correct
   - assert: default
     then: omission

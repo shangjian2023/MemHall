@@ -9,17 +9,17 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：前端仓=~/work/web-k11 vs 管理端仓=~/work/web-lite-k11
+  notes: 生成用例：前端仓=~/proj/web-m99 vs 管理端仓=~/proj/web-lite-m99；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的前端仓是 ~/work/web-k11
-  - user: 我的管理端仓在 ~/work/web-lite-k11
+  - user: 我的前端仓是 ~/proj/web-m99
+  - user: 我的管理端仓在 ~/proj/web-lite-m99
 - name: confound
   steps:
   - user: 最近 UKUI 桌面的动画好像顺滑了些。
@@ -32,8 +32,8 @@ probes:
   kind: judge
   after: probe
   ask: 你记的我的前端仓是哪个？
-  expect: ~/work/web-k11
-  rubric: '答 ~/work/web-k11 = 记对了；答 ~/work/web-lite-k11 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
+  expect: ~/proj/web-m99
+  rubric: '答 ~/proj/web-m99 = 记对了；答 ~/proj/web-lite-m99 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
 
@@ -44,9 +44,9 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 前端仓是 ~/work/web-k11。
+  - reply: 前端仓是 ~/proj/web-m99。
     expect_verdict: right
-  - reply: 前端仓是 ~/work/web-lite-k11。
+  - reply: 前端仓是 ~/proj/web-lite-m99。
     expect_verdict: stale
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -56,7 +56,7 @@ probes:
   check:
   - assert: memory.ever_contained
     args:
-    - web-k11
+    - web-m99
     then: correct
   - assert: default
     then: omission

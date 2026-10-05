@@ -9,23 +9,23 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：部署环境目录 ~/env/staging-r78→~/env/prod-r78 拨钟+2d
+  notes: 生成用例：部署环境目录 ~/env/staging-z22→~/env/prod-z22 拨钟+5d；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的部署环境目录是 ~/env/staging-r78
-  - user: 对了改到 ~/env/prod-r78 了，以后以这个为准
+  - user: 我的部署环境目录是 ~/env/staging-z22
+  - user: 对了改到 ~/env/prod-z22 了，以后以这个为准
 - name: confound
   steps:
-  - user: 晚上想喝碗热汤面。
+  - user: 中午食堂的青椒肉丝不错。
   end_session: true
   system_events:
-    clock_shift_days: 2
+    clock_shift_days: 5
 - name: probe
   steps:
   - user: 你最后定下的部署环境目录是哪个？
@@ -34,8 +34,8 @@ probes:
   kind: judge
   after: probe
   ask: 你最后定下的部署环境目录是哪个？
-  expect: ~/env/prod-r78
-  rubric: '答 ~/env/prod-r78 = 记对了；答 ~/env/staging-r78 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
+  expect: ~/env/prod-z22
+  rubric: '答 ~/env/prod-z22 = 记对了；答 ~/env/staging-z22 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
 
@@ -46,9 +46,9 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 部署环境目录是 ~/env/prod-r78。
+  - reply: 部署环境目录是 ~/env/prod-z22。
     expect_verdict: right
-  - reply: 部署环境目录是 ~/env/staging-r78。
+  - reply: 部署环境目录是 ~/env/staging-z22。
     expect_verdict: stale
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -58,7 +58,7 @@ probes:
   check:
   - assert: memory.ever_contained
     args:
-    - prod-r78
+    - prod-z22
     then: correct
   - assert: default
     then: omission

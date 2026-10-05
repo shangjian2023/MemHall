@@ -73,7 +73,7 @@ probes:
     check:
       - assert: memory.entry_count
         args:
-          - pattern: "~/proj/api"
+          - pattern: "re:~/proj/api(?![0-9A-Za-z_/-])"
             cmp: eq
             n: 2
         then: correct

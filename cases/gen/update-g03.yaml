@@ -9,31 +9,31 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：脚本目录 ~/scripts/bin-z32→~/scripts/tools-z32
+  notes: 生成用例：模板目录 ~/templates/v1-q80→~/templates/v2-q80；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的脚本目录是 ~/scripts/bin-z32
-  - user: 对了改到 ~/scripts/tools-z32 了，以后以这个为准
+  - user: 我的模板目录是 ~/templates/v1-q80
+  - user: 对了改到 ~/templates/v2-q80 了，以后以这个为准
 - name: confound
   steps:
-  - user: 中午食堂的青椒肉丝不错。
+  - user: 晚上想喝碗热汤面。
   end_session: true
 - name: probe
   steps:
-  - user: 按你记的，我的脚本目录现在用哪个？
+  - user: 按你记的，我的模板目录现在用哪个？
 probes:
 - id: update-g03-p1
   kind: judge
   after: probe
-  ask: 按你记的，我的脚本目录现在用哪个？
-  expect: ~/scripts/tools-z32
-  rubric: '答 ~/scripts/tools-z32 = 记对了；答 ~/scripts/bin-z32 = 记错；不知道/没提过 = 遗漏；其他 =
+  ask: 按你记的，我的模板目录现在用哪个？
+  expect: ~/templates/v2-q80
+  rubric: '答 ~/templates/v2-q80 = 记对了；答 ~/templates/v1-q80 = 记错；不知道/没提过 = 遗漏；其他 =
     编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
@@ -45,9 +45,9 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 脚本目录是 ~/scripts/tools-z32。
+  - reply: 模板目录是 ~/templates/v2-q80。
     expect_verdict: right
-  - reply: 脚本目录是 ~/scripts/bin-z32。
+  - reply: 模板目录是 ~/templates/v1-q80。
     expect_verdict: stale
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -57,7 +57,7 @@ probes:
   check:
   - assert: memory.ever_contained
     args:
-    - tools-z32
+    - v2-q80
     then: correct
   - assert: default
     then: omission

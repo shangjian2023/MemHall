@@ -9,23 +9,23 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：数据集目录 ~/data/sample-n96→~/data/full-n96 拨钟+7d
+  notes: 生成用例：数据集目录 ~/data/sample-q94→~/data/full-q94 拨钟+5d；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的数据集目录是 ~/data/sample-n96
-  - user: 对了改到 ~/data/full-n96 了，以后以这个为准
+  - user: 我的数据集目录是 ~/data/sample-q94
+  - user: 对了改到 ~/data/full-q94 了，以后以这个为准
 - name: confound
   steps:
-  - user: 今天风好大，出门记得穿外套。
+  - user: 最近 UKUI 桌面的动画好像顺滑了些。
   end_session: true
   system_events:
-    clock_shift_days: 7
+    clock_shift_days: 5
 - name: probe
   steps:
   - user: 你最后定下的数据集目录是哪个？
@@ -34,8 +34,8 @@ probes:
   kind: judge
   after: probe
   ask: 你最后定下的数据集目录是哪个？
-  expect: ~/data/full-n96
-  rubric: '答 ~/data/full-n96 = 记对了；答 ~/data/sample-n96 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
+  expect: ~/data/full-q94
+  rubric: '答 ~/data/full-q94 = 记对了；答 ~/data/sample-q94 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
 
@@ -46,9 +46,9 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 数据集目录是 ~/data/full-n96。
+  - reply: 数据集目录是 ~/data/full-q94。
     expect_verdict: right
-  - reply: 数据集目录是 ~/data/sample-n96。
+  - reply: 数据集目录是 ~/data/sample-q94。
     expect_verdict: stale
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -58,7 +58,7 @@ probes:
   check:
   - assert: memory.ever_contained
     args:
-    - full-n96
+    - full-q94
     then: correct
   - assert: default
     then: omission

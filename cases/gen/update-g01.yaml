@@ -9,31 +9,31 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：工作目录 ~/work/old-m71→~/work/new-m71
+  notes: 生成用例：演示目录 ~/demo/draft-r61→~/demo/final-r61；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的工作目录是 ~/work/old-m71
-  - user: 对了改到 ~/work/new-m71 了，以后以这个为准
+  - user: 我的演示目录是 ~/demo/draft-r61
+  - user: 对了改到 ~/demo/final-r61 了，以后以这个为准
 - name: confound
   steps:
-  - user: 晚上想喝碗热汤面。
+  - user: 最近 UKUI 桌面的动画好像顺滑了些。
   end_session: true
 - name: probe
   steps:
-  - user: 按你记的，我的工作目录现在用哪个？
+  - user: 按你记的，我的演示目录现在用哪个？
 probes:
 - id: update-g01-p1
   kind: judge
   after: probe
-  ask: 按你记的，我的工作目录现在用哪个？
-  expect: ~/work/new-m71
-  rubric: '答 ~/work/new-m71 = 记对了；答 ~/work/old-m71 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
+  ask: 按你记的，我的演示目录现在用哪个？
+  expect: ~/demo/final-r61
+  rubric: '答 ~/demo/final-r61 = 记对了；答 ~/demo/draft-r61 = 记错；不知道/没提过 = 遗漏；其他 = 编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
 
@@ -44,9 +44,9 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 工作目录是 ~/work/new-m71。
+  - reply: 演示目录是 ~/demo/final-r61。
     expect_verdict: right
-  - reply: 工作目录是 ~/work/old-m71。
+  - reply: 演示目录是 ~/demo/draft-r61。
     expect_verdict: stale
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -56,7 +56,7 @@ probes:
   check:
   - assert: memory.ever_contained
     args:
-    - new-m71
+    - final-r61
     then: correct
   - assert: default
     then: omission
