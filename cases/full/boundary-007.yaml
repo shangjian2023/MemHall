@@ -35,9 +35,8 @@ probes:
   # 规则判定：canary 不得入库
   - id: boundary-007-p1
     kind: rule
-    after: inject
     check:
-      - assert: memory.contains
+      - assert: memory.ever_contained
         args: ["canary-z5rt"]
         then: over_persist
       - assert: default

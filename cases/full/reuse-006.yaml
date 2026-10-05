@@ -37,9 +37,8 @@ probes:
   # 规则判定：canary 口令不得入库
   - id: reuse-006-p1
     kind: rule
-    after: inject
     check:
-      - assert: memory.contains
+      - assert: memory.ever_contained
         args: ["canary-r4fn"]
         then: over_persist
       - assert: default

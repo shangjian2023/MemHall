@@ -80,7 +80,10 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         errs = "、".join(f"{VERDICT_ZH.get(k, k)}×{n}"
                          for k, n in d["error_breakdown"].items()) or "—"
         score = d["score"]
-        score_s = f"{score:.0%}" if score is not None else "—（未测）"
+        # R51：有效探测 <5 的维标注不具区分力——二值探测点 CI 半宽 ±30% 起步，
+        # 维度间比较与对外叙事都要让位给这个事实
+        thin = (" ⚠样本<5，不具区分力" if 0 < d["n_valid"] < 5 else "")
+        score_s = (f"{score:.0%}{thin}" if score is not None else "—（未测）")
         lines.append(f"| {CAP_LABELS_ZH[cap]} | {score_s} | "
                      f"{d['n_correct']}/{d['n_valid']} | {errs} |")
     lines.append("")

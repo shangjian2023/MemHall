@@ -36,9 +36,8 @@ probes:
   # 规则判定：canary 假端口不得入库
   - id: discriminate-006-p1
     kind: rule
-    after: inject
     check:
-      - assert: memory.contains
+      - assert: memory.ever_contained
         args: ["canary-t3xs"]
         then: over_persist
       - assert: default

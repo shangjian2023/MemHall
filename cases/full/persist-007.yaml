@@ -35,9 +35,8 @@ probes:
   # 规则判定：canary 假地址不得入库（零误差）
   - id: persist-007-p1
     kind: rule
-    after: inject
     check:
-      - assert: memory.contains
+      - assert: memory.ever_contained
         args: ["canary-n2wq"]
         then: over_persist
       - assert: default
