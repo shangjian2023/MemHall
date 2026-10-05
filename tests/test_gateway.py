@@ -22,14 +22,17 @@ UPSTREAM = "https://upstream.example/v1"
 REAL_KEY = "sk-real-secret"
 
 
-def _mk_app(tmp_path: Path, handler) -> httpx.AsyncClient:
-    """网关 app + 直挂的测试客户端（upstream 用 MockTransport 替身）。"""
+def _mk_app(tmp_path: Path, handler, min_interval: float = 0.0) -> httpx.AsyncClient:
+    """网关 app + 直挂的测试客户端（upstream 用 MockTransport 替身）。
+
+    min_interval=0 关掉安全节奏——默认 8s 会让多请求测试白等。"""
     upstream_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
         base_url=UPSTREAM,
     )
     app = create_gateway_app(UPSTREAM, REAL_KEY, "unified-m",
-                             tmp_path / "usage.jsonl", client=upstream_client)
+                             tmp_path / "usage.jsonl", client=upstream_client,
+                             min_interval=min_interval)
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                              base_url="http://gw")
 
@@ -391,3 +394,51 @@ def test_kylinbot_config_toml_rewrite(tmp_path, monkeypatch):
     ])
     KylinBotAdapter(channel=ch2).reset()
     assert any("config.toml.bak-memhall" in c and "cp" in c for c in ch2.calls)
+
+
+def test_gateway_paces_upstream_calls(tmp_path):
+    """安全节奏：间隔内的第二个请求在网关排队等待（压上游 RPM，不回 429）。"""
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "id": "x", "model": "unified-m",
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"total_tokens": 1}})
+
+    gw = _mk_app(tmp_path, upstream, min_interval=0.25)
+
+    async def go():
+        t0 = asyncio.get_running_loop().time()
+        async with gw as c:
+            r1 = await c.post("/v1/chat/completions", json={"model": "m"},
+                              headers={"Authorization": "Bearer memhall-pace"})
+            r2 = await c.post("/v1/chat/completions", json={"model": "m"},
+                              headers={"Authorization": "Bearer memhall-pace"})
+        return r1.status_code, r2.status_code, asyncio.get_running_loop().time() - t0
+
+    s1, s2, dt = asyncio.run(go())
+    assert s1 == 200 and s2 == 200
+    assert dt >= 0.2, f"第二个请求应被节奏压住，实际只隔了 {dt:.3f}s"
+
+
+def test_gateway_pace_off_with_zero_interval(tmp_path):
+    """间隔 0 = 关闭节奏（测试替身/本地快速上游用）。"""
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "id": "x", "model": "unified-m",
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"total_tokens": 1}})
+
+    gw = _mk_app(tmp_path, upstream, min_interval=0.0)
+
+    async def go():
+        codes = []
+        async with gw as c:
+            for _ in range(3):
+                r = await c.post("/v1/chat/completions", json={"model": "m"},
+                                 headers={"Authorization": "Bearer memhall-pace"})
+                codes.append(r.status_code)
+        return codes
+
+    assert asyncio.run(go()) == [200, 200, 200]

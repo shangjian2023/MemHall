@@ -60,11 +60,14 @@ def _inbound_ok(bearer: str) -> bool:
 def create_gateway_app(upstream: str, api_key: str, model: str,
                        log_path: Path | None = None,
                        client: httpx.AsyncClient | None = None,
-                       client_factory=None) -> FastAPI:
+                       client_factory=None,
+                       min_interval: float | None = None) -> FastAPI:
     """网关 FastAPI 应用（cli `memhall gateway` 挂 uvicorn；测试注入替身）。
 
     client：完整客户端替身（MockTransport 直挂）；
-    client_factory：重建路径的替身工厂（TLS 断流重建客户端的回归测试用）。"""
+    client_factory：重建路径的替身工厂（TLS 断流重建客户端的回归测试用）；
+    min_interval：上游安全节奏秒数（None=读 GATEWAY_MIN_INTERVAL，默认 8），
+    测试传 0 关闭——默认值会让每个多请求测试白等 8 秒。"""
 
     def _new_client() -> httpx.AsyncClient:
         if client_factory is not None:
@@ -87,6 +90,27 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
     if client is None:
         client = _new_client()
     state: dict = {"n_req": 0}
+
+    # 上游安全节奏：网关是所有被测/判卷流量的唯一出口，在这统一压最稳——
+    # 适配器自己的 send 间隔只管自己（hermes 甚至没有），CLI 判卷、自检、
+    # 多客户端并发时全靠这兜底。默认 8s ≈ 7.5 RPM（上游实测个位数 RPM，
+    # 超限会掐 TLS/503）。超出间隔的请求在网关内排队等待而非 429——被测
+    # 智能体的 HTTP 客户端重试能力参差，掐 429 会把节流副作用漏进被测行为。
+    if min_interval is None:
+        raw = os.environ.get("GATEWAY_MIN_INTERVAL", "").strip()
+        min_interval = float(raw) if raw else 8.0
+    iv = float(min_interval)
+    pace_lock = asyncio.Lock()
+    pace_state = {"t": 0.0}
+
+    async def _pace() -> None:
+        if iv <= 0:
+            return
+        async with pace_lock:
+            wait = pace_state["t"] + iv - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            pace_state["t"] = time.monotonic()
 
     def _record(tag: str, asked: str, usage: dict | None, ms: float, status: int) -> None:
         rec = {"ts": datetime.now(UTC).isoformat(),
@@ -130,6 +154,8 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
         if stream:
             # 注入 include_usage，让上游在流尾补 usage 块（记账数据源）
             payload.setdefault("stream_options", {}).setdefault("include_usage", True)
+        await _pace()  # 安全节奏压在转发前（拒绝/坏请求早退，不占节奏额度；
+        # 放 t0 前面，等待时间不进记账耗时）
         t0 = time.monotonic()
         # 上游腿 TLS 断流（bad record mac 坏窗口）重试：aclose 是永久关闭，
         # 必须弃旧建新客户端（复用已关客户端=整站 500，全量跑实逮）；
