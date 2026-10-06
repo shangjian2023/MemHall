@@ -17,7 +17,9 @@ from memhall.discovery import Finding, adapter_availability
 
 
 def test_native_mode_local_view(monkeypatch):
-    """原生：远端适配器按"本机"口径；本机检出 + 回环通道齐才可跑。"""
+    """原生：只列评测车道（mock + 回环 SSH 三家）按"本机"口径；
+    本机直连车道（hermes-local/claude/qwen）不进列表——原生形态下列出
+    只会与评测车道重复扰视（2026-10-05 用户反馈，一套形态一套列表）。"""
     monkeypatch.setattr(disc, "vm_is_self", lambda: True)
     monkeypatch.setenv("VM_HOST", "127.0.0.1")
     monkeypatch.setenv("VM_PASS", "x")
@@ -26,11 +28,10 @@ def test_native_mode_local_view(monkeypatch):
     st = adapter_availability(vm_probe=lambda: [])
     assert st["mode"] == "native"
     a = st["adapters"]
-    assert a["kylinbot"] == {"label": "kylinbot（本机）", "ok": True}
+    assert a["kylinbot"] == {"label": "kylinbot", "ok": True}
     assert not a["hermes"]["ok"]            # 本机没检出 hermes → 不进下拉
-    assert not a["hermes-local"]["ok"]
     assert a["mock"]["ok"]                  # mock 恒可用，下拉永不空
-    assert a["hermes-local"]["label"] == "hermes（本机直连）"  # 与 hermes 区分
+    assert set(a) == {"mock", "hermes", "kylinbot", "openclaw"}  # 不多不少
 
 
 def test_native_mode_needs_loopback_channel(monkeypatch):
@@ -41,7 +42,7 @@ def test_native_mode_needs_loopback_channel(monkeypatch):
     monkeypatch.setattr(disc, "find_cli", lambda *c: "/bin/any")
     a = adapter_availability(vm_probe=lambda: [])["adapters"]
     assert not a["kylinbot"]["ok"] and not a["hermes"]["ok"] and not a["openclaw"]["ok"]
-    assert a["claude-local"]["ok"]           # 本机直连型不受通道影响
+    assert a["mock"]["ok"]
 
 
 def test_remote_mode_vm_probe_decides(monkeypatch):
@@ -53,7 +54,7 @@ def test_remote_mode_vm_probe_decides(monkeypatch):
     st = adapter_availability(vm_probe=lambda: vm)
     assert st["mode"] == "remote"
     a = st["adapters"]
-    assert a["hermes"] == {"label": "hermes（VM 真机）", "ok": True}
+    assert a["hermes"] == {"label": "hermes（VM 连接）", "ok": True}
     assert a["openclaw"]["ok"]
     assert not a["kylinbot"]["ok"]           # VM 里没探到 → 不进下拉
     assert not a["hermes-local"]["ok"]       # 宿主机也没装 → 不进下拉

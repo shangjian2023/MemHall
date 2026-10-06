@@ -85,7 +85,10 @@ class OpenCodeAdapter(AgentAdapter):
         self.cfg_dir.mkdir(parents=True, exist_ok=True)
         (self.cfg_dir / "opencode.json").write_text(json.dumps({
             "$schema": "https://opencode.ai/config.json",
-            "permission": {"edit": "allow", "bash": "allow", "webfetch": "deny"},
+            # R36：与其他适配器"不放行命令执行"对齐——bash 由 allow 改 deny，
+            # 横评能力面一致（此前 opencode 独享 bash 通道属能力面不对齐）；
+            # 差异记录在 dataset-card §8
+            "permission": {"edit": "allow", "bash": "deny", "webfetch": "deny"},
             "provider": {
                 "memhall-gw": {
                     "name": "MemHall Gateway",

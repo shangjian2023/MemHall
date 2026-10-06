@@ -12,9 +12,11 @@ import json
 import logging
 import platform
 import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import IO
 
 import yaml
 
@@ -87,22 +89,42 @@ class CaseRunner:
             encoding="utf-8")
         self.adapter.reset()
         # R02/R23：reset 彻底性防线——残留记忆会把上一个 case 的答案带进来
-        # （同问异答题库里是定向毒药），宁可本 case 中止也不静默污染
-        self.adapter.verify_reset()
+        # （同问异答题库里是定向毒药），宁可本 case 中止也不静默污染。
+        # getattr 防御：测试/第三方 duck-typed 适配器可能未继承基类
+        verify = getattr(self.adapter, "verify_reset", None)
+        if verify is not None:
+            verify()
         base_fs = self.adapter.fs_snapshot()
         session_id = "s-01"
         try:
             for phase in self.case.phases:
                 se = phase.system_events
+                # R60：死旋钮 fail fast——reboot/network_off/rollback 当前编排器
+                # 未实现，填 true 静默忽略会让用例拿到"没发生事件的正常分"
+                if se is not None and any(
+                        getattr(se, k, False) for k in
+                        ("reboot", "network_off", "rollback")):
+                    raise AdapterError(
+                        f"system_events.reboot/network_off/rollback=true 未实现"
+                        f"（case {self.case.case_id}），fail fast 防静默忽略")
                 if se is not None and se.clock_shift_days:
                     try:
                         self.adapter.clock_shift(se.clock_shift_days)
-                    except AdapterError as e:
-                        # 拨钟不支持（如 Windows 本机适配器）→ 本 case 运行无效，
-                        # 不能让一个 case 的环境限制打崩整套
-                        log.warning("%s 拨钟不支持（case 运行无效）: %s",
+                    except (AdapterError, RuntimeError) as e:
+                        # 拨钟不支持/失败（如 Windows 本机适配器）→ 本 case 运行
+                        # 无效，不能让一个 case 的环境限制打崩整套。R33：错误写进
+                        # 证据（[RUNTIME_ERROR] 回复通道）——判卷层据此标
+                        # INVALID_RUN，此前无对话证据会静默降级成 omission
+                        log.warning("%s 拨钟失败（case 运行无效）: %s",
                                     self.case.case_id, e)
                         self._runtime_error = str(e)
+                        self._collect(phase.name, EvidenceType.DIALOGUE, {
+                            "messages": [],
+                            "replies": [Reply(
+                                session_id=session_id,
+                                text=f"[RUNTIME_ERROR] {e}",
+                                sent_at=_utc(), reply_at=_utc(),
+                                latency_ms=0).model_dump(mode="json")]})
                         break
                     log.info("%s 拨钟 %+d 天（累计 %+d）", self.case.case_id,
                              se.clock_shift_days, self.clock_offset + se.clock_shift_days)
@@ -156,6 +178,9 @@ class CaseRunner:
                     _safe_emit(self.on_event, {"type": "memory",
                                                "case": self.case.case_id,
                                                "n": len(snap.entries)})
+                    # R50：inject 后文件面也采——fs 证据按阶段切分，
+                    # 链题"第 1 会话产物"与"复用行为产物"不再混在一锅
+                    inject_fs = self.adapter.fs_snapshot()
                 if phase.end_session:
                     self.adapter.end_session(session_id)
                     n = int(session_id.split("-")[1]) + 1
@@ -170,15 +195,34 @@ class CaseRunner:
             dump = self.adapter.dump_actions()
             self._collect("probe", EvidenceType.ACTIONS, dump.model_dump(mode="json"))
         finally:
-            self.adapter.clock_restore()
+            # R33：时钟恢复失败必须暴露——残留 +N 天会污染后续所有 case 的
+            # 时间语义且无人知晓；记入 manifest clock_restore_failed
+            try:
+                self.adapter.clock_restore()
+            except (AdapterError, RuntimeError) as e:
+                self._clock_restore_error = str(e)
+                log.error("%s clock_restore 失败（记 manifest）: %s",
+                          self.case.case_id, e)
         # 文件系统 diff（适配器支持时）：before 快照 vs after 快照
         after_fs = self.adapter.fs_snapshot()
         if base_fs is not None and after_fs is not None:
-            created = sorted(set(after_fs) - set(base_fs))
-            deleted = sorted(set(base_fs) - set(after_fs))
-            fs_diff = FsDiff(entries=[FsDiffEntry(path=p, change="created")
-                                      for p in created]
-                             + [FsDiffEntry(path=p, change="deleted") for p in deleted],
+            # R50：fs 证据按阶段窗切分——base→inject 后（stage=inject）与
+            # inject 后→终采（stage=probe）。链题"第 1 会话教出来的产物"与
+            # "复用记忆时的行为产物"可分归因；断言层不筛 stage（旧证据 ""
+            # 兼容）。注：适配器快照只有路径清单，modified/内容哈希需适配器
+            # 提供内容指纹后才能落地（已知局限，见 review-tasks R50 状态）
+            inject_fs = locals().get("inject_fs")
+            mid = inject_fs if inject_fs is not None else base_fs
+            entries: list[FsDiffEntry] = []
+            entries += [FsDiffEntry(path=p, change="created", stage="inject")
+                        for p in sorted(set(mid) - set(base_fs))]
+            entries += [FsDiffEntry(path=p, change="deleted", stage="inject")
+                        for p in sorted(set(base_fs) - set(mid))]
+            entries += [FsDiffEntry(path=p, change="created", stage="probe")
+                        for p in sorted(set(after_fs) - set(mid))]
+            entries += [FsDiffEntry(path=p, change="deleted", stage="probe")
+                        for p in sorted(set(mid) - set(after_fs))]
+            fs_diff = FsDiff(entries=entries,
                              before_snapshot=f"n={len(base_fs)}",
                              after_snapshot=f"n={len(after_fs)}")
             self._collect("probe", EvidenceType.FS_DIFF, fs_diff.model_dump(mode="json"))
@@ -213,6 +257,58 @@ def _safe_emit(on_event, payload: dict) -> None:
         on_event(payload)
 
 
+class _GlobalRunLock:
+    """R57：跨进程评测互斥锁（CLI 与 UI 同跑时，一方 reset 的 rmtree 会
+    拆掉另一方的沙箱）。OS 级文件锁（Windows msvcrt / POSIX fcntl），
+    进程退出自动释放，无陈锁问题。"""
+
+    def __init__(self) -> None:
+        self._f: IO[str] | None = None
+
+    def _acquire(self) -> None:
+        f = self._f
+        assert f is not None
+        # sys.platform 比较让 mypy 静态收窄平台分支（win 上 fcntl 分支不可达）
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _release(self) -> None:
+        f = self._f
+        assert f is not None
+        if sys.platform == "win32":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    def __enter__(self) -> _GlobalRunLock:
+        path = Path.home() / ".memhall" / "run.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._f = path.open("a+")
+        try:
+            self._acquire()
+        except OSError as e:
+            self._f.close()
+            self._f = None
+            raise RuntimeError(
+                "已有评测进程在跑（~/.memhall/run.lock 被占用）——"
+                "CLI 与 UI 不能同时开跑，等它结束或停掉它") from e
+        return self
+
+    def __exit__(self, *exc) -> None:
+        if self._f is not None:
+            with contextlib.suppress(OSError):
+                self._release()
+            self._f.close()
+            self._f = None
+
+
 def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
               adapter_name: str, case_source: str = "",
               on_case_done=None, on_event=None) -> tuple[str, list[EvidenceStore]]:
@@ -235,31 +331,43 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
              sum(len(c.probes) for c in cases), run_dir)
     stores: list[EvidenceStore] = []
     failed: list[str] = []
+    clock_restore_failed: list[str] = []
     usage_before = usage_snapshot()
-    try:
-        for i, case in enumerate(cases):
-            log.info("[%d/%d] %s 开跑", i + 1, len(cases), case.case_id)
-            t0 = time.monotonic()
-            _safe_emit(on_event, {"type": "case_start", "case": case.case_id,
-                                  "i": i + 1, "n": len(cases)})
-            runner = CaseRunner(adapter, case, run_id, run_dir / "cases" / case.case_id,
-                                on_event=on_event)
-            # R23：单 case 未预期异常不再引爆整套马拉松——记录失败续跑，
-            # 已完成用例的证据/manifest 照常落盘（40 题挂 1 题不报废整轮）
-            try:
-                stores.append(runner.run())
-            except Exception:  # noqa: BLE001 隔离层必须兜住一切
-                log.exception("[%d/%d] %s 异常中止（记入 failed_cases，续跑）",
-                              i + 1, len(cases), case.case_id)
-                failed.append(case.case_id)
-                continue
-            log.info("[%d/%d] %s 完成（%.1fs）", i + 1, len(cases), case.case_id,
-                     time.monotonic() - t0)
-            if on_case_done is not None:
-                on_case_done(case.case_id, i + 1, len(cases))
-    finally:
-        _write_manifest(run_dir, run_id, adapter_name, case_source, cases,
-                        failed, usage_before, adapter)
+    with _GlobalRunLock():   # R57：CLI/UI 跨进程互斥
+        try:
+            for i, case in enumerate(cases):
+                log.info("[%d/%d] %s 开跑", i + 1, len(cases), case.case_id)
+                t0 = time.monotonic()
+                _safe_emit(on_event, {"type": "case_start", "case": case.case_id,
+                                      "i": i + 1, "n": len(cases)})
+                runner = CaseRunner(adapter, case, run_id,
+                                    run_dir / "cases" / case.case_id,
+                                    on_event=on_event)
+                # R23：单 case 未预期异常不再引爆整套马拉松——记录失败续跑，
+                # 已完成用例的证据/manifest 照常落盘（40 题挂 1 题不报废整轮）
+                try:
+                    stores.append(runner.run())
+                except Exception:  # noqa: BLE001 隔离层必须兜住一切
+                    log.exception("[%d/%d] %s 异常中止（记入 failed_cases，续跑）",
+                                  i + 1, len(cases), case.case_id)
+                    failed.append(case.case_id)
+                else:
+                    log.info("[%d/%d] %s 完成（%.1fs）", i + 1, len(cases),
+                             case.case_id, time.monotonic() - t0)
+                    if on_case_done is not None:
+                        on_case_done(case.case_id, i + 1, len(cases))
+                # R33：clock_restore 失败的 case 单列进 manifest（时钟残留警报）
+                if getattr(runner, "_clock_restore_error", None):
+                    clock_restore_failed.append(case.case_id)
+        finally:
+            _write_manifest(run_dir, run_id, adapter_name, case_source, cases,
+                            failed, usage_before, adapter,
+                            clock_restore_failed=clock_restore_failed)
+            # R57：SshChannel 等底层资源统一收口——此前全链路无人调 close，靠 GC
+            # getattr 防御 duck-typed 适配器（契约建议继承基类，不强求）
+            close = getattr(adapter, "close", None)
+            if callable(close):
+                close()
     log.info("评测完成: run_id=%s", run_id)
     return run_id, stores
 
@@ -277,7 +385,8 @@ def pair_stores(cases: list[MemoryCase],
 
 def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
                     case_source: str, cases: list[MemoryCase], failed: list[str],
-                    usage_before, adapter: AgentAdapter) -> None:
+                    usage_before, adapter: AgentAdapter,
+                    clock_restore_failed: list[str] | None = None) -> None:
     manifest = {
         "run_id": run_id,
         "tool": "memhall",
@@ -294,6 +403,10 @@ def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
     }
     if failed:
         manifest["failed_cases"] = failed
+    if clock_restore_failed:
+        # R33：时钟残留警报——这些 case 之后系统时间可能仍 +N 天，
+        # 后续 run 的时间语义（temporal 族）需对照本字段核查
+        manifest["clock_restore_failed"] = clock_restore_failed
     # 网关记账差值（直连模式/无记账文件时为 None，不落键）
     token_usage = summarize(usage_delta(usage_before, usage_snapshot()))
     if token_usage:

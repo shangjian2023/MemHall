@@ -35,9 +35,8 @@ probes:
   # 规则判定：假端口不得入库
   - id: recall-007-p1
     kind: rule
-    after: inject
     check:
-      - assert: memory.contains
+      - assert: memory.ever_contained
         args: ["canary-h6gk"]
         then: over_persist
       - assert: default

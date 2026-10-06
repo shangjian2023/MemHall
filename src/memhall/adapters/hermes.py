@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from datetime import UTC
 
 from memhall.adapters.base import AdapterError, AgentAdapter, AgentUnavailable
 from memhall.adapters.remote import SshChannel, b64, elapsed_ms, now_utc
@@ -62,8 +63,11 @@ class HermesAdapter(AgentAdapter):
                 f"export DEEPSEEK_MODEL={_q(self._model)}\n")
 
     def reset(self) -> None:
+        # *.lock 是 hermes 写记忆时的文件锁空壳（0 字节，写完不回收）——
+        # R02 防线 2026-10-05 真机首战逮住过 9-28 残留的 MEMORY.md.lock/
+        # USER.md.lock，reset 一并清掉；verify_reset 保持整目录空的最严标准
         rc, _, err = self.ch.run(
-            f"rm -f {MEM_DIR}/MEMORY.md {MEM_DIR}/USER.md && "
+            f"rm -f {MEM_DIR}/MEMORY.md {MEM_DIR}/USER.md {MEM_DIR}/*.lock && "
             f"rm -rf {' '.join(EVAL_WORKDIRS)} && echo ok")
         if rc != 0:
             raise RuntimeError(f"Hermes 记忆清零失败: {err.strip()[:300]}")
@@ -102,6 +106,11 @@ class HermesAdapter(AgentAdapter):
                                  stdin_data=b64(self._llm_env_lines()) + "\n"
                                             + b64(message))
         text = _strip_tui(out)
+        # R32：timeout 280 杀进程 rc=124 时输出是残句——残句不是答案，不得
+        # 当 Reply 计分（虚高）；超时一律 AgentUnavailable → invalid_run
+        if rc == 124:
+            raise AgentUnavailable(
+                f"hermes 超时(280s)，残句不计分: {text[:120]}")
         if rc != 0 and not text:
             raise AgentUnavailable(f"hermes 调用失败({rc})")
         # hermes 后端故障文案（已实测两种）：不让错误文本混进答案被当行为评分
@@ -124,13 +133,21 @@ class HermesAdapter(AgentAdapter):
         cmd = (f"for f in {MEM_DIR}/MEMORY.md {MEM_DIR}/USER.md; do "
                f"[ -f $f ] && echo \"=== $f\" && cat $f; done")
         rc, out, _ = self.ch.run(cmd)
+        # R31：导出失败如实标注（dump_ok=False → 规则层判运行无效），
+        # 不再与"空记忆"混淆——canary 泄漏洗白面就此关死
+        if rc != 0:
+            return MemorySnapshot(format="files", dumped_at=now_utc(),
+                                  entries=[], raw=None, dump_ok=False,
+                                  error=f"SSH cat 失败 rc={rc}")
         entries: list[MemoryEntry] = []
         current = ""
         for line in out.splitlines():
             if line.startswith("=== "):
                 current = line[4:].strip()
                 continue
-            s = line.strip().lstrip("-* ").strip()
+            # R58：列表标记只剥"- "/"* "带空格的形态，不再 lstrip("-* ")
+            # 连 "-3°C 是最低温" 这类正文首字符一起剥掉
+            s = re.sub(r"^[-*]\s+", "", line.strip()).strip()
             if s:
                 entries.append(MemoryEntry(entry_id=f"m-{len(entries):04d}",
                                            content=s, created_at=None,
@@ -139,46 +156,71 @@ class HermesAdapter(AgentAdapter):
                               entries=entries, raw=None)
 
     def dump_actions(self) -> ActionDump:
-        """解析 agent.log 本 case 增量里的工具调用（agent.tool_executor 行）。"""
+        """解析 agent.log 本 case 增量里的工具调用（agent.tool_executor 行）。
+
+        R58：ts 记日志行内的发生时刻（行首 ISO 时间戳），不再一律记采集
+        时刻——时序证据不失真；无时间戳的行退采集时刻。"""
+        from datetime import datetime
+
         from memhall.schema.evidence import Action, ActionSource
         cmd = (f"tail -c +{self._log_offset + 1} {AGENT_LOG} 2>/dev/null | "
-               f"grep -oE 'tool_executor: tool [a-z_0-9-]+ (completed|returned)' | "
-               f"sed 's/tool_executor: //'")
+               f"grep 'tool_executor: tool '")
         rc, out, _ = self.ch.run(cmd, timeout=30)
         actions: list[Action] = []
         if rc == 0:
             for i, line in enumerate(out.splitlines(), 1):
-                parts = line.split()
-                if len(parts) >= 3 and parts[0] == "tool":
-                    actions.append(Action(
-                        action_id=f"a-{i:03d}",
-                        ts=now_utc(),
-                        tool=parts[1],
-                        args={},
-                        result=parts[2],
-                        source=ActionSource.AGENT_LOG,
-                    ))
+                m = re.match(r"(\d{4}-\d{2}-\d{2}[T ][0-9:.]+Z?)\s*"
+                             r".*?tool_executor: tool ([a-z_0-9-]+) "
+                             r"(completed|returned)", line)
+                if not m:
+                    m2 = re.search(r"tool_executor: tool ([a-z_0-9-]+) "
+                                   r"(completed|returned)", line)
+                    if not m2:
+                        continue
+                    ts, tool, status = now_utc(), m2.group(1), m2.group(2)
+                else:
+                    raw = m.group(1).replace("Z", "+00:00").replace(" ", "T")
+                    try:
+                        ts = datetime.fromisoformat(raw)
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=UTC)
+                    except ValueError:
+                        ts = now_utc()
+                    tool, status = m.group(2), m.group(3)
+                actions.append(Action(
+                    action_id=f"a-{i:03d}", ts=ts, tool=tool, args={},
+                    result=status, source=ActionSource.AGENT_LOG))
         return ActionDump(actions=actions,
                           coverage="partial" if actions else "unknown")
 
     def clock_shift(self, days: int) -> None:
-        """VM 拨钟（sudo date -s，密码走 stdin），记录原时刻供恢复。"""
+        """VM 拨钟（sudo date -s，密码走 stdin），记录原时刻供恢复。
+
+        R33：失败抛 AdapterError（不再 RuntimeError）——orchestrator 只兜
+        AdapterError，RuntimeError 会走 failed_cases 把已采证据丢掉。"""
         if days == 0:
             return
         rc, out, _ = self.ch.run("date +%s")
         if rc != 0:
-            raise RuntimeError("拨钟前读取系统时间失败")
+            raise AdapterError("拨钟前读取系统时间失败")
         self._clock_epoch = int(out.strip())
         rc, _, err = self.ch.sudo(f"date -s '+{days} days' >/dev/null 2>&1 && echo ok")
         if rc != 0:
-            raise RuntimeError(f"拨钟失败: {err.strip()[:200]}")
+            raise AdapterError(f"拨钟失败: {err.strip()[:200]}")
 
     def clock_restore(self) -> None:
+        """R33：恢复校验 rc——时钟残留 +N 天会污染后续所有 case 的时间语义，
+        失败必须暴露（orchestrator 记 manifest clock_restore_failed）。"""
         epoch = getattr(self, "_clock_epoch", None)
         if epoch is None:
             return
-        self.ch.sudo(f"date -s @{epoch} >/dev/null 2>&1 && echo ok")
         self._clock_epoch = None
+        rc, _, err = self.ch.sudo(f"date -s @{epoch} >/dev/null 2>&1 && echo ok")
+        if rc != 0:
+            raise AdapterError(f"时钟恢复失败: {err.strip()[:200]}")
+
+    def close(self) -> None:
+        self.ch.close()
 
     def fs_snapshot(self) -> list[str] | None:
         """VM 用户区文件清单（~ 下 4 层，排除 hermes 自身与缓存噪音）。
@@ -210,11 +252,14 @@ def _strip_tui(out: str) -> str:
         i += 1
     if blocks:
         return "\n".join(blocks)
-    # 无框退化路径：滤 TUI 状态行（API 重试/加载提示）与噪声头
-    noise = ("Query:", "Initializing", "⚠", "⏳", "❌", "Session:", "Resume", "Duration",
-             "Title:", "Messages:", "🔁", "💀", "Transient", "Retrying", "rebuilt client",
-             "Provider said", "API failed")
+    # 无框退化路径：滤 TUI 状态行（API 重试/加载提示）与噪声头。
+    # R58：词形噪声锚定行首——原"子串任意位置命中"会误伤正文里
+    # 引用这些词的回答行；符号类（emoji/制表框）不受影响
+    noise_start = ("Query:", "Initializing", "Session:", "Resume", "Duration",
+                   "Title:", "Messages:", "API failed", "Retrying", "Transient",
+                   "Provider said", "rebuilt client")
     keep = [ln.rstrip() for ln in lines
-            if ln.strip() and not any(n in ln for n in noise)
+            if ln.strip() and not any(n in ln for n in ("⚠", "⏳", "❌", "🔁", "💀"))
+            and not any(ln.strip().startswith(n) for n in noise_start)
             and not set(ln.strip()) & set("╭╮╰╯│┌┐└┘─")]
     return "\n".join(keep).strip()

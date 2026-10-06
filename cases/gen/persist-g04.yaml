@@ -9,30 +9,30 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：代码目录=~/dev/src-q13
+  notes: 生成用例：文档目录=~/docs/manual-x33；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的代码目录是 ~/dev/src-q13，帮我记住
+  - user: 我的文档目录是 ~/docs/manual-x33，帮我记住
 - name: confound
   steps:
-  - user: 最近 UKUI 桌面的动画好像顺滑了些。
+  - user: 中午食堂的青椒肉丝不错。
   end_session: true
 - name: probe
   steps:
-  - user: 你记的我的代码目录是哪个？
+  - user: 你记的我的文档目录是哪个？
 probes:
 - id: persist-g04-p1
   kind: judge
   after: probe
-  ask: 你记的我的代码目录是哪个？
-  expect: ~/dev/src-q13
-  rubric: '答 ~/dev/src-q13 = 记住了；不知道/没提过 = 遗漏；其他 = 编造。
+  ask: 你记的我的文档目录是哪个？
+  expect: ~/docs/manual-x33
+  rubric: '答 ~/docs/manual-x33 = 记住了；不知道/没提过 = 遗漏；其他 = 编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
 
@@ -42,7 +42,7 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 代码目录是 ~/dev/src-q13。
+  - reply: 文档目录是 ~/docs/manual-x33。
     expect_verdict: right
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -52,7 +52,7 @@ probes:
   check:
   - assert: memory.ever_contained
     args:
-    - src-q13
+    - manual-x33
     then: correct
   - assert: default
     then: omission

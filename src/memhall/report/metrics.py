@@ -35,6 +35,13 @@ CAP_LABELS_ZH: dict[str, str] = {
 }
 
 _EXCLUDED = (VerdictValue.INVALID_RUN, VerdictValue.HUMAN_REVIEW)
+
+
+def _countable(v: Verdict) -> bool:
+    """计分有效：非 invalid_run/human_review，且非降级脚本猜测（P0-2，
+    队友复核 10-05 方案 b）——judge 故障窗口里脚本的判定值保留在 verdict
+    供人工复核，但不进分子分母，避免"分母随网关故障漂移"（R03 复发）。"""
+    return v.verdict not in _EXCLUDED and not v.degraded
 _CONTENT_ERR = (VerdictValue.CONFUSION, VerdictValue.FABRICATION,
                 VerdictValue.WRONG_REUSE)
 
@@ -96,7 +103,7 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
     detail: dict[str, dict] = {}
     for cap in CAP_ORDER:
         vs = by_cap.get(cap, [])
-        valid = [v for v in vs if v.verdict not in _EXCLUDED]
+        valid = [v for v in vs if _countable(v)]
         correct = sum(1 for v in valid if v.verdict == VerdictValue.CORRECT)
         # 无探测或全被剔除 = 该维未测（None），不是 0 分
         score = round(correct / len(valid), 4) if valid else None
@@ -114,15 +121,19 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
         }
 
     score_all = [v for vs in by_case_score.values() for v in vs]
-    valid_all = [v for v in score_all if v.verdict not in _EXCLUDED]
+    valid_all = [v for v in score_all if _countable(v)]
     correct_all = sum(1 for v in valid_all if v.verdict == VerdictValue.CORRECT)
     n_human = sum(1 for v in score_all if v.verdict == VerdictValue.HUMAN_REVIEW)
+    # 降级猜测：verdict 值可计分形态但 degraded（脚本猜了个 key）；判 human_review
+    # 的降级未决已在 n_human 里，不重复计
+    n_degraded = sum(1 for v in score_all
+                     if v.degraded and v.verdict not in _EXCLUDED)
 
     # 按用例等权（R10）：先每 case 聚合通过率，再对 case 平均——
     # 否则探测点多的族（reuse 23 个）在总分里权重是少族（discriminate 10）的 2.3 倍
     case_rates = []
     for vs in by_case_score.values():
-        cv = [v for v in vs if v.verdict not in _EXCLUDED]
+        cv = [v for v in vs if _countable(v)]
         if cv:
             case_rates.append(sum(1 for v in cv if v.verdict == VerdictValue.CORRECT) / len(cv))
 
@@ -145,10 +156,12 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
         "n_valid": len(valid_all),
         "n_invalid_run": sum(1 for v in score_all if v.verdict == VerdictValue.INVALID_RUN),
         "n_human_review": n_human,
+        "n_degraded": n_degraded,
         "overall_score": round(correct_all / len(valid_all), 4) if valid_all else None,
-        # 保守下界（R03）：判卷未决按错计——未决剔除率高的 run，分数区间必须可见
-        "overall_score_floor": (round(correct_all / (len(valid_all) + n_human), 4)
-                                if valid_all and n_human else None),
+        # 保守下界（R03）：判卷未决与降级猜测按错计——未决/降级剔除率高的
+        # run，分数区间必须可见
+        "overall_score_floor": (round(correct_all / (len(valid_all) + n_human + n_degraded), 4)
+                                if valid_all and (n_human or n_degraded) else None),
         "overall_score_case_weighted": (round(sum(case_rates) / len(case_rates), 4)
                                         if case_rates else None),
         "capability_scores": capability_scores,
@@ -161,6 +174,7 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
         "fault_localization": _fault_localization(by_case_score, by_case_storage),
         # 判卷质检（design.md §8 评测质量指标）：仅 dual 判卷时有值
         "judge_agreement_rate": _agreement_rate(verdicts),
+        "judge_cohens_kappa": _cohens_kappa(verdicts),
         "human_review_rate": round(
             sum(1 for v in verdicts
                 if v.decided_by == DecidedBy.HUMAN_REVIEW) / len(verdicts), 4
@@ -220,3 +234,24 @@ def _agreement_rate(verdicts: list[Verdict]) -> float | None:
         return None
     agreed = sum(1 for b in bs if b.agreed)
     return round(agreed / len(bs), 4)
+
+
+def _cohens_kappa(verdicts: list[Verdict]) -> float | None:
+    """Cohen's Kappa（P2-6，C 角色队友复核 10-05）：剔除随机一致的评委一致性。
+
+    一致率在类别集中时虚高（双评委都爱投 correct，随机一致就不低）；
+    kappa=(po-pe)/(1-pe)，≥0.6 才算实质一致。无效票（raw=None→invalid_run）
+    不进配对——双票皆无效不构成"一致"（对齐 R56 的 agreed 语义）。"""
+    pairs = [(m.judge_a.verdict, m.judge_b.verdict)
+             for v in verdicts if (m := v.judge_meta) is not None
+             and m.judge_a is not None and m.judge_b is not None
+             and m.judge_a.verdict != VerdictValue.INVALID_RUN
+             and m.judge_b.verdict != VerdictValue.INVALID_RUN]
+    if not pairs:
+        return None
+    n = len(pairs)
+    po = sum(1 for a, b in pairs if a == b) / n
+    cats = {x for pair in pairs for x in pair}
+    pe = sum((sum(1 for a, _ in pairs if a == c) / n)
+             * (sum(1 for _, b in pairs if b == c) / n) for c in cats)
+    return round((po - pe) / (1 - pe), 4) if pe < 1 else 1.0

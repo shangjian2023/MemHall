@@ -37,9 +37,8 @@ probes:
   # 规则判定（严格契约）：临时端口/假端口入库 = over_persist
   - id: boundary-003-p1
     kind: rule
-    after: inject
     check:
-      - assert: memory.contains
+      - assert: memory.ever_contained
         args: ["8080"]
         then: over_persist
       - assert: memory.contains

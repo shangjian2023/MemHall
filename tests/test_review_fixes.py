@@ -426,3 +426,22 @@ def test_compare_sign_test_and_agreement(tmp_path):
     assert out["flip_sign_test"]["p_two_sided"] == 1.0  # 1 翻转不可能显著
     text = (tmp_path / "cmp" / "compare.md").read_text(encoding="utf-8")
     assert "判定一致率" in text and "符号检验" in text
+
+
+def test_hermes_reset_cleans_lock_files():
+    """R02 真机首战（2026-10-05 全废轮教训）：hermes 记忆目录会残留 *.lock
+    空壳锁文件（0 字节、写完不回收）——reset 必须一并清掉；verify_reset
+    整目录空的最严标准不动，继续当绊网。"""
+    from memhall.adapters.hermes import HermesAdapter
+
+    class _Ch:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, cmd, timeout=30, stdin_data=None):
+            self.calls.append(cmd)
+            return 0, "", ""
+
+    ch = _Ch()
+    HermesAdapter(channel=ch).reset()
+    assert any("*.lock" in c and "MEMORY.md" in c for c in ch.calls), ch.calls

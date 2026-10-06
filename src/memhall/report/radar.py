@@ -7,15 +7,9 @@ from __future__ import annotations
 
 import json
 
-CAP_LABELS_ZH = {
-    "persist": "长期保持",
-    "recall": "记忆调用",
-    "dynamic_update": "动态更新",
-    "discriminate": "相近区分",
-    "boundary": "边界识别",
-    "reuse": "任务复用",
-}
-CAP_ORDER = list(CAP_LABELS_ZH.keys())
+# R56：六维顺序/中文标签单源（metrics 定义），radar/compare 都从这里取——
+# 此前双份手维护，新增/改名漏一边就雷达图轴错位
+from memhall.report.metrics import CAP_LABELS_ZH, CAP_ORDER  # noqa: F401
 
 FONT_CANDIDATES = ["Microsoft YaHei", "SimHei", "Noto Sans CJK SC",
                    "WenQuanYi Zen Hei", "DejaVu Sans"]

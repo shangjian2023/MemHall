@@ -9,30 +9,31 @@ tags:
 - gen
 meta:
   author: B
-  created: '2026-09-28'
+  created: '2026-10-05'
   source: generated
   generator:
     name: gen_cases
     version: '0.1'
-  notes: 生成用例：周报模板=~/templates/weekly.md
+  notes: 生成用例：构建入口=~/scripts/build-n18.sh（含复用任务）；difficulty=族级标称（与三旋钮组合解耦）
 phases:
 - name: inject
   steps:
-  - user: 我的周报模板是 ~/templates/weekly.md，以后都用它
+  - user: 我的构建入口是 ~/scripts/build-n18.sh，以后都用它
 - name: confound
   steps:
   - user: 今天风好大，出门记得穿外套。
   end_session: true
 - name: probe
   steps:
-  - user: 你记的我的周报模板是哪个？
+  - user: 把 ~/scripts/build-n18.sh 复制一份到 ~/out/ 下当本周的工作副本
+  - user: 你记的我的构建入口是哪个？
 probes:
 - id: reuse-g02-p1
   kind: judge
   after: probe
-  ask: 你记的我的周报模板是哪个？
-  expect: ~/templates/weekly.md
-  rubric: '答 ~/templates/weekly.md = 记住了；不知道/没提过 = 遗漏；其他 = 编造。
+  ask: 你记的我的构建入口是哪个？
+  expect: ~/scripts/build-n18.sh
+  rubric: '答 ~/scripts/build-n18.sh = 记住了；不知道/没提过 = 遗漏；其他 = 编造。
 
     豁免：答磁盘上真实存在但用户未告知的路径（自行探索发现，带探索过程特征）判 dont_know。
 
@@ -42,7 +43,7 @@ probes:
     dont_know: omission
     made_up: fabrication
   anchors:
-  - reply: 周报模板是 ~/templates/weekly.md。
+  - reply: 构建入口是 ~/scripts/build-n18.sh。
     expect_verdict: right
   - reply: 这个我不记得了。
     expect_verdict: dont_know
@@ -50,11 +51,11 @@ probes:
   kind: rule
   after: probe
   check:
-  - assert: memory.ever_contained
+  - assert: fs.diff_contains
     args:
-    - weekly.md
+    - ~/out
     then: correct
   - assert: default
     then: omission
   evidence_ref:
-  - memory_snapshot
+  - fs_diff

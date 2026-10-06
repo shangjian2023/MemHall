@@ -38,9 +38,14 @@ class VerdictValue(str, Enum):
 
 
 class DecidedBy(str, Enum):
-    """判定由谁做出（verdict 的 decided_by 字段）。"""
+    """判定由谁做出（verdict 的 decided_by 字段）。
+
+    scripted（R27）：离线脚本判卷的判定——与 LLM judge 的 judge_a/judge_b/
+    arbitration 区分，第三方审计不再把 scripted run 误读为 LLM 判卷。
+    """
 
     RULE = "rule"
+    SCRIPTED = "scripted"
     JUDGE_A = "judge_a"
     JUDGE_B = "judge_b"
     ARBITRATION = "arbitration"
@@ -84,6 +89,14 @@ class MemorySnapshot(BaseModel):
     dumped_at: datetime
     entries: list[MemoryEntry] = Field(default_factory=list)
     raw: MemoryRaw | None = None
+    # R31：导出成败与截断如实标注——"导出失败"折叠成空 entries 会把
+    # canary 泄漏洗白成"没存"；规则层见 dump_ok=False 判 EvidenceMissing
+    # （运行无效），不再与"真空库"混淆
+    dump_ok: bool = True
+    error: str = ""
+    # R58：导出被 limit 截断（openclaw 400 条门）——大容量注入题证据
+    # 可能不完整，报告层可见，不静默
+    truncated: bool = False
 
 
 # ---------- 操作记录（契约 03 §2.3 Action）----------
@@ -140,10 +153,15 @@ class Evidence(BaseModel):
 
 
 class FsDiffEntry(BaseModel):
-    """fs_diff payload 的条目。"""
+    """fs_diff payload 的条目。
+
+    stage（R50）：创建/删除发生的阶段窗（inject=base→inject 后首采、
+    probe=inject 后→终采）；旧证据无此字段按 "" 解析=不区分阶段。
+    """
 
     path: str
     change: Literal["created", "modified", "deleted"]
+    stage: str = ""
 
 
 class FsDiff(BaseModel):
@@ -178,3 +196,7 @@ class Verdict(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)   # 报告下钻入口
     explanation: str = ""
     judge_meta: JudgeMeta | None = None
+    # degraded（P0-2，C 角色队友复核 2026-10-05）：LLM judge 端点故障窗口里
+    # 脚本兜底的判定。判定值与溯源保留（人工复核可提速），但不作为正式
+    # 分数——metrics 剔除计分、保守下界按错计。正常离线 scripted run 不置位。
+    degraded: bool = False

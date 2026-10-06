@@ -97,20 +97,22 @@ class LocalHermesAdapter(AgentAdapter):
         sent = datetime.now(UTC)
         t0 = time.time()
         try:
+            # R58：stdin 走字节模式——文本模式在 Windows 上把 \n 翻成 CRLF，
+            # 违反"message 原样透传"契约（消息体字节级原样进子进程）
             r = subprocess.run(
                 [self._resolve_exe(), "chat", "--query-file", "-", "--oneshot",
                  "--provider", "deepseek", "--model", model],
-                input=message, capture_output=True, encoding="utf-8",
-                errors="replace", cwd=str(self.workspace),
+                input=message.encode("utf-8"), capture_output=True,
+                cwd=str(self.workspace),
                 env=self._sandbox_env(), timeout=280,
                 creationflags=NO_WINDOW)
         except subprocess.TimeoutExpired as e:
             raise AgentUnavailable(f"hermes 超时: {e}") from e
-        text = _strip_tui(_ANSI.sub("", r.stdout or ""))
+        text = _strip_tui(_ANSI.sub("", r.stdout.decode("utf-8", "replace")))
         if not text:
             raise AgentUnavailable(
                 f"hermes 无有效回复(rc={r.returncode}): "
-                f"{(r.stdout or '')[:150]} | {(r.stderr or '')[:150]}")
+                f"{(r.stdout or b'')[:150]!r} | {(r.stderr or b'')[:150]!r}")
         if ("API failed after" in text or "Final error" in text
                 or "server error" in text.lower()):
             raise AgentUnavailable(f"hermes 后端不可用: {text[:200]}")
@@ -138,7 +140,9 @@ class LocalHermesAdapter(AgentAdapter):
             if not f.exists():
                 continue
             for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
-                s = line.strip().lstrip("-* ").strip()
+                # R58 对齐 hermes.py：只剥"- "/"* "形态的列表标记，
+                # 不再 lstrip("-* ") 误伤"-3°C"类正文首字符
+                s = re.sub(r"^[-*]\s+", "", line.strip()).strip()
                 if s:
                     entries.append(MemoryEntry(
                         entry_id=f"m-{len(entries):04d}", content=s,

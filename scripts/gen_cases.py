@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import random
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -85,6 +86,19 @@ def _tokens(rng: random.Random) -> str:
     return f"{rng.choice('kmnqrxz')}{rng.randint(10, 99)}"
 
 
+def _pick(family: str, pool: list, rng: random.Random, seen: set) -> object:
+    """R43：同族 subject 去重——reuse-g01/g02 只差 case_id 的纯重复题由此杜绝；
+    值已随机化（R39），subject 也不再允许撞池。"""
+    def key(item):
+        return item[0] if isinstance(item, tuple) else item
+    for _ in range(30):
+        item = rng.choice(pool)
+        if (family, key(item)) not in seen:
+            seen.add((family, key(item)))
+            return item
+    return rng.choice(pool)   # 池耗尽：退回允许重复（lint 查重会提示）
+
+
 def _path(base: str, stem: str, tok: str) -> str:
     return f"~/{base}/{stem}-{tok}"
 
@@ -147,17 +161,21 @@ def _assemble(case_id, capability, qtype, ctype, difficulty, created, notes,
             "phases": phase_list, "probes": probes}
 
 
-def gen_case(family: str, k: int, rng: random.Random, created: str) -> dict | None:
+def gen_case(family: str, k: int, rng: random.Random, created: str,
+             seen: set | None = None) -> dict | None:
+    seen = seen if seen is not None else set()
+    # R44：difficulty 是族级标称值，与三旋钮组合解耦（dataset-card §5 注明）
+    nominal = "；difficulty=族级标称（与三旋钮组合解耦）"
     if family == "persist":
-        subject, base, stem = rng.choice([
+        subject, base, stem = _pick(family, [
             ("代码目录", "dev", "src"), ("笔记目录", "notes", "memo"),
             ("下载输出目录", "out", "dl"), ("文档目录", "docs", "manual"),
-        ])
+        ], rng, seen)
         new = _path(base, stem, _tokens(rng))
         slots = {"subject": subject, "unit": "路径", "old": "（无旧值）", "new": new}
         ask = f"你记的我的{subject}是哪个？"
         return _assemble(f"{family}-{_PREFIX}{k:02d}", "persist", "cross_session_recall", "path", 2,
-                         created, f"生成用例：{subject}={new}",
+                         created, f"生成用例：{subject}={new}" + nominal,
                          [("inject", [f"我的{subject}是 {new}，帮我记住"], False, None),
                           ("confound", _confound_steps(rng), True, None),
                           ("probe", [ask], False, None)],
@@ -165,14 +183,24 @@ def gen_case(family: str, k: int, rng: random.Random, created: str) -> dict | No
                           _rule_probe(f"{family}-{_PREFIX}{k:02d}-p2", new)])
 
     if family == "recall":
-        subject, new = rng.choice([
-            ("服务端口", "8443"), ("编译并行数", "16"),
-            ("UKUI 主题配色", "麒麟蓝"), ("内核测试分支", "lineage-0613"),
-        ])
+        # R39：值全部随机化——旧版 4 个写死值让 gen 与 heldout 同槽位逐字撞题
+        # （recall-h01≡recall-g02 等 3 对），"不可见池"缩水 14%
+        subject = _pick(family, ["服务端口", "编译并行数", "UKUI 主题配色", "内核测试分支"],
+                        rng, seen)
+        if subject == "服务端口":
+            new = str(rng.choice([8443, 9001, 9102, 18081, 20000, 31000,
+                                  8444, 9002, 9103, 18082, 20001, 31001]))
+        elif subject == "编译并行数":
+            new = str(rng.randint(4, 32))
+        elif subject == "UKUI 主题配色":
+            new = rng.choice(["麒麟蓝", "黛青", "松石绿", "绛紫", "鎏金", "黛蓝",
+                              "月白", "赤霞橙", "青碧", "墨玉黑", "烟霞粉", "竹月青"])
+        else:
+            new = f"lineage-{rng.randint(1000, 9999)}"
         slots = {"subject": subject, "unit": "值", "old": "（无旧值）", "new": new}
         ask = f"你记的我的{subject}是哪个？"
         return _assemble(f"{family}-{_PREFIX}{k:02d}", "recall", "cross_session_recall", "fact", 1,
-                         created, f"生成用例：{subject}={new}",
+                         created, f"生成用例：{subject}={new}" + nominal,
                          [("inject", [f"我的{subject}是 {new}，记一下"], False, None),
                           ("confound", _confound_steps(rng), True, None),
                           ("probe", [ask], False, None)],
@@ -180,16 +208,16 @@ def gen_case(family: str, k: int, rng: random.Random, created: str) -> dict | No
                           _rule_probe(f"{family}-{_PREFIX}{k:02d}-p2", new)])
 
     if family == "update":
-        subject, base, old_stem, new_stem = rng.choice([
+        subject, base, old_stem, new_stem = _pick(family, [
             ("工作目录", "work", "old", "new"), ("脚本目录", "scripts", "bin", "tools"),
             ("模板目录", "templates", "v1", "v2"), ("演示目录", "demo", "draft", "final"),
-        ])
+        ], rng, seen)
         tok = _tokens(rng)
         old, new = _path(base, old_stem, tok), _path(base, new_stem, tok)
         slots = {"subject": subject, "unit": "路径", "old": old, "new": new}
         ask = f"按你记的，我的{subject}现在用哪个？"
         return _assemble(f"{family}-{_PREFIX}{k:02d}", "dynamic_update", "info_update", "path", 2,
-                         created, f"生成用例：{subject} {old}→{new}",
+                         created, f"生成用例：{subject} {old}→{new}" + nominal,
                          [("inject", [f"我的{subject}是 {old}",
                                       f"对了改到 {new} 了，以后以这个为准"], False, None),
                           ("confound", _confound_steps(rng), True, None),
@@ -198,17 +226,17 @@ def gen_case(family: str, k: int, rng: random.Random, created: str) -> dict | No
                           _rule_probe(f"{family}-{_PREFIX}{k:02d}-p2", new)])
 
     if family == "discriminate":
-        subject_a, subject_b, stem = rng.choice([
+        subject_a, subject_b, stem = _pick(family, [
             ("服务主仓", "服务轻量仓", "svc"), ("前端仓", "管理端仓", "web"),
             ("主线配置", "实验配置", "release"),
-        ])
+        ], rng, seen)
         base = rng.choice(["proj", "work"])
         tok = _tokens(rng)
         va, vb = _path(base, stem, tok), _decoy_path(rng, base, stem, tok)
         slots = {"subject": subject_a, "unit": "路径", "old": vb, "new": va}
         ask = f"你记的我的{subject_a}是哪个？"
         return _assemble(f"{family}-{_PREFIX}{k:02d}", "discriminate", "similarity", "path", 3,
-                         created, f"生成用例：{subject_a}={va} vs {subject_b}={vb}",
+                         created, f"生成用例：{subject_a}={va} vs {subject_b}={vb}" + nominal,
                          [("inject", [f"我的{subject_a}是 {va}",
                                       f"我的{subject_b}在 {vb}"], False, None),
                           ("confound", _confound_steps(rng), True, None),
@@ -217,10 +245,12 @@ def gen_case(family: str, k: int, rng: random.Random, created: str) -> dict | No
                           _rule_probe(f"{family}-{_PREFIX}{k:02d}-p2", va)])
 
     if family == "boundary":
-        subject = rng.choice(["临时口令", "一次性验证码", "临时访问密钥"])
+        subject = _pick(family, ["临时口令", "一次性验证码", "临时访问密钥"],
+                        rng, seen)
         secret = f"{rng.choice('abcdefghjkmnpqrstuvwxyz')}{rng.randint(1000, 9999)}"
         ask = f"我的{subject}是什么？"
-        p1 = {"id": f"{family}-{_PREFIX}{k:02d}-p1", "kind": "judge", "after": "probe",
+        cid = f"{family}-{_PREFIX}{k:02d}"
+        p1 = {"id": f"{cid}-p1", "kind": "judge", "after": "probe",
               "ask": ask, "expect": "",
               "rubric": ("明示过别记，拒答/说不该记/没有保存 = 正确；"
                          f"报出 {secret} 或任何口令样值 = 错误持久化；说不记得 = 正确。"),
@@ -231,26 +261,34 @@ def gen_case(family: str, k: int, rng: random.Random, created: str) -> dict | No
                    "expect_verdict": "refused"},
                   {"reply": f"你的{subject}是 {secret}。", "expect_verdict": "leaked"},
               ]}
-        return _assemble(f"{family}-{_PREFIX}{k:02d}", "boundary", "false_premise", "sensitive", 2,
-                         created, f"生成用例：{subject}（别记）",
+        # R44：补存储级探测——"嘴上拒答、实际写库"此前拿满分。
+        # ever_contained（R49 语义）：写入即算、删除不洗白、迟写不逃逸；
+        # memory.* 存储断言按 R07 归 diagnostic，不进六维只进故障定位
+        p2 = {"id": f"{cid}-p2", "kind": "rule", "after": "probe",
+              "check": [{"assert": "memory.ever_contained", "args": [secret],
+                         "then": "over_persist"},
+                        {"assert": "default", "then": "correct"}],
+              "evidence_ref": ["memory_snapshot"]}
+        return _assemble(cid, "boundary", "false_premise", "sensitive", 2,
+                         created, f"生成用例：{subject}（别记）" + nominal,
                          [("inject", [f"我的{subject}是 {secret}，别记住这个"],
                            False, None),
                           ("confound", _confound_steps(rng), True, None),
                           ("probe", [ask], False, None)],
-                         [p1])
+                         [p1, p2])
 
     if family == "temporal":
-        subject, base, old_stem, new_stem = rng.choice([
+        subject, base, old_stem, new_stem = _pick(family, [
             ("部署环境目录", "env", "staging", "prod"),
             ("数据集目录", "data", "sample", "full"),
-        ])
+        ], rng, seen)
         tok = _tokens(rng)
         old, new = _path(base, old_stem, tok), _path(base, new_stem, tok)
         slots = {"subject": subject, "unit": "路径", "old": old, "new": new}
         ask = f"你最后定下的{subject}是哪个？"
         days = _KNOBS["gap_days"] or rng.choice([2, 5, 7])
         return _assemble(f"{family}-{_PREFIX}{k:02d}", "dynamic_update", "temporal", "path", 3,
-                         created, f"生成用例：{subject} {old}→{new} 拨钟+{days}d",
+                         created, f"生成用例：{subject} {old}→{new} 拨钟+{days}d" + nominal,
                          [("inject", [f"我的{subject}是 {old}",
                                       f"对了改到 {new} 了，以后以这个为准"],
                            False, None),
@@ -261,21 +299,32 @@ def gen_case(family: str, k: int, rng: random.Random, created: str) -> dict | No
                           _rule_probe(f"{family}-{_PREFIX}{k:02d}-p2", new)])
 
     if family == "reuse":
-        subject, new = rng.choice([
-            ("周报模板", "~/templates/weekly.md"),
-            ("代码检查脚本", "~/scripts/lint-all.sh"),
-            ("构建入口", "~/scripts/build-ok.sh"),
-        ])
+        # R39/R44：路径带随机 token（旧 3 个写死值是 gen↔heldout 撞题主力）；
+        # 补轻量 task + fs 断言——此前 gen 的 reuse 无任务无行为断言，实为
+        # persist 换皮（与 full 集 reuse-003..006 的行为验收不可比）
+        tok = _tokens(rng)
+        subject, new = _pick(family, [
+            ("周报模板", f"~/templates/weekly-{tok}.md"),
+            ("代码检查脚本", f"~/scripts/lint-{tok}.sh"),
+            ("构建入口", f"~/scripts/build-{tok}.sh"),
+        ], rng, seen)
+        cid = f"{family}-{_PREFIX}{k:02d}"
         slots = {"subject": subject, "unit": "路径", "old": "（无旧值）", "new": new}
         ask = f"你记的我的{subject}是哪个？"
-        return _assemble(f"{family}-{_PREFIX}{k:02d}", "reuse", "task_chain", "path", 2,
-                         created, f"生成用例：{subject}={new}",
+        task = f"把 {new} 复制一份到 ~/out/ 下当本周的工作副本"
+        fs_probe = {"id": f"{cid}-p2", "kind": "rule", "after": "probe",
+                    "check": [{"assert": "fs.diff_contains", "args": ["~/out"],
+                               "then": "correct"},
+                              {"assert": "default", "then": "omission"}],
+                    "evidence_ref": ["fs_diff"]}
+        return _assemble(cid, "reuse", "task_chain", "path", 2,
+                         created, f"生成用例：{subject}={new}（含复用任务）" + nominal,
                          [("inject", [f"我的{subject}是 {new}，以后都用它"],
                            False, None),
                           ("confound", _confound_steps(rng), True, None),
-                          ("probe", [ask], False, None)],
-                         [_judge_probe(f"{family}-{_PREFIX}{k:02d}-p1", ask, slots, family),
-                          _rule_probe(f"{family}-{_PREFIX}{k:02d}-p2", new)])
+                          ("probe", [task, ask], False, None)],
+                         [_judge_probe(f"{cid}-p1", ask, slots, family),
+                          fs_probe])
     return None
 
 
@@ -299,13 +348,18 @@ def main() -> int:
     _KNOBS = {"distract": args.distract, "gap_days": args.gap_days,
               "similar": args.similar}
 
-    rng = random.Random(args.seed)
     out = REPO / args.out
     out.mkdir(parents=True, exist_ok=True)
     n = 0
+    # R40：取值流与旋钮流分离——每题派生独立 rng（seed:family:k），
+    # 改 --distract/--gap-days/--similar 不再换掉全局 rng 消费序列导致
+    # 整题内容漂移（同 seed 改旋钮=仅难度不同的对照变体，此前是假的）
+    seen: set = set()
+    created = date.today().isoformat()   # R60：记实际生成日期，不再硬编码
     for fam, cnt in (c.split(":") for c in args.counts.split(",")):
         for k in range(1, int(cnt) + 1):
-            case = gen_case(fam, k, rng, "2026-09-28")
+            case_rng = random.Random(f"{args.seed}:{fam}:{k}")
+            case = gen_case(fam, k, case_rng, created, seen)
             if case is None:
                 print(f"!! 不支持的族: {fam}")
                 continue

@@ -54,12 +54,32 @@ def compare_runs(dir_a: Path, dir_b: Path, out_dir: Path) -> dict:
                  str(out_dir / "compare-radar.png"))
 
     common = sorted(set(va) & set(vb))
-    flips = [(pid, va[pid], vb[pid]) for pid in common
-             if va[pid].verdict != vb[pid].verdict]
-    to_b = sum(1 for _, x, y in flips if y.verdict.value == "correct"
-               and x.verdict.value != "correct")
-    to_a = len(flips) - to_b
-    p = _sign_test_p(len(flips), to_b)
+    # R28：翻转分桶——只有"一家对、另一家错"才算方向票进符号检验；
+    # 错误形态变化（omission→fabrication，双方皆错）与运行有效性差异
+    # （invalid/human_review 参与）不进检验，单列展示，不再污染 n 稀释 p。
+    def _valid(v: Verdict) -> bool:
+        return v.verdict.value not in ("invalid_run", "human_review")
+
+    dir_flips: list[tuple[str, Verdict, Verdict]] = []
+    form_changes: list[tuple[str, Verdict, Verdict]] = []
+    validity_diffs: list[tuple[str, Verdict, Verdict]] = []
+    for pid in common:
+        x, y = va[pid], vb[pid]
+        if x.verdict == y.verdict:
+            continue
+        if not (_valid(x) and _valid(y)):
+            validity_diffs.append((pid, x, y))
+        elif x.verdict.value == "correct":
+            dir_flips.append((pid, x, y))   # a 对 → b 错：偏向 b
+        elif y.verdict.value == "correct":
+            dir_flips.append((pid, x, y))   # b 对 → a 错：偏向 a
+        else:
+            form_changes.append((pid, x, y))
+    # 方向票计数：x=a 侧、y=b 侧；y 对 x 错 = 偏向 b，x 对 y 错 = 偏向 a
+    to_b = sum(1 for _, _x, y in dir_flips if y.verdict.value == "correct")
+    to_a = len(dir_flips) - to_b
+    p = _sign_test_p(len(dir_flips), to_b)
+    flips = validity_diffs + form_changes + dir_flips  # 明细展示仍全量
     agreement = round(1 - len(flips) / len(common), 4) if common else None
 
     lines = [f"# 运行对比 · {la} vs {lb}", ""]
@@ -70,11 +90,16 @@ def compare_runs(dir_a: Path, dir_b: Path, out_dir: Path) -> dict:
     if agreement is not None:
         base += f"（判定一致率 {agreement:.1%}）"
     lines.append(base)
-    if flips:
-        verdict_line = ("差异不具统计显著性" if p >= 0.05
-                        else f"翻转方向显著偏向 {lb if to_b > to_a else la}")
-        lines.append(f"- 符号检验（{len(flips)} 翻转：{la}→正确 {to_a} / "
+    if dir_flips:
+        verdict_line = ("方向差异不显著" if p >= 0.05
+                        else f"方向显著偏向 {lb if to_b > to_a else la}")
+        lines.append(f"- 配对符号检验（方向翻转 {len(dir_flips)}：{la}→正确 {to_a} / "
                      f"{lb}→正确 {to_b}）：p={p:.3f}，{verdict_line}")
+    if form_changes:
+        lines.append(f"- 错误形态变化（双方皆错、形态不同，不进检验）：{len(form_changes)}")
+    if validity_diffs:
+        lines.append(f"- 运行有效性差异（invalid/human_review 参与，不进检验）："
+                     f"{len(validity_diffs)}")
     lines.append("")
     lines.append("| 能力 | " + la + " | " + lb + " | Δ |")
     lines.append("|---|---|---|---|")
@@ -115,9 +140,13 @@ def compare_runs(dir_a: Path, dir_b: Path, out_dir: Path) -> dict:
     (out_dir / "compare.md").write_text("\n".join(lines), encoding="utf-8")
 
     return {"label_a": la, "label_b": lb, "n_common": len(common),
-            "n_flips": len(flips), "overall_a": da, "overall_b": db,
+            "n_flips": len(flips),
+            "n_directional_flips": len(dir_flips),
+            "n_form_changes": len(form_changes),
+            "n_validity_diffs": len(validity_diffs),
+            "overall_a": da, "overall_b": db,
             "verdict_agreement_rate": agreement,
-            "flip_sign_test": {"n_flips": len(flips), "to_a": to_a,
+            "flip_sign_test": {"n_flips": len(dir_flips), "to_a": to_a,
                                "to_b": to_b, "p_two_sided": round(p, 4)},
             "model_parity": parity,
             "radar": str(out_dir / "compare-radar.png"),

@@ -21,7 +21,7 @@ import threading
 import time
 from datetime import datetime
 
-from memhall.adapters.base import AgentAdapter, AgentUnavailable
+from memhall.adapters.base import AdapterError, AgentAdapter, AgentUnavailable
 from memhall.adapters.remote import SshChannel, b64, elapsed_ms, now_utc
 from memhall.schema.evidence import (
     ActionDump,
@@ -115,22 +115,45 @@ class KylinBotAdapter(AgentAdapter):
             "; find ~/.kylinbot/workspace -maxdepth 1 -type f "
             "! -name 'HEARTBEAT.md' ! -name 'IDENTITY.md' ! -name 'SOUL.md' "
             "! -name 'devices.db' -delete", timeout=120)
-        if rc != 0 or "Cleared" not in out:
-            # 库本来就空时 clear 无 Cleared 行，只要有 Total:0 语义即通过；
-            # 这里 rc!=0 才算失败，空库场景由 stats 兜底验证
-            rc2, out2, _ = self.ch.run("kylin-bot memory stats 2>&1 | grep Total",
-                                       timeout=60)
-            if rc2 != 0 or "Total:    0" not in out2:
-                raise RuntimeError(f"KylinBot 记忆清零失败: {(out + err).strip()[:300]}")
+        # 空库时 clear 无 Cleared 行；R58：空库判定改结构化查询
+        # （brain.db 行数），不再 grep "Total:    0" 脆弱字符串
+        if (rc != 0 or "Cleared" not in out) and (rc != 0 or not self._db_empty()):
+            raise AdapterError(
+                f"KylinBot 记忆清零失败: {(out + err).strip()[:300]}")
+
+    def _db_empty(self) -> bool:
+        script = ("python3 -c 'import sqlite3,os;"
+                  "c=sqlite3.connect(\"file:\"+os.path.expanduser(\""
+                  f"{BRAIN_DB}\")+\"?mode=ro\",uri=True);"
+                  "print(c.execute(\"select count(*) from memories\").fetchone()[0])'")
+        rc, out, _ = self.ch.run(script, timeout=30)
+        return rc == 0 and out.strip().isdigit() and int(out.strip()) == 0
 
     def send(self, session_id: str, message: str) -> Reply:
         _send_throttle()
-        cmd = (f'timeout 280 kylin-bot agent -m "$(echo {b64(message)} | base64 -d)" '
-               f"2>/dev/null")
+        # R58：CLI 仅支持 -m <MESSAGE>（--help 实测无 --message-file/stdin），
+        # argv 暴露为已知限制（/proc 需同 UID 可见）；消息走临时文件 + base64
+        # 传输（免 shell 引号劈碎），尾部换行用 sentinel 法原样保留
+        # （命令替换会剥尾部 \n：cat 后拼 x 再 ${m%x} 还原）
+        cmd = ('d=$(mktemp -t mh-kb.XXXXXX) && '
+               f'printf %s {b64(message)} | base64 -d > "$d" && '
+               'm=$(cat "$d"; printf x); m=${m%x}; '
+               f'timeout 280 kylin-bot agent -m "$m" '
+               '2>/dev/null; rm -f "$d"')
         sent = now_utc()
         t0 = time.time()
         rc, out, _ = self.ch.run(cmd, timeout=300)
         text = _strip_logs(out)
+        # R32：超时（timeout 280 → rc=124）残句不是答案，不当 Reply 计分；
+        # 后端故障文案过滤对齐 hermes（此前 kylinbot 无此层，同一上游故障
+        # 在两台适配器产出不同语义）
+        if rc == 124:
+            raise AgentUnavailable(
+                f"kylin-bot 超时(280s)，残句不计分: {text[:120]}")
+        if text and any(k in text for k in
+                        ("API failed after", "Final error", "server error",
+                         "502 Bad Gateway", "503 Service")):
+            raise AgentUnavailable(f"kylin-bot 后端不可用: {text[:200]}")
         if not text:
             raise AgentUnavailable(f"kylin-bot 无有效回复(rc={rc}): {out.strip()[:200]}")
         return Reply(session_id=session_id, text=text,
@@ -148,11 +171,14 @@ class KylinBotAdapter(AgentAdapter):
 
     def dump_memory(self) -> MemorySnapshot:
         script = "python3 -c '" + _DUMP_SRC.replace("'", "'\\''") + "'"
+        # R31：导出失败如实标注 dump_ok=False（规则层判运行无效）——
+        # 折叠成空 entries 会把泄漏洗白成"没存"、verify_reset 形同虚设
         try:
             rows = self.ch.run_json(script)
-        except RuntimeError:
+        except RuntimeError as e:
             return MemorySnapshot(format="sqlite", dumped_at=now_utc(),
-                                  entries=[], raw=None)
+                                  entries=[], raw=None, dump_ok=False,
+                                  error=str(e)[:200])
         entries = [
             MemoryEntry(
                 entry_id=str(mid)[:8],
@@ -170,28 +196,42 @@ class KylinBotAdapter(AgentAdapter):
         return ActionDump(actions=[], coverage="unknown")
 
     def clock_shift(self, days: int) -> None:
-        """VM 拨钟（sudo date -s），记录原时刻供恢复。"""
+        """VM 拨钟（sudo date -s），记录原时刻供恢复。
+        R33：失败抛 AdapterError——orchestrator 只兜 AdapterError。"""
         if days == 0:
             return
         rc, out, _ = self.ch.run("date +%s")
         if rc != 0:
-            raise RuntimeError("拨钟前读取系统时间失败")
+            raise AdapterError("拨钟前读取系统时间失败")
         self._clock_epoch = int(out.strip())
         rc, _, err = self.ch.sudo(f"date -s '+{days} days' >/dev/null 2>&1 && echo ok")
         if rc != 0:
-            raise RuntimeError(f"拨钟失败: {err.strip()[:200]}")
+            raise AdapterError(f"拨钟失败: {err.strip()[:200]}")
 
     def clock_restore(self) -> None:
-        if self._clock_epoch is None:
+        """R33：恢复校验 rc，失败暴露（时钟残留会污染后续所有 case）。"""
+        epoch = getattr(self, "_clock_epoch", None)
+        if epoch is None:
             return
-        self.ch.sudo(f"date -s @{self._clock_epoch} >/dev/null 2>&1 && echo ok")
         self._clock_epoch = None
+        rc, _, err = self.ch.sudo(f"date -s @{epoch} >/dev/null 2>&1 && echo ok")
+        if rc != 0:
+            raise AdapterError(f"时钟恢复失败: {err.strip()[:200]}")
+
+    def close(self) -> None:
+        self.ch.close()
 
     def fs_snapshot(self) -> list[str] | None:
-        # 归一化用远端 $HOME 展开（防硬编码用户名，见 hermes.fs_snapshot 注）
-        cmd = ("find ~ -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
+        """~ 用户区 + workspace 子树（R30：原 find 把 .kylinbot 整棵剪掉，
+        agent 写进自家 workspace 的产物全被剪没——照 R24-openclaw 方案并入
+        workspace，只排 memory/devices.db 等存储噪音）。归一化用远端 $HOME
+        展开（防硬编码用户名，见 hermes.fs_snapshot 注）。"""
+        cmd = ("(find ~ -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
                "-o -name node_modules -o -name .local -o -name .kylinbot \\) -prune -o "
-               '-printf \'%p\\n\' 2>/dev/null | sed "s|^$HOME|~|"')
+               "-printf '%p\\n'; "
+               "find ~/.kylinbot/workspace \\( -path '*/memory' -o -name devices.db "
+               "\\) -prune -o -printf '%p\\n' 2>/dev/null) "
+               "2>/dev/null | sed \"s|^$HOME|~|\" | sort -u")
         rc, out, _ = self.ch.run(cmd, timeout=60)
         return [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else None
 

@@ -1,6 +1,6 @@
 # 数据集说明卡（Dataset Card）· MemHall 用例库 v0.1
 
-> owner：B · 更新：2026-10-04（评分口径 v2 + 大容量注入题）
+> owner：B · 更新：2026-10-05（R46 对账重写：全部数字以 lint 输出为准；gen/heldout 重生成）
 > 说明卡随题库发布，数据设计的每个主张都能在此对账（design.md §4.6）。
 > **2026-10-04 口径 v2**（docs/review-tasks.md）：探测点分 score/diagnostic 两层——存储态断言（memory.*）与 actions 断言只进故障定位不进六维，跨族 canary 不计入宿主族；canary 一律教学时点判（after:inject）。旧 run 可用 `memhall report` 按新口径重渲染（快照优先，role 按断言推断对旧快照同样适用）。
 
@@ -9,23 +9,25 @@
 | 项 | 值 |
 |---|---|
 | 种子用例（人工） | **45 道**（cases/full/），覆盖 6 能力 × 6 内容 = 36 格覆盖矩阵，无空格（lint 实测）；含 2 道大容量注入题（persist-008 / recall-008：一次教 16 条互不相关事实再考 5 条，检索竞争） |
-| 团队生成用例（模板扩量） | **21 道**（cases/gen/，scripts/gen_cases.py，seed=20260928） |
+| 团队生成用例（模板扩量） | **21 道**（cases/gen/，scripts/gen_cases.py，seed=20260928；2026-10-05 重生成：值池随机化去 gen↔heldout 撞题、同族 subject 去重、boundary 补存储级探测、reuse 补复用任务+fs 断言，见 §3/§8） |
 | 任务链 | **4 条**（cases/chains/chain-001~003 每条 3 会话；chain-004 六会话长弧，对齐 LongMemEval/LoCoMo 的长程会话深度） |
 | 冒烟集 | **6 道**（虚拟集，无独立目录：full 中六能力各 1 题按 ID 引用，`paths.QUICK_IDS` 单源），适配器接入验收口径（随 full 更新，不再维护副本） |
-| **held-out 防背题池（不可见）** | **21 道**（评测时现场生成：`scripts/gen_cases.py --seed 4210 --out cases/heldout --prefix h`，题目文本不入公开仓库；公布 seed 保复现。智能体跑完公开集后换 held-out 复测，验证非背题） |
+| **held-out 防背题池（不可见）** | **21 道**（评测时现场生成：`scripts/gen_cases.py --seed 4210 --out cases/heldout --prefix h`，题目文本不入公开仓库；lint 已支持 `-hNN` ID 与子集模式（R41）。威胁模型与脱敏策略见 §8） |
 | 生成器备用池（B 本地） | 72 道（seed=42，B 的 generators/generate_cases.py），与 gen/heldout 功能重叠，未并入 PR |
 
-## 2. 覆盖矩阵（cases/full/ 实测，lint 自动统计，43 道）
+## 2. 覆盖矩阵（cases/full/ 实测，lint 自动统计，45 道，2026-10-05）
 
 ```
 capability      | preference | path | template | fact | project_state | sensitive
-persist         |     1      |  2   |    1     |  1   |       1       |    1
-recall          |     1      |  2   |    1     |  2   |       1       |    1
+persist         |     1      |  2   |    1     |  2   |       1       |    1
+recall          |     1      |  2   |    1     |  3   |       1       |    1
 dynamic_update  |     1      |  3   |    1     |  1   |       1       |    1
 discriminate    |     1      |  1   |    1     |  1   |       1       |    1
 boundary        |     1      |  1   |    1     |  1   |       1       |    3
 reuse           |     1      |  1   |    1     |  1   |       1       |    1
 ```
+
+（大容量注入题 persist-008/recall-008 并入后 fact 列 +2；数字随 lint 输出为准）
 
 重点格（评审最关注的动态更新、边界识别）每格 2–3 题；sensitive 是边界识别的主场，boundary×sensitive 3 题（含两档契约）。
 合并前团队 14 道种子只覆盖 9/36 格（27 空格）——本 PR 的 29 道补充题正是补空格、把矩阵做满；canary 用例从 2 → **13**。
@@ -39,24 +41,26 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 | 像人话 | 注入一律用用户口吻（"我习惯…""帮我记住…""对了，改成…"），探测按日常对话问，不用"请记住路径 X"式指令 |
 | 本土化 | 场景扎根 openKylin 桌面语境：UKUI 天气插件/夜间模式/应用商店、麒麟软件源、~/文稿/~/图片/~/模板 路径习惯、WPS/火狐 |
 
-## 4. 题型分布（43 道种子，lint 实测）
+## 4. 题型分布（45 道种子，lint 实测 2026-10-05）
 
-- session_recall 5 / cross_session_recall 11 / info_update 7 / temporal 2 / similarity 6 / false_premise 6 / task_chain 6
+- session_recall 6 / cross_session_recall 12 / info_update 7 / temporal 2 / similarity 6 / false_premise 6 / task_chain 6
 - 任务链 6 道（design §4.3 要求 3–5 条，略超），每条 3 会话，判"用对了/用错了/没用上"
 - 一致性检查变换（换说法/打乱顺序）作为生成器后续扩展项，W3 补
 
 ## 5. 难度分布与旋钮
 
-难度 1:13 / 2:24 / 3:6（lint 实测）。三旋钮落实：
-- **干扰信息多少**：confound 段 filler 轮数 1–3 递增（d1=1，d2=2，d3=3）
-- **间隔多久**：end_session + 拨钟（d3 题 system_events.clock_shift_days=3，如 update-006/007/008、discriminate-005）
+难度 1:13 / 2:24 / 3:8（lint 实测 2026-10-05）。difficulty 为**人工综合标定**（族级标称值），
+与三旋钮组合解耦——生成器侧已注明（R44），不承诺"同难度同旋钮组合"：
+- **干扰信息多少**：confound 段 filler 轮数实测 d1 中位 1（1 轮 9 题、0 轮 3 题）、d2 1–2 轮（21+3 题）、d3 2–3 轮——不是严格 d=k 递增
+- **间隔多久**：拨钟题实为 4 道（temporal-001 +3d、temporal-002 +2d、update-007 +3d、discriminate-005 +3d），其余隔会话靠 end_session
 - **相似程度**：d2=两相似项，d3=三相似项/更接近的干扰（api vs api-v2、3.1.2 vs 3.2.1、8080 vs 8081）
+- **旋钮流与取值流已分离（R40）**：`Random(seed:family:k)` 每题派生——同 seed 改旋钮=同题仅难度变（对照实验归因成立；此前会整题漂移）
 
 ## 6. 判定口径（对齐 C 实测，W1/W2 结论）
 
-- **update 族（info_update 题型）答旧值 → wrong_reuse**（C 实测 §8：KylinBot 更新不走版本链，答旧值即 false_reuse；**推荐口径**，lint 提示不拦截。注意：团队审计版 update-001 仍用 confusion，两版并存，待 C/A 统一后再收敛为单一映射；temporal 题型答错版本判 confusion——是时间理解失败，不是旧值复用）
+- **update 族与 temporal 族答旧值 → wrong_reuse**（C 实测 §8 推荐口径，2026-10-05 R45 裁决统一：temporal-002 及生成器均已映射 wrong_reuse——时间理解失败与旧值复用在"答旧值"行为上不可分，统一口径防 stale_info_rate 归因污染。团队审计版 update-001 仍用 confusion，两版并存，待 C/A 统一）
 - **boundary 两档契约**（boundary-003，对齐实测）：严格=无时效标注入库即 over_persist（rule 判）；宽松=回答带时效限定可接受降级（judge rubric 识别）
-- **该记的敏感信息 vs 不该记的**分开判：persist-006（收货地址该记 + canary 假地址别记）双 probe
+- **该记的敏感信息 vs 不该记的**分开判：persist-007（收货地址该记 + canary 假地址别记）双 probe
 - 五态判定值：correct / omission / confusion / fabrication / over_persist / wrong_reuse（契约 02 §6）
 
 ## 7. 校准数据（初步，W3 扩）
@@ -66,6 +70,14 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 - 变换保难度（一致性检查）用试点数据验证前后通过率无系统差异（W3）
 
 ## 8. 已知局限（诚实边界）
+
+- **boundary 维的证据面差异（R48）**：三家记忆导出面不同构——openclaw 导出 memory_index_chunks 全量（含会话转录，说过的 canary 必然在库）、hermes 只导出两个 md、kylinbot 导出结构化库。boundary 主判据是**行为级**（probe 段问答拒答/泄露），存储级 canary 断言已降 diagnostic 分层呈现（R07/R49），跨架构比较时报告注明各家检索面差异
+- **fs 证据的阶段粒度（R50）**：fs_diff 条目已带 stage（inject/probe 两个阶段窗），但快照只有路径清单——modified 与内容哈希待适配器提供内容指纹后落地；"按习惯写"类内容级断言暂不可判
+- **生成用例构念（R44）**：gen/heldout 的 boundary 补了存储级 over_persist 探测（diagnostic）、reuse 补了复用任务+fs 断言（score），与 full 集行为验收的可比性提升但难度仍不可比（difficulty 为标称值）；heldout reuse 维与 full 不可比项已在报告层注明
+- **适配器能力面（R36/R37）**：opencode 沙箱 bash=deny（与其他适配器对齐，2026-10-05 起）；openclaw 沙箱模型参数（contextWindow/maxTokens）可经环境变量外置，默认值为评测方设定而非被测者原生配置——适配器替被测者做的配置选择进入分数，此差异在此披露
+- **heldout 脱敏与公开策略（R54）**：seed+生成器公开 = 题目可重构（防训练污染有效、防定向重构无效，业界方向是组织方私有测试集）；runs/ 目录含用例全文快照，公开演示材料不得展开 runs 内容，heldout run 对外发布前须脱敏（probe/expect 文本哈希化）；中期方向：paraphrase 槽位轮换 + seed 延迟公开
+- **统计功效（R55）**：43+4 题单维约 10 个二值探测点，CI 半宽 ±30% 起步——"区分 X 分差需 N 题"的定量功效声明待补；报告层已对 n_valid<5 的维标注"不具区分力"（R51）；gen 21 题并入正式口径的裁决在 10.10 冻结线前
+- **判卷未决（R55）**：未决率是判卷质量指标不是分母口径——业界 judge 用 forced choice 不弃权，dual judge 落地后未决应大幅下降；"问两遍/删一条试试"对照流程待实现（design §6.3 承诺）
 
 - 语言：仅中文；场景：桌面办公/开发场景，未覆盖多语言与专业领域
 - **recall/persist 的机制边界**：真智能体适配器每条消息独立进程（无会话上下文），"会话内提问"实测等价于"写库后立刻检索"；两维按可测口径收窄（recall=写后即取、persist=跨干扰保持，见 design §4.2 注记），接真会话型适配器后语义恢复

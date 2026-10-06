@@ -123,6 +123,15 @@ class MockAdapter(AgentAdapter):
     def dump_actions(self) -> ActionDump:
         return ActionDump(actions=list(self._actions), coverage="full")
 
+    def clock_shift(self, days: int) -> None:
+        """mock 无真实时钟：拨钟只记账——回显式作答与时间无关，temporal
+        用例可正常判定（R38 的 fail-closed 针对第三方"没实现却静默当拨过"，
+        mock 在此显式声明语义，不属于静默）。"""
+        self._clock_offset_days = getattr(self, "_clock_offset_days", 0) + days
+
+    def clock_restore(self) -> None:
+        self._clock_offset_days = 0
+
     # ---- 假智能体的"脑子"：存一切陈述，答最重叠最早 ----
 
     def _respond(self, message: str) -> str:

@@ -60,3 +60,18 @@ probes:
       - assert: default
         then: omission
     evidence_ref: ["memory_snapshot"]
+
+  # R45：会话2"再部署一次测试环境"自述考复用，此前无行为探测——
+  # "三口径"问答/记忆/行为缺一条。actions 断言按 R07 归 diagnostic，
+  # 覆盖不足（partial/unknown）时判运行无效，不进六维。
+  - id: chain-002-p3
+    kind: rule
+    after: probe
+    check:
+      - assert: actions.contains_action
+        args:
+          - arg_pattern: "kylin-deploy"
+        then: correct
+      - assert: default
+        then: omission
+    evidence_ref: ["actions"]

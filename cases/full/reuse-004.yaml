@@ -38,8 +38,10 @@ probes:
     kind: rule
     after: probe
     check:
-      - assert: fs.path_exists
-        args: ["~/proj/kestrel/docs/进度报告.md"]
+      # R42：任务文案未指定文件名，锁死"进度报告.md"会把写其他合理文件名
+      # 判 omission——构念是"放到 docs"，目录级断言即可
+      - assert: fs.diff_contains
+        args: ["~/proj/kestrel/docs"]
         then: correct
       - assert: fs.path_exists
         args: ["~/proj/kestrel/src/进度报告.md"]

@@ -55,8 +55,13 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
             extra.append(f"按用例等权 {cw:.1%}")
         lines.append(f"  （{'，'.join(extra)}，规则判卷率 {metrics['rule_scoring_rate']:.0%}）")
     if metrics.get("n_human_review"):
-        lines.append(f"- ⚠️ 判卷未决 {metrics['n_human_review']} 个已剔出分母"
-                     "——脚本判卷天花板，正式口径建议 `--judge dual` 收尾")
+        dual = (manifest.get("judge") or {}).get("mode") == "dual"
+        hint = ("dual 仲裁后仍未决，转人工复核" if dual
+                else "脚本判卷天花板，正式口径建议 `--judge dual` 收尾")
+        lines.append(f"- ⚠️ 判卷未决 {metrics['n_human_review']} 个已剔出分母——{hint}")
+    if metrics.get("n_degraded"):
+        lines.append(f"- ⚠️ 判卷降级 {metrics['n_degraded']} 个（judge 故障窗口脚本兜底）"
+                     "已剔出分母——判定值仅供参考，保守下界已按错计")
     wh = metrics.get("write_hygiene")
     if wh is not None:
         lines.append(f"- 写入卫生（不该记的记了）：{wh:.1%}")
@@ -66,8 +71,15 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
     jm = manifest.get("judge", {})
     if jm:
         model = f"（{jm.get('model_a', '')}）" if jm.get("model_a") else ""
-        lines.append(f"- 判卷口径：{jm.get('mode', '?')}{model}"
-                     f" · 提示词版本 {jm.get('prompt_version', '?')}")
+        line = (f"- 判卷口径：{jm.get('mode', '?')}{model}"
+                f" · 提示词版本 {jm.get('prompt_version', '?')}")
+        ar = metrics.get("judge_agreement_rate")
+        kp = metrics.get("judge_cohens_kappa")
+        if ar is not None:
+            line += f" · 双评委一致率 {ar:.1%}"
+        if kp is not None:
+            line += f" · Cohen's Kappa {kp:.2f}"
+        lines.append(line)
     lines.append("")
     lines.append("![六维雷达图](radar.png)")
     lines.append("")
@@ -80,7 +92,10 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         errs = "、".join(f"{VERDICT_ZH.get(k, k)}×{n}"
                          for k, n in d["error_breakdown"].items()) or "—"
         score = d["score"]
-        score_s = f"{score:.0%}" if score is not None else "—（未测）"
+        # R51：有效探测 <5 的维标注不具区分力——二值探测点 CI 半宽 ±30% 起步，
+        # 维度间比较与对外叙事都要让位给这个事实
+        thin = (" ⚠样本<5，不具区分力" if 0 < d["n_valid"] < 5 else "")
+        score_s = (f"{score:.0%}{thin}" if score is not None else "—（未测）")
         lines.append(f"| {CAP_LABELS_ZH[cap]} | {score_s} | "
                      f"{d['n_correct']}/{d['n_valid']} | {errs} |")
     lines.append("")
@@ -108,8 +123,9 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         reason = v.explanation.replace("|", "\\|")
         if len(reason) > 60:
             reason = reason[:60] + "…"
+        dec = v.decided_by.value + ("(降级)" if v.degraded else "")
         lines.append(f"| {v.probe_id} | {cap_id} | {VERDICT_ZH.get(v.verdict.value, v.verdict.value)} "
-                     f"| {v.decided_by.value} | {v.confidence:.2f} | {reason} |")
+                     f"| {dec} | {v.confidence:.2f} | {reason} |")
     lines.append("")
     lines.append(f"> 证据下钻：`runs/{run_id}/cases/<case_id>/evidence.jsonl`"
                  f"（每条判定引用对应证据哈希）")

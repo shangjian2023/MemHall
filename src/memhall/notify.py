@@ -31,11 +31,12 @@ def desktop_notify(title: str, body: str, open_path: str | None = None) -> None:
         pass
 
 
-def notify_run_done(adapter: str, score: float, n_valid: int, n_total: int,
+def notify_run_done(adapter: str, score: float | None, n_valid: int, n_total: int,
                     run_dir: str, radar: str | None = None) -> None:
-    """评测完成的标配通知。score 0-1。"""
+    """评测完成的标配通知。score 0-1；None=未测（R57：不再 TypeError 崩通知）。"""
+    score_text = "未测" if score is None else f"{score:.1%}"
     desktop_notify(
         "麟阁评测完成",
-        f"{adapter} 总体 {score:.1%}（有效 {n_valid}/{n_total}）\n报告: {run_dir}",
+        f"{adapter} 总体 {score_text}（有效 {n_valid}/{n_total}）\n报告: {run_dir}",
         open_path=radar,
     )

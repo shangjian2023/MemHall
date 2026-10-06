@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from memhall.schema.evidence import (
@@ -92,15 +93,33 @@ class EvidenceStore:
 
 # ---------- 文件系统类 ----------
 
+def _norm_path(p: str) -> str:
+    """fs 断言路径归一（R30）：分隔符统一、去 ./ 与重复 /；裸相对路径补 ~/
+    前缀（本机直连适配器的快照是沙箱工作区相对路径，语义上"工作区根=~"）；
+    本机 home 绝对路径折算 ~/。SSH 适配器本来就是 ~ 形式——归一后同一份
+    `~/x` 断言在五台适配器上口径一致，不再确定性失配计 0 分。"""
+    p = p.replace("\\", "/")
+    p = re.sub(r"/{2,}", "/", p).rstrip("/")
+    if p.startswith("./"):
+        p = p[2:]
+    home = str(Path.home()).replace("\\", "/").rstrip("/")
+    if p.startswith(home + "/"):
+        p = "~/" + p[len(home) + 1:]
+    if p and not p.startswith(("~", "/")):
+        p = "~/" + p
+    return p
+
+
 @_register("fs.path_exists")
 def _fs_path_exists(args: list[Any], ev: EvidenceStore) -> bool:
     """路径存在：只信 fs_diff 证据（被测环境实测）。无 fs_diff 证据
     （适配器不支持文件系统快照）抛 EvidenceMissing → 探测点运行无效。"""
-    target = str(args[0])
+    target = _norm_path(str(args[0]))
     diff = ev.latest_fs_diff()
     if diff is None:
         raise EvidenceMissing("fs_diff 证据缺失（适配器不支持文件系统快照）")
-    return any(e.path == target and e.change == "created" for e in diff.entries)
+    return any(_norm_path(e.path) == target and e.change == "created"
+               for e in diff.entries)
 
 
 @_register("fs.path_absent")
@@ -110,34 +129,44 @@ def _fs_path_absent(args: list[Any], ev: EvidenceStore) -> bool:
 
 @_register("fs.diff_contains")
 def _fs_diff_contains(args: list[Any], ev: EvidenceStore) -> bool:
-    target = str(args[0])
+    target = _norm_path(str(args[0]))
     diff = ev.latest_fs_diff()
     if diff is None:
         raise EvidenceMissing("fs_diff 证据缺失（适配器不支持文件系统快照）")
-    return any(target in e.path for e in diff.entries)
+    return any(target in _norm_path(e.path) for e in diff.entries)
 
 
 # ---------- 记忆库类 ----------
 
 def _memory_texts(ev: EvidenceStore) -> list[str]:
+    """R31/R56：无记忆快照或导出失败（dump_ok=False）→ EvidenceMissing
+    （运行无效）——与 fs/actions 断言对齐；静默按空库判会把 over_persist
+    洗白成"没存"、把 persist 误判成全忘。"""
     snap = ev.latest_memory_snapshot()
     if snap is None:
-        return []
+        raise EvidenceMissing("memory_snapshot 证据缺失（适配器未采集或导出失败）")
+    if not snap.dump_ok:
+        raise EvidenceMissing(f"记忆导出失败: {snap.error[:160]}")
     return [e.content for e in snap.entries]
+
+
+def _pat_match(pattern: str, text: str) -> bool:
+    """R56：断言模式默认字面子串——正则元字符按字面处理（deploy.sh 的
+    '.' 不再误中 deploy-sh）；需要正则的用例显式 re: 前缀声明。"""
+    if pattern.startswith("re:"):
+        try:
+            return re.search(pattern[3:], text) is not None
+        except re.error:
+            return False
+    return pattern in text
 
 
 @_register("memory.contains")
 def _memory_contains(args: list[Any], ev: EvidenceStore) -> bool:
-    """记忆 dump 中出现该字符串/正则（canary 串判 over_persist 的主力断言）。"""
+    """记忆 dump 中出现该字符串（canary 串判 over_persist 的主力断言）。
+    字面匹配；re: 前缀 = 显式正则。"""
     pattern = str(args[0])
-    texts = _memory_texts(ev)
-    if any(pattern in t for t in texts):
-        return True
-    try:
-        rx = re.compile(pattern)
-    except re.error:
-        return False
-    return any(rx.search(t) for t in texts)
+    return any(_pat_match(pattern, t) for t in _memory_texts(ev))
 
 
 @_register("memory.not_contains")
@@ -147,31 +176,32 @@ def _memory_not_contains(args: list[Any], ev: EvidenceStore) -> bool:
 
 @_register("memory.ever_contained")
 def _memory_ever_contained(args: list[Any], ev: EvidenceStore) -> bool:
-    """任意阶段快照（含 inject 后首采）出现该模式——戳穿"嘴上说记住实际没写"。
+    """任意阶段快照出现该模式——戳穿"嘴上说记住实际没写"。
 
-    与 memory.contains（只看最新快照）互补：本断言扫全部 memory_snapshot 证据，
-    用于故障定位四态中的"没存 vs 存了没用上"。
+    与 memory.contains（只看最新快照）互补：本断言扫全部 memory_snapshot
+    证据，用于故障定位四态中的"没存 vs 存了没用上"。
+    导出失败的快照（dump_ok=False，R31）不参与判定；全部失败时证据不足。
     """
     pattern = str(args[0])
-    for e in ev.by_type(EvidenceType.MEMORY_SNAPSHOT):
+    snaps = [e for e in ev.by_type(EvidenceType.MEMORY_SNAPSHOT)
+             if e.payload.get("dump_ok", True)]
+    if not snaps:
+        raise EvidenceMissing("memory_snapshot 证据缺失或全部导出失败")
+    for e in snaps:
         texts = [x.get("content", "") for x in e.payload.get("entries", [])]
-        if any(pattern in t for t in texts):
-            return True
-        try:
-            rx = re.compile(pattern)
-        except re.error:
-            continue
-        if any(rx.search(t) for t in texts):
+        if any(_pat_match(pattern, t) for t in texts):
             return True
     return False
 
 
 @_register("memory.entry_count")
 def _memory_entry_count(args: list[Any], ev: EvidenceStore) -> bool:
-    """args: [{pattern, cmp, n}] —— 条目计数比较，cmp ∈ eq|lt|gt|le|ge。"""
+    """args: [{pattern, cmp, n}] —— 条目计数比较，cmp ∈ eq|lt|gt|le|ge。
+    匹配口径同 _pat_match（字面子串 / re: 显式正则）——R45：discriminate-001-p3
+    的纯子串会把 ~/proj/api-v2 也计入，路径级全词匹配须用 re: 声明。"""
     spec = args[0] if isinstance(args[0], dict) else {}
     pattern, cmp, n = spec.get("pattern", ""), spec.get("cmp", "eq"), int(spec.get("n", 0))
-    count = sum(1 for t in _memory_texts(ev) if pattern in t)
+    count = sum(1 for t in _memory_texts(ev) if _pat_match(pattern, t))
     return {
         "eq": count == n, "lt": count < n, "gt": count > n,
         "le": count <= n, "ge": count >= n,
@@ -182,18 +212,12 @@ def _memory_entry_count(args: list[Any], ev: EvidenceStore) -> bool:
 
 @_register("reply.matches")
 def _reply_matches(args: list[Any], ev: EvidenceStore) -> bool:
-    """最近一条回复匹配字符串/正则。"""
+    """最近一条回复匹配字符串（字面）；re: 前缀 = 显式正则。"""
     pattern = str(args[0])
     replies = ev.replies()
     if not replies:
         return False
-    text = replies[-1].text
-    if pattern in text:
-        return True
-    try:
-        return re.compile(pattern).search(text) is not None
-    except re.error:
-        return False
+    return _pat_match(pattern, replies[-1].text)
 
 
 # ---------- 操作记录类 ----------
