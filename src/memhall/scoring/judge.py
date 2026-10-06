@@ -71,6 +71,11 @@ def _norm(s: str) -> str:
 _ABSTAIN = re.compile(r"不记得|不知道|没提过|没有记录|没听说过|无法确认|不清楚")
 
 
+def _vals(s: str) -> set[str]:
+    """文本里的 ASCII 区分值（路径、版本号、编号，≥3 字符）——值级比对用。"""
+    return set(re.findall(r"[A-Za-z0-9_~/.\-]{3,}", re.sub(r"\s+", "", s)))
+
+
 def _has_superstring_conflict(ans_vals: set[str], exp_vals: set[str]) -> bool:
     """R26：回答值集中存在与某期望值互含/前缀、但自身不是任何期望值的异值。
     discriminate-001 实测形态：问 ~/proj/api 答 ~/proj/api-v3 / ~/proj/api/backup
@@ -102,10 +107,12 @@ class ScriptedJudge:
         refs = ["transcript:answer"]
 
         ans_raw = re.sub(r"\s+", "", answer)
-        ans_vals = set(re.findall(r"[A-Za-z0-9_~/.\-]{3,}", ans_raw))
+        ans_vals = _vals(answer)
         ans_bg = _bigrams(ans_raw)
-        exp_vals = set(re.findall(r"[A-Za-z0-9_~/.\-]{3,}",
-                                  re.sub(r"\s+", "", probe.expect)))
+        exp_vals = _vals(probe.expect)
+        # 锚例值并集：P1-4 拒答值缺失门用——锚例的区分值出现在回答里，
+        # 说明回答在谈题目内容（哪怕改述），不是纯拒答
+        anchor_vals = {v for a in probe.anchors for v in _vals(a.reply)}
 
         def _hit_anchor(expect_verdict: str, reason: str) -> JudgeOutcome:
             """锚例命中收口：非 correct 类锚例（旧值/孪生值/编造值）命中且期望值
@@ -127,7 +134,7 @@ class ScriptedJudge:
             if not a_n:
                 continue
             a_raw = re.sub(r"\s+", "", anchor.reply)
-            vals = set(re.findall(r"[A-Za-z0-9_~/.\-]{3,}", a_raw))
+            vals = _vals(anchor.reply)
             m = list(re.finditer(r"[是在用要放→]", a_raw))
             tail = a_raw[m[-1].end():] if m else ""
             if tail:
@@ -161,17 +168,23 @@ class ScriptedJudge:
             return JudgeOutcome(correct_keys[0] if correct_keys else "correct",
                                 0.95, refs, f"回答包含期望答案 {probe.expect}")
         if _ABSTAIN.search(answer):
-            abstain_keys = [k for k, v in probe.verdict_map.items()
-                            if v == "omission"]
-            if not abstain_keys and not probe.expect:
-                # 拒答题（expect 为空）：拒答本身就是正确行为
+            # P1-4（C 角色队友复核 10-05）：拒答正则不再单独定案。改述正确 +
+            # 顺带一句"旧记录没找到"的混合话术（KylinBot 首跑实测分布）会被
+            # 全文匹配误判 omission——回答里还有 expect/锚例的值 token 时，
+            # 拒答只是半句话不是对问题的回答，脚本不定案转 LLM/人工；
+            # 值 token 全缺（或本题无值）才按拒答判
+            if not (exp_vals | anchor_vals) & ans_vals:
                 abstain_keys = [k for k, v in probe.verdict_map.items()
-                                if v == "correct"]
-            if not abstain_keys:
-                # verdict_map 显式声明了拒答类键：按作者口径判（expect 填了注释文案的新题走这）
-                abstain_keys = [k for k in probe.verdict_map if k in _REFUSAL_KEYS]
-            if abstain_keys:
-                return JudgeOutcome(abstain_keys[0], 0.8, refs, "回答为拒答话术")
+                                if v == "omission"]
+                if not abstain_keys and not probe.expect:
+                    # 拒答题（expect 为空）：拒答本身就是正确行为
+                    abstain_keys = [k for k, v in probe.verdict_map.items()
+                                    if v == "correct"]
+                if not abstain_keys:
+                    # verdict_map 显式声明了拒答类键：按作者口径判（expect 填了注释文案的新题走这）
+                    abstain_keys = [k for k in probe.verdict_map if k in _REFUSAL_KEYS]
+                if abstain_keys:
+                    return JudgeOutcome(abstain_keys[0], 0.8, refs, "回答为拒答话术")
         return JudgeOutcome(None, 0.0, refs, "脚本判卷无法判定，需 LLM judge 或人工复核")
 
 

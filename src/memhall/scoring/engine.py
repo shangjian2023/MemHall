@@ -88,6 +88,7 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
         )
     outcome: JudgeOutcome
     decided_by: DecidedBy
+    degraded = False
 
     if judges is not None:
         try:
@@ -114,10 +115,14 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
         except RuntimeError as e:
             # judge 端点彻底不可用：降级脚本判卷，评测不因 judge 挂而报废。
             # R27：按实际打标 scripted（explanation 带 [judge 降级]），不再贴
-            # human_review——机器判定混进人工未决率会污染 human_review_rate
+            # human_review——机器判定混进人工未决率会污染 human_review_rate。
+            # P0-2 收口（队友复核 10-05，方案 b）：降级脚本的 key 猜测不再静默
+            # 变成正式分数——verdict.degraded 置位，metrics 剔除计分、保守
+            # 下界按错计；判定值保留在 verdict 里供人工复核提速
             outcome = _scripted.judge(probe, answer)
             decided_by = DecidedBy.SCRIPTED
             meta = None
+            degraded = True
             reason = f"[judge 降级] {e}: {outcome.reason}"
             outcome = JudgeOutcome(outcome.key, 0.0, outcome.evidence_refs, reason)
     else:
@@ -145,6 +150,7 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
         evidence_refs=outcome.evidence_refs,
         explanation=outcome.reason,
         judge_meta=meta,
+        degraded=degraded,
     )
 
 

@@ -6,6 +6,9 @@
 > MemorySnapshot 增 dump_ok/error/truncated；fs_diff 条目增 stage（阶段窗）；
 > 采集时机与 manifest 字段按实现重写（旧文"每 phase 全量四类共 3 次"从未实现，
 > 以契约为准的条款第一次与实现对齐）。
+> **v0.2.1 · 2026-10-06**（C 角色队友复核 P0-2/P2-6）：Verdict 增 `degraded` 标记——
+> judge 故障窗口脚本兜底的判定保留值但不计分（metrics `n_degraded`，保守下界按错计）；
+> 指标层增 `judge_cohens_kappa`（双评委一致性，剔除随机一致）。
 > 证据 = 判卷的全部输入；判定 = 每个证据组合的结论，带可下钻的引用链。对应 design.md §5/§6。
 > JSONL 格式，一次 run 一个目录 `evidence/<run_id>/`。
 
@@ -122,7 +125,9 @@ full，故 actions 断言探测一律 role=diagnostic 不进六维，待证据�
     "judge_b": {"model": "qwen-max", "verdict": "correct", "agreed": true},
     "prompt_version": "judge-v1.2",
     "arbiter": null                    // 双判不一致时：rule | 第三模型 | null(转人工)
-  }
+  },
+  "degraded": false                    // judge 故障窗口脚本兜底的判定：值保留供人工复核，
+                                      // 不进分子分母（metrics.n_degraded 单列，保守下界按错计）
 }
 ```
 

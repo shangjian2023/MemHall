@@ -196,3 +196,7 @@ class Verdict(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)   # 报告下钻入口
     explanation: str = ""
     judge_meta: JudgeMeta | None = None
+    # degraded（P0-2，C 角色队友复核 2026-10-05）：LLM judge 端点故障窗口里
+    # 脚本兜底的判定。判定值与溯源保留（人工复核可提速），但不作为正式
+    # 分数——metrics 剔除计分、保守下界按错计。正常离线 scripted run 不置位。
+    degraded: bool = False
