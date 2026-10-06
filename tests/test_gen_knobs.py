@@ -1,6 +1,5 @@
 """gen_cases 三难度旋钮（design §4.4）：可调 + 默认参数不漂移已发布存档。"""
 
-import filecmp
 import subprocess
 import sys
 from pathlib import Path
@@ -19,11 +18,21 @@ def _gen(tmp: Path, *extra: str) -> Path:
     return out
 
 
+def _strip_created(p: Path) -> str:
+    """归一化 meta.created 行——R60 起生成器记实际生成日期（诚实元数据），
+    存档与重生成只允许这一行随日期漂移，其余仍须逐字一致。"""
+    import re
+    return re.sub(r"^(\s*created: )'.*'$", r"\1<DATE>",
+                  p.read_text(encoding="utf-8"), flags=re.M)
+
+
 def test_default_reproduces_committed_archive(tmp_path):
-    """默认参数下与已发布 cases/gen 逐字一致（存档不因生成器升级漂移）。"""
+    """默认参数下与已发布 cases/gen 一致（除 meta.created 日期戳外逐字，
+    存档不因生成器升级漂移）。"""
     out = _gen(tmp_path, "--seed", "20260928")
     for f in (REPO / "cases" / "gen").glob("*.yaml"):
-        assert filecmp.cmp(f, out / f.name, shallow=False), f"漂移: {f.name}"
+        assert (_strip_created(f) == _strip_created(out / f.name)), \
+            f"漂移: {f.name}"
 
 
 def test_distract_knob(tmp_path):
