@@ -1,6 +1,6 @@
 [project]
 name = "memhall"
-version = "0.2.1"
+version = "1.3.0"
 description = "麟阁 MemHall —— 面向 openKylin 生态的智能体记忆能力评测基准"
 authors = [{ name = "MemHall Team" }]
 readme = "README.md"
