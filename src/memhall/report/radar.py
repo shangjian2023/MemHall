@@ -54,6 +54,11 @@ def render_radar(agent_scores: dict[str, dict[str, float]], out_path: str,
     ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_title(title, fontsize=14, pad=20)
     ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.1))
+    # R53 构念注脚：六维是设计先验切分，recall/persist 机制同源、temporal 计入
+    # recall——轴间不独立（维度区分度表见 dataset-card），读图勿当六个独立因子
+    ax.annotate("六维为设计切分（构念有重叠，见 dataset-card §8）",
+                xy=(0.5, 0.02), xycoords="figure fraction",
+                ha="center", fontsize=8, color="0.45")
     fig.savefig(out_path, bbox_inches="tight", dpi=150)
     plt.close(fig)
     return out_path
