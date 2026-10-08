@@ -1,4 +1,4 @@
-"""向 openKylin 虚拟机推送文件（paramiko SFTP）。
+r"""向 openKylin 虚拟机推送文件（paramiko SFTP）。
 
 用法：MSYS_NO_PATHCONV=1 VM_PASS=xxx uv run python scripts/vm_put.py <本地文件> <远端路径>
 （本地文件在 Git Bash 下用 $(cygpath -w <路径>) 转成 Windows 路径再传）

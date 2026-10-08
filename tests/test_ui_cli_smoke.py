@@ -13,10 +13,10 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-REPO = Path(__file__).parent.parent
-
 import memhall.ui.app as uiapp
 from memhall.ui.app import create_app
+
+REPO = Path(__file__).parent.parent
 
 SUBCOMMANDS = ["run", "report", "compare", "aggregate", "verify", "stability",
                "vm", "systest", "doctor", "gateway", "ui"]
