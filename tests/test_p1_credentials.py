@@ -75,6 +75,7 @@ def test_remote_sudo_password_via_stdin(tmp_path, monkeypatch):
         def close(self): pass
 
     class Chan:
+        def exit_status_ready(self): return True
         def recv_exit_status(self): return 0
 
     class Out:
@@ -90,6 +91,11 @@ def test_remote_sudo_password_via_stdin(tmp_path, monkeypatch):
         def set_missing_host_key_policy(self, p): pass
         def connect(self, **kw): pass
         def close(self): pass
+        def get_transport(self):
+            class T:  # keepalive 假传输层：活跃、接受心跳设置
+                def is_active(self): return True
+                def set_keepalive(self, s): pass
+            return T()
         def exec_command(self, cmd, timeout=None):
             seen["cmd"] = cmd
             return Stdin(), Out(), Out()
@@ -121,6 +127,11 @@ def test_ssh_tofu_first_connect_records_then_rejects(tmp_path, monkeypatch):
         def set_missing_host_key_policy(self, p): policies.append(type(p).__name__)
         def connect(self, **kw): pass
         def close(self): pass
+        def get_transport(self):
+            class T:  # keepalive 假传输层：活跃、接受心跳设置
+                def is_active(self): return True
+                def set_keepalive(self, s): pass
+            return T()
 
     monkeypatch.setattr(rm.paramiko, "SSHClient", Cli)
 

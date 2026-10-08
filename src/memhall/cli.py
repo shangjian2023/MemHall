@@ -65,6 +65,26 @@ def load_cases_for_run(run_dir: Path) -> dict[str, MemoryCase]:
     return {c.case_id: c for c in load_cases(d)} if d is not None else {}
 
 
+def _seal_outputs(run_dir: Path, manifest: dict) -> None:
+    """评分产物封印（择优移植自 leeyu44 PR #3）：manifest 最后落盘，
+    附四产物文件哈希——verify 离线对账"分数对应的产物没被换过"。
+    重渲染（report 子命令）同样过 _finish_run，封印自动刷新。"""
+    import hashlib
+
+    names = ["verdicts.jsonl", "metrics.json", "report.md", "radar.png"]
+    hashes: dict[str, str] = {}
+    for name in names:
+        path = run_dir / name
+        if not path.is_file():
+            return  # 产物不全不封印（verify 对无封印 run 只警告）
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        hashes[name] = digest.hexdigest()
+    manifest["output_hashes"] = hashes
+
+
 def _finish_run(run_dir: Path, run_id: str, manifest: dict,
                 verdicts: list[Verdict], cases: dict[str, MemoryCase],
                 judge_mode: str = "scripted") -> dict:
@@ -80,8 +100,6 @@ def _finish_run(run_dir: Path, run_id: str, manifest: dict,
             "model_b": os.environ.get("JUDGE_B_MODEL"),
         })
     manifest["judge"] = judge_info  # 依赖锁定：判卷口径可追溯（design.md §10）
-    (run_dir / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     metrics = compute_metrics(verdicts, cases)
     (run_dir / "metrics.json").write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -92,6 +110,9 @@ def _finish_run(run_dir: Path, run_id: str, manifest: dict,
                  str(run_dir / "radar.png"))
     report = render_report(run_dir, run_id, manifest, verdicts, cases, metrics)
     (run_dir / "report.md").write_text(report, encoding="utf-8")
+    _seal_outputs(run_dir, manifest)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics
 
 
@@ -212,6 +233,72 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
     result = aggregate_runs([_resolve_run(p) for p in args.runs], Path(args.out))
     print(format_table(result))
     print(f"产物: {Path(args.out) / 'aggregate.json'}")
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    from memhall.runner.verify import verify_run
+    run_dir = _resolve_run(args.run_dir)
+    result = verify_run(run_dir)
+    print(f"run_id: {result.run_id or run_dir.name}")
+    print(f"证据完整性: {'通过' if result.ok else '失败'}"
+          f"（{result.n_cases} cases / {result.n_evidence} evidence）")
+    for warning in result.warnings:
+        print(f"  提示: {warning}")
+    for error in result.errors:
+        print(f"  错误: {error}", file=sys.stderr)
+    return 0 if result.ok else 1
+
+
+def cmd_stability(args: argparse.Namespace) -> int:
+    from memhall.report.stability import analyze_stability
+    run_dirs = [_resolve_run(item) for item in args.runs]
+    result = analyze_stability(run_dirs, Path(args.out))
+    print(f"重复轮数: {result['n_repeats']}　共同探测点: "
+          f"{result['n_common_probes']}")
+    print(f"判定一致率: {result['verdict_agreement_rate']:.1%}　"
+          f"pass^{result['n_repeats']}: {result['pass_all_rate']:.1%}　"
+          f"总体分标准差: {result['overall_stddev']:.1%}")
+    print(f"产物: {Path(args.out) / 'stability.md'}")
+    return 0
+
+
+def cmd_vm(args: argparse.Namespace) -> int:
+    import subprocess
+    from dataclasses import asdict
+
+    from memhall.vm import VmError, VmwareManager
+    try:
+        manager = VmwareManager.from_env()
+        action = args.vm_action
+        if action == "status":
+            print(json.dumps(asdict(manager.status()), ensure_ascii=False, indent=2))
+        elif action == "start":
+            manager.start(timeout_s=args.timeout)
+            print("openKylin VM 已启动，SSH 就绪")
+        elif action == "stop":
+            manager.stop(args.mode)
+            print(f"openKylin VM 已关闭（{args.mode}）")
+        elif action == "snapshot":
+            manager.create_snapshot(args.name)
+            print(f"快照已创建: {args.name}")
+        elif action == "delete-snapshot":
+            manager.delete_snapshot(args.name)
+            print(f"快照已删除: {args.name}")
+        elif action == "revert":
+            target = args.name or manager.snapshot_name
+            manager.revert(target, timeout_s=args.timeout)
+            print(f"已回滚并启动: {target}")
+        elif action == "prepare":
+            health = manager.prepare(timeout_s=args.timeout)
+            print(json.dumps(health, ensure_ascii=False, indent=2))
+        elif action == "health":
+            print(json.dumps(manager.health(), ensure_ascii=False, indent=2))
+        else:
+            raise VmError(f"未知 VM 操作: {action}")
+    except (VmError, OSError, subprocess.SubprocessError) as error:
+        print(f"VM 操作失败: {error}", file=sys.stderr)
+        return 2
     return 0
 
 
@@ -481,6 +568,27 @@ def main() -> None:
     p_agg.add_argument("runs", nargs="+", help="N 个运行（runs/<run_id> 或完整路径）")
     p_agg.add_argument("-o", "--out", default="runs/_aggregate", help="输出目录")
     p_agg.set_defaults(func=cmd_aggregate)
+
+    p_ver = sub.add_parser("verify", help="离线校验 run 目录证据完整性（防篡改对账）",
+                           parents=[common])
+    p_ver.add_argument("run_dir", help="runs/<run_id> 或完整路径")
+    p_ver.set_defaults(func=cmd_verify)
+
+    p_sta = sub.add_parser("stability", help="多次重跑稳定性分析（一致率/pass^k/翻转明细）",
+                           parents=[common])
+    p_sta.add_argument("runs", nargs="+", help="≥2 个运行（runs/<run_id> 或完整路径）")
+    p_sta.add_argument("-o", "--out", default="runs/_stability", help="输出目录")
+    p_sta.set_defaults(func=cmd_stability)
+
+    p_vmc = sub.add_parser("vm", help="openKylin 虚拟机生命周期（快照/回滚/健康检查）",
+                           parents=[common])
+    p_vmc.add_argument("vm_action",
+                       choices=["status", "start", "stop", "snapshot",
+                                "delete-snapshot", "revert", "prepare", "health"])
+    p_vmc.add_argument("--name", help="快照名（revert 缺省用 VM_SNAPSHOT）")
+    p_vmc.add_argument("--mode", default="soft", choices=["soft", "hard"])
+    p_vmc.add_argument("--timeout", type=int, default=300)
+    p_vmc.set_defaults(func=cmd_vm)
 
     p_sys = sub.add_parser("systest", help="系统级测试：重启/拨钟/多用户/断网（真机真做）",
                            parents=[common])

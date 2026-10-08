@@ -4,6 +4,25 @@
 口径遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 精简版；
 评测数字随口径变更的，一律注明口径而非只报数字。
 
+## [1.3.1] - 2026-10-08
+
+- **集成队友 PR #3 四模块（择优移植，Co-authored leeyu44）**：
+  - `runner/verify.py` run 目录离线完整性校验 + `memhall verify` 子命令——
+    证据逐条 schema/payload SHA-256 复算、evidence_id 去重、阶段覆盖、
+    verdicts 引用对账；主线产物无 fork 封印字段时降级为警告（不把
+    "没写封印"误报成"被篡改"）
+  - `report/stability.py` + `memhall stability`：多次重跑稳定性报告
+    （判定一致率 / pass^k / 翻转明细），能力标签从 case.yaml 回填
+  - `adapters/audit.py`：auditd Action 采集回退源（rename/create/delete 映射）
+  - `vm.py` + `memhall vm`：vmrun 生命周期（status/start/stop/snapshot/
+    revert/health）与 `remote_environment` 环境指纹、`host_key_sha256`
+- `_finish_run` 写 `output_hashes` 评分产物封印（verdicts/metrics/report/
+  radar 四产物哈希进 manifest，重渲染自动刷新）——verify 的产物对账生效
+- `scripts/test_deb_vm.sh`：fork 的 `--repeat` 改为主线两次独立 run，
+  `.build.json` sidecar 存在校验、缺失跳过
+- 修 `test_p1_credentials` 两个 fake 缺 `get_transport`/`exit_status_ready`
+  （50fdc1a keepalive 引入的漏网，origin CI 因此红过一轮）
+
 ## [1.3.0] - 2026-10-08
 
 - **测量口径落地（R53/R55 收口）**：`scripts/stats_uncertainty.py` 四表一声明（零 LLM 可复现）

@@ -133,6 +133,62 @@ class SshChannel:
             self._cli.close()
             self._cli = None
 
+    def host_key_sha256(self) -> str:
+        """服务端主机密钥指纹（OpenSSH base64 格式，无填充）——
+        TOFU 只记不示人，这里把指纹暴露给环境指纹/报告用。"""
+        import hashlib
+
+        t = self._client().get_transport()
+        if t is None:
+            raise paramiko.SSHException("无活动传输层，取不到主机密钥")
+        digest = hashlib.sha256(t.get_remote_server_key().asbytes()).digest()
+        return base64.b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def remote_environment(channel: SshChannel, adapter_name: str,
+                       agent_version_command: str | None = None) -> dict:
+    """目标机环境指纹（无凭据）：OS/内核/Python/主机名 + 主机密钥指纹。
+
+    探针脚本经 base64 送进 VM 用系统 python3 跑，输出 JSON 回读——
+    报告与 manifest 可追溯"这套分数是在什么环境上测的"。
+    """
+    source = """import json
+import platform
+from pathlib import Path
+
+release = {}
+path = Path('/etc/os-release')
+if path.exists():
+    for line in path.read_text(errors='replace').splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            release[key] = value.strip().strip(chr(34))
+print(json.dumps({
+    'kind': 'remote',
+    'os': release.get('PRETTY_NAME', platform.platform()),
+    'os_id': release.get('ID', ''),
+    'os_version': release.get('VERSION_ID', ''),
+    'kernel': platform.release(),
+    'machine': platform.machine(),
+    'python': platform.python_version(),
+    'hostname': platform.node(),
+}, ensure_ascii=False))
+"""
+    command = f"echo {b64(source)} | base64 -d | python3"
+    data = channel.run_json(command, timeout=30)
+    if not isinstance(data, dict):
+        raise RuntimeError("目标环境指纹格式错误")
+    data["adapter"] = adapter_name
+    data["agent_version"] = None
+    if agent_version_command:
+        rc, out, _ = channel.run(agent_version_command, timeout=30)
+        lines = [line.strip() for line in out.splitlines() if line.strip()]
+        if rc == 0 and lines:
+            data["agent_version"] = lines[0][:200]
+    data["ssh_host_key_sha256"] = channel.host_key_sha256()
+    data["vm_snapshot"] = _env("VM_SNAPSHOT", "unknown")
+    return data
+
 
 def b64(text: str) -> str:
     """UTF-8 -> base64（消息体跨 SSH 传输的安全编码）。"""
