@@ -28,17 +28,24 @@ UPSTREAM = "https://upstream.example/v1"
 REAL_KEY = "sk-real-secret"
 
 
-def _mk_app(tmp_path: Path, handler, min_interval: float = 0.0) -> httpx.AsyncClient:
+def _mk_app(tmp_path: Path, handler, min_interval: float = 0.0,
+            backoff_base: float | None = None) -> httpx.AsyncClient:
     """网关 app + 直挂的测试客户端（upstream 用 MockTransport 替身）。
 
-    min_interval=0 关掉安全节奏——默认 8s 会让多请求测试白等。"""
+    min_interval=0 关掉安全节奏——默认 8s 会让多请求测试白等；
+    backoff_base 缺省=env 优先（monkeypatch 的用例照常生效），
+    env 也没有时用 2ms 快档让重试曲线秒级跑完。"""
+    import os as _os
+    base = (float(backoff_base) if backoff_base is not None
+            else float(_os.environ.get("GATEWAY_BACKOFF_BASE", "") or 0.002))
     upstream_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
         base_url=UPSTREAM,
     )
     app = create_gateway_app(UPSTREAM, REAL_KEY, "unified-m",
                              tmp_path / "usage.jsonl", client=upstream_client,
-                             min_interval=min_interval)
+                             min_interval=min_interval,
+                             backoff_base=base)
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                              base_url="http://gw")
 
@@ -145,11 +152,11 @@ def test_gateway_upstream_failure_recorded(tmp_path, monkeypatch):
 
     status, body = asyncio.run(go())
     assert status == 502 and "429" in body["error"]["message"]
-    assert n["n"] == 4  # 1 次原始 + 3 次退避重试
+    assert n["n"] == 7  # 1 次原始 + 6 次退避重试（_UPSTREAM_ATTEMPTS=7）
     rec = json.loads((tmp_path / "usage.jsonl")
                      .read_text(encoding="utf-8").splitlines()[0])
     assert rec["status"] == 429 and rec["agent"] == "memhall-opencode"
-    assert rec["retries"] == 3
+    assert rec["retries"] == 6
     agg = aggregate_usage(tmp_path / "usage.jsonl")
     assert agg["agents"]["memhall-opencode"]["errors"] == 1
 

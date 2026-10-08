@@ -88,6 +88,7 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 - **方差口径**：正式全量跑每智能体 ≥2 轮，报告六维与总分的 mean±std（样本标准差，`memhall aggregate`）+ 逐探测点 bootstrap 95% CI；n=2 时 mean±std 支撑不了排名叙事，跨智能体比较看 CI 重叠与 compare 的符号检验 p 值，单轮裸分数不作对外口径
 - **mock 基线（口径 v2，2026-10-04 实测）**：full 66.1%（62/66 计分探测有效）、chains 22.2%；口径 v1 分别为 62.2%/41.7%——差异来自诊断探测出分母与 canary 教学时点判，属口径变更非行为变更
 - 任务链的"步数/耗时对比"（记忆效率指标）需 runner 支持，probe 侧已预留 actions 计数断言（actions 证据面 coverage=full 前 role=diagnostic 不进分）
+- **actions 证据面的分母边界（审计 H1，2026-10-08 披露）**：actions 断言（`actions.contains_action`）只认 coverage=full——当前仅 mock 适配器达到（回显机制全量可采）；真实智能体最高 partial（hermes 解析 agent 日志）/unknown（其余），对应探测点对真实智能体 fail-closed 判运行无效不计分母。因此 **reuse 维对真实智能体主要由 fs 断言支撑，mock 基线与真实智能体的 actions 探测点分母口径不同**，跨对比时报告已按实际分母呈现。auditd 采集器已具备（`adapters/audit.py`，10-08 移植含测试）但未接入适配器主链路，且文件系统操作粒度仍到不了 full——保持 fail-closed 而非降标准放行，接线排赛后
 - 难度标定数据量有限，结论标注"初步标定"
 - ~~待统一项~~ → 已收敛（2026-10-08）：update-001 旧值→wrong_reuse，与 R45/temporal-002/生成器三方对齐
 

@@ -63,7 +63,10 @@ def _inbound_ok(bearer: str) -> bool:
 
 # 指数退避（上游瞬态错误吸收）：限流/容量窗口直接 502 给被测智能体
 # = 白白废一个 case（invalid_run），网关内退避重试把它吃掉
-_UPSTREAM_ATTEMPTS = 4                       # 1 次原始 + 3 次退避重试
+_UPSTREAM_ATTEMPTS = 7                       # 1 次原始 + 6 次退避重试（2,4,8,16,30,30s
+                                             # ≈ 90s+抖动）——r3 实录上游坏窗口
+                                             # 连续 30s+599（06:27 段 5 发全灭），
+                                             # 3 次重试扛不住分钟级抖动
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
 
 
@@ -169,7 +172,8 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
                        log_path: Path | None = None,
                        client: httpx.AsyncClient | None = None,
                        client_factory=None,
-                       min_interval: float | None = None) -> FastAPI:
+                       min_interval: float | None = None,
+                       backoff_base: float | None = None) -> FastAPI:
     """网关 FastAPI 应用（cli `memhall gateway` 挂 uvicorn；测试注入替身）。
 
     client：完整客户端替身（MockTransport 直挂）；
@@ -210,7 +214,8 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
     iv = float(min_interval)
     pace_lock = asyncio.Lock()
     pace_state = {"t": 0.0}
-    backoff_base = float(os.environ.get("GATEWAY_BACKOFF_BASE", "") or 2.0)
+    backoff_base = (float(backoff_base) if backoff_base is not None
+                    else float(os.environ.get("GATEWAY_BACKOFF_BASE", "") or 2.0))
     backoff_cap = float(os.environ.get("GATEWAY_BACKOFF_MAX", "") or 30.0)
 
     async def _pace() -> None:

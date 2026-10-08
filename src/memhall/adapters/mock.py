@@ -120,6 +120,13 @@ class MockAdapter(AgentAdapter):
         返回 None 会让规则层无 fs 证据可判（探测点全变运行无效）。"""
         return []
 
+    def version_info(self) -> str | None:
+        """校准锚也要可追溯（审计 M3）：mock 是设计好的缺陷注入基线，
+        版本随仓库走，manifest 不缺字段。"""
+        from memhall import __version__
+
+        return f"MemHall mock 基线 v{__version__}（缺陷注入设计模式）"
+
     def dump_actions(self) -> ActionDump:
         return ActionDump(actions=list(self._actions), coverage="full")
 
