@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560">
+<defs>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+<marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
+</defs>
+<rect width="1180" height="560" fill="#020617"/>
+<rect width="1180" height="560" fill="url(#grid)"/>
+<text x="24" y="34" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="13" fill="#e2e8f0" font-weight="700">麟阁 MemHall 评测管线</text>
+<text x="24" y="52" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9" fill="#64748b">bench · judge · report — 真实智能体运行证据上的自动评测</text>
+<rect x="24" y="76" width="330" height="330" rx="12" fill="none" stroke="#34d399" stroke-width="1" stroke-dasharray="8,4" opacity="0.55"/>
+<text x="40" y="100" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9.5" fill="#34d399">评测器 · 宿主</text>
+<rect x="44" y="114" width="290" height="64" rx="6" fill="rgba(6, 78, 59, 0.40)" stroke="#34d399" stroke-width="1.5"/>
+<text x="189.0" y="142.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">剧本引擎</text>
+<text x="189.0" y="159.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">教 teach → 隔 confound → 考 probe（47 题三阶段剧本）</text>
+<rect x="44" y="196" width="290" height="56" rx="6" fill="rgba(6, 78, 59, 0.40)" stroke="#34d399" stroke-width="1.5"/>
+<text x="189.0" y="220.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">运行编排</text>
+<text x="189.0" y="237.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">SSH 车道 · 断线重连 · run.lock 互斥 · 成本预估</text>
+<rect x="44" y="270" width="138" height="56" rx="6" fill="rgba(6, 78, 59, 0.40)" stroke="#34d399" stroke-width="1.5"/>
+<text x="113.0" y="294.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">verify</text>
+<text x="113.0" y="311.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">证据完整性校验</text>
+<rect x="196" y="270" width="138" height="56" rx="6" fill="rgba(6, 78, 59, 0.40)" stroke="#34d399" stroke-width="1.5"/>
+<text x="265.0" y="294.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">stability</text>
+<text x="265.0" y="311.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">重跑稳定性 pass^k</text>
+<rect x="44" y="344" width="290" height="48" rx="6" fill="rgba(6, 78, 59, 0.40)" stroke="#34d399" stroke-width="1.5"/>
+<text x="189.0" y="364.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">aggregate / compare</text>
+<text x="189.0" y="381.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">N 轮 mean±std · bootstrap CI · 符号检验</text>
+<rect x="392" y="76" width="330" height="330" rx="12" fill="none" stroke="#22d3ee" stroke-width="1" stroke-dasharray="8,4" opacity="0.55"/>
+<text x="408" y="100" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9.5" fill="#22d3ee">openKylin 3.0 · 虚拟机（被测）</text>
+<rect x="412" y="114" width="290" height="64" rx="6" fill="rgba(8, 51, 68, 0.40)" stroke="#22d3ee" stroke-width="1.5"/>
+<text x="557.0" y="142.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">被测智能体</text>
+<text x="557.0" y="159.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">hermes / kylinbot / openclaw（+ mock 基线）</text>
+<rect x="412" y="196" width="290" height="56" rx="6" fill="rgba(8, 51, 68, 0.40)" stroke="#22d3ee" stroke-width="1.5"/>
+<text x="557.0" y="220.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">沙箱隔离</text>
+<text x="557.0" y="237.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">~/.memhall-* 工作区 · reset 残留防线</text>
+<rect x="412" y="270" width="290" height="56" rx="6" fill="rgba(8, 51, 68, 0.40)" stroke="#22d3ee" stroke-width="1.5"/>
+<text x="557.0" y="294.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">系统级测试</text>
+<text x="557.0" y="311.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">重启存活 · 拨钟隔天 · 多用户 · 断网</text>
+<rect x="412" y="344" width="290" height="48" rx="6" fill="rgba(8, 51, 68, 0.40)" stroke="#22d3ee" stroke-width="1.5"/>
+<text x="557.0" y="364.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">UKUI 桌面集成</text>
+<text x="557.0" y="381.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">deb 原生包 · 菜单入口 · Web UI</text>
+<rect x="760" y="76" width="396" height="158" rx="12" fill="none" stroke="#a78bfa" stroke-width="1" stroke-dasharray="8,4" opacity="0.55"/>
+<text x="776" y="100" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9.5" fill="#a78bfa">证据（逐条 SHA-256 封印）</text>
+<rect x="780" y="114" width="176" height="52" rx="6" fill="rgba(76, 29, 149, 0.40)" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="868.0" y="136.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">对话 / 记忆快照</text>
+<text x="868.0" y="153.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">dialogue · memory_snapshot</text>
+<rect x="972" y="114" width="168" height="52" rx="6" fill="rgba(76, 29, 149, 0.40)" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="1056.0" y="136.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">行为 / 文件</text>
+<text x="1056.0" y="153.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">actions · fs_diff</text>
+<rect x="780" y="178" width="358" height="44" rx="6" fill="rgba(76, 29, 149, 0.40)" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="959.0" y="196.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">verdicts.jsonl</text>
+<text x="959.0" y="213.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">五态判定 · decided_by 溯源 · output_hashes 对账</text>
+<rect x="760" y="254" width="396" height="152" rx="12" fill="none" stroke="#fb7185" stroke-width="1" stroke-dasharray="8,4" opacity="0.55"/>
+<text x="776" y="278" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9.5" fill="#fb7185">判卷（契约 03 v0.2.1）</text>
+<rect x="780" y="292" width="176" height="52" rx="6" fill="rgba(136, 19, 55, 0.40)" stroke="#fb7185" stroke-width="1.5"/>
+<text x="868.0" y="314.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">双 LLM 判卷</text>
+<text x="868.0" y="331.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">A/B 轮值仲裁 · kappa 复核</text>
+<rect x="972" y="292" width="168" height="52" rx="6" fill="rgba(136, 19, 55, 0.40)" stroke="#fb7185" stroke-width="1.5"/>
+<text x="1056.0" y="314.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">锚例 + 诱饵</text>
+<text x="1056.0" y="331.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">188 诱饵 100% 拒收</text>
+<rect x="780" y="356" width="358" height="38" rx="6" fill="rgba(136, 19, 55, 0.40)" stroke="#fb7185" stroke-width="1.5"/>
+<text x="959.0" y="379.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="11" fill="#e2e8f0" font-weight="600" text-anchor="middle">六维报告 · 雷达 · 测量边界</text>
+<rect x="24" y="434" width="1132" height="104" rx="12" fill="none" stroke="#fbbf24" stroke-width="1" stroke-dasharray="8,4" opacity="0.55"/>
+<text x="40" y="458" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9.5" fill="#fbbf24">统一模型网关（被测流量必经）</text>
+<rect x="44" y="472" width="258" height="52" rx="6" fill="rgba(120, 53, 15, 0.30)" stroke="#fbbf24" stroke-width="1.5"/>
+<text x="173.0" y="494.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">model 强制改写</text>
+<text x="173.0" y="511.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">配置漂移无效 · 统一 qwen3.7-plus</text>
+<rect x="322" y="472" width="258" height="52" rx="6" fill="rgba(120, 53, 15, 0.30)" stroke="#fbbf24" stroke-width="1.5"/>
+<text x="451.0" y="494.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">限速 + 指数退避</text>
+<text x="451.0" y="511.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">8s 节流排队 · 5xx/429 重试</text>
+<rect x="600" y="472" width="258" height="52" rx="6" fill="rgba(120, 53, 15, 0.30)" stroke="#fbbf24" stroke-width="1.5"/>
+<text x="729.0" y="494.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">token 记账</text>
+<text x="729.0" y="511.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">逐请求账单 · 归因到智能体</text>
+<rect x="878" y="472" width="258" height="52" rx="6" fill="rgba(120, 53, 15, 0.30)" stroke="#fbbf24" stroke-width="1.5"/>
+<text x="1007.0" y="494.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">凭据单点</text>
+<text x="1007.0" y="511.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">真 key 只在网关进程</text>
+<path d="M 354 160 L 392 160" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/><path d="M 354 160 L 392 160" stroke="#020617" stroke-width="5" fill="none" opacity="0"/>
+<text x="373" y="150" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">SSH 车道</text>
+<path d="M 722 160 L 760 160" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/><path d="M 722 160 L 760 160" stroke="#020617" stroke-width="5" fill="none" opacity="0"/>
+<text x="741" y="150" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">采集</text>
+<path d="M 957 232 L 957 254" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/><path d="M 957 232 L 957 254" stroke="#020617" stroke-width="5" fill="none" opacity="0"/>
+<path d="M 1136 330 L 1160 330" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/><path d="M 1136 330 L 1160 330" stroke="#020617" stroke-width="5" fill="none" opacity="0"/>
+<path d="M 189 406 L 189 434" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/><path d="M 189 406 L 189 434" stroke="#020617" stroke-width="5" fill="none" opacity="0"/>
+<path d="M 557 406 L 557 434" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/><path d="M 557 406 L 557 434" stroke="#020617" stroke-width="5" fill="none" opacity="0"/>
+<text x="600" y="530" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">agents → 网关（memhall-* dummy key）→ 上游 · 判卷流量同经网关</text>
+</svg>

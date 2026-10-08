@@ -34,9 +34,19 @@ openKylin 生态里已经跑着 KylinBot、OpenClaw、Hermes Agent 等智能体�
 
 \* 配对符号检验 38:38 完全平手（p=1.0），均值差 0.6 分不构成名次差——按口径并列呈现，不硬排名次。
 
+<p align="center">
+  <img src="images/fig-six-dim.png" width="720" alt="六维分数分组柱状图（mean±std 与各轮实际值）">
+</p>
+<p align="center"><sub>六维分数 mean±std（n=2 轮；白色圆点=各轮实际值，误差棒=样本标准差；Okabe-Ito 色盲安全配色；<code>scripts/make_readme_figures.py</code> 零 LLM 可复现）</sub></p>
+
 hermes 的 ±30.7（两轮 22.7 / 66.1）是真实行为记录：r1 工具调用与上游调用量仅为 r2 的 1/3～1/4（44/49 用例 inject 后零记忆，嘴上说记住实际没写），泄漏哨兵题全对排除跨题污染——干净起点保证的是起点公平，保证不了被测系统逐轮行为稳定，这正是两轮方差的测量对象。
 
 ## 特色与创新
+
+<p align="center">
+  <img src="images/pipeline-dark.svg" width="880" alt="评测管线架构图：评测器、openKylin 被测环境、证据、判卷、统一模型网关">
+</p>
+<p align="center"><sub>评测管线全景：剧本引擎经 SSH 车道驱动真机智能体，被测流量必经统一网关，四类证据带哈希封印，双 LLM 判卷出六维报告</sub></p>
 
 - **「教 → 隔 → 考」三阶段剧本，不是简单问答**。教学注入 → 干扰隔离 → 多时点探测（含拨钟跨天），六维能力独立出分：长期保持 / 记忆调用 / 动态更新 / 相近区分 / 边界识别 / 任务复用。题库 full 43 + gen 21 + chains 4（六会话长链对齐 LongMemEval/LoCoMo）+ heldout 21（不可见防背题池）。
 - **证据即真相**。对话、记忆快照、操作记录、文件变化统一为证据流，每条判定可下钻到证据哈希；canary 金丝雀教学时点判（probe 段删除洗白不了 over_persist）+ 超串干扰防线（188 个干扰项 100% 拒绝）。
@@ -153,6 +163,11 @@ dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall�
 - **正式口径 = full + chains**；heldout 为不可见防背题池（`gen_cases.py --seed 4210` 评测时现场生成，题目文本不入库、seed 公布保复现）；全量跑 ≥2 轮报 mean±std + bootstrap 95% CI（`memhall aggregate`）。
 - **LLM 重判 vs 脚本判卷**：重判比脚本全面低 7–37 分（六轮分差全部 >5 分，集中在记忆调用/动态更新两维），掉分机制已抽查证实——脚本把判不了的探测点剔出分母（幸存者偏差）、模式匹配会把语义答错的回答计对。脚本判卷数字仅存档对账（`verdicts.scripted.jsonl`），不用于排名。
 - **测量边界**（`uv run python scripts/stats_uncertainty.py` 可复现，零 LLM）：①系统内稳定性（同探测点两轮一致率）openclaw 85% > kylinbot 73% > hermes 47%——被测系统自身的随机性是测量结果；②排名主张过配对符号检验：hermes 显著低于两家（p=0.002 / 0.027），kylinbot vs openclaw 38:38 平手（p=1.0）并列呈现；③判卷口径差 -0.8 ～ -19.0 分方向一致；④hermes 的 11 分轮级差距需 ≈60 轮才达显著，配对探测点检验 n=2 已分出。详见 [dataset-card §9](docs/dataset-card.md)。
+
+<p align="center">
+  <img src="images/fig-uncertainty.png" width="720" alt="测量可信度面板：两轮一致率与配对符号检验">
+</p>
+<p align="center"><sub>测量可信度：(a) 同探测点两轮六态一致率与对错翻转率；(b) 排名主张的配对符号检验（log 轴，虚线=α=0.05；ns=不显著并列）</sub></p>
 
 ## 文档
 
