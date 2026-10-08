@@ -11,6 +11,7 @@ send = SSH 执行一条命令；凭据从环境变量读（VM_HOST/VM_USER/VM_PA
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import logging
 import os
@@ -44,6 +45,17 @@ class SshChannel:
         self._cli: paramiko.SSHClient | None = None
 
     def _client(self) -> paramiko.SSHClient:
+        # 断线重连：传输层不活跃（NAT 流表超时/网络抖动的静默死亡）就重建——
+        # 只认 self._cli is None 会把死连接复用到马拉松结束（2026-10-08 r3
+        # 实锤：VM 侧会话已消失，本地还挂死在 recv 上 28 分钟零错误）
+        if self._cli is not None:
+            t = self._cli.get_transport()
+            if t is None or not t.is_active():
+                log.warning("SSH 传输层已死，重连 %s@%s:%d", self.user, self.host,
+                            self.port)
+                with contextlib.suppress(Exception):  # 死连接关闭失败无人在意
+                    self._cli.close()
+                self._cli = None
         if self._cli is None:
             cli = paramiko.SSHClient()
             keys = cli.get_host_keys()
@@ -68,6 +80,10 @@ class SshChannel:
             if not KNOWN_HOSTS.is_file():
                 KNOWN_HOSTS.parent.mkdir(parents=True, exist_ok=True)
                 keys.save(str(KNOWN_HOSTS))
+            # 30s 心跳：半开连接 ~90s 内暴露（TCP 自带 keepalive 要 2 小时）
+            t = cli.get_transport()
+            if t is not None:
+                t.set_keepalive(30)
             self._cli = cli
         return self._cli
 
@@ -86,7 +102,7 @@ class SshChannel:
         stdin.close()
         out = stdout.read().decode("utf-8", "replace")
         err = stderr.read().decode("utf-8", "replace")
-        rc = stdout.channel.recv_exit_status()
+        rc = _recv_exit(stdout.channel, time.monotonic() + timeout)
         dt = time.monotonic() - t0
         log.debug("ssh [%.1fs rc=%d] %s", dt, rc, cmd[:160])
         if rc != 0:
@@ -103,7 +119,7 @@ class SshChannel:
         stdin.close()
         out = stdout.read().decode("utf-8", "replace")
         err = stderr.read().decode("utf-8", "replace")
-        rc = stdout.channel.recv_exit_status()
+        rc = _recv_exit(stdout.channel, time.monotonic() + timeout)
         return rc, out, err
 
     def run_json(self, cmd: str, timeout: int = 300) -> list | dict:
@@ -121,6 +137,19 @@ class SshChannel:
 def b64(text: str) -> str:
     """UTF-8 -> base64（消息体跨 SSH 传输的安全编码）。"""
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def _recv_exit(chan: paramiko.Channel, deadline: float) -> int:
+    """recv_exit_status() 无超时参数（挂死面：通道半死时永久阻塞）——
+    改为轮询 exit_status_ready，超时抛 SSHException 让上层把该命令判失败，
+    而不是把整场马拉松卡死在一个 case 上（2026-10-08 r3 实锤）。"""
+    while not chan.exit_status_ready():
+        if time.monotonic() > deadline:
+            raise paramiko.SSHException(
+                f"远程命令 {deadline - time.monotonic():.0f}s 内未返回退出码"
+                "（SSH 通道挂死）")
+        time.sleep(1)
+    return chan.recv_exit_status()
 
 
 def now_utc() -> datetime:
