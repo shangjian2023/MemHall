@@ -116,6 +116,32 @@ def _finish_run(run_dir: Path, run_id: str, manifest: dict,
     return metrics
 
 
+def _gateway_preflight(adapter: str) -> str | None:
+    """网关心跳预检：配了 GATEWAY_URL/VM_URL 且非 mock 车道时，TCP 探一下
+    端口通不通——网关没起会让智能体全程超时空转（2026-10-08 r3 实锤：
+    6 个 case × 833s 全是 agent 内部 3 次重试的假忙），5 秒拦下胜过 9 小时废跑。
+    返回 None=通过，否则返回错误说明。"""
+    import socket
+    from urllib.parse import urlparse
+
+    if adapter == "mock":
+        return None
+    urls = {os.environ.get(k, "") for k in ("GATEWAY_URL", "GATEWAY_VM_URL")}
+    for url in urls:
+        if not url:
+            continue
+        p = urlparse(url)
+        host, port = p.hostname, p.port or (443 if p.scheme == "https" else 80)
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                pass
+        except OSError as e:
+            return (f"网关不可达 {host}:{port}（{e}）——统一模型车道没起？"
+                    "先运行 nohup uv run memhall gateway --host 0.0.0.0 & "
+                    "再发车；mock 车道不需要网关")
+    return None
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     cases = load_case_set(args.cases)
     if not cases:
@@ -127,6 +153,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 1
+
+    gw_err = _gateway_preflight(args.adapter)
+    if gw_err is not None:
+        print(gw_err, file=sys.stderr)
+        return 2
 
     judges = OpenAICompatJudge.pair_from_env() if args.judge == "dual" else None
     if args.judge == "dual" and judges is None:
