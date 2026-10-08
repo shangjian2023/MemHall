@@ -61,9 +61,9 @@ hermes 的 ±30.7（两轮 22.7 / 66.1）是真实行为记录：r1 工具调用
 
 | 我想… | 入口 |
 |---|---|
-| **双击就用**（Windows） | [Releases](https://github.com/shangjian2023/MemHall/releases) 下载 `MemHall-onefile-v1.3.0.exe`，双击进 Web UI；选 mock 适配器跑一轮，离线零成本 |
+| **双击就用**（Windows） | [Releases](https://github.com/shangjian2023/MemHall/releases) 下载 `MemHall-onefile-v1.3.1.exe`，双击进 Web UI；选 mock 适配器跑一轮，离线零成本 |
 | **装到 openKylin** | `sudo dpkg -i memhall_*_all.deb`（依赖全部内置，安装不联网；见[安装节](#安装openkylin--debian-系)） |
-| 看全流程 | 🎬 [演示视频：两款智能体「教→隔→考」实机评测 + 六维雷达产出](https://github.com/shangjian2023/MemHall/releases/tag/v1.3.0)（5 分钟） |
+| 看全流程 | 🎬 [演示视频：两款智能体「教→隔→考」实机评测 + 六维雷达产出](https://github.com/shangjian2023/MemHall/releases/tag/v1.3.1)（5 分钟） |
 | 三条命令试用 | `uv sync --group dev` → `uv run memhall doctor` → `uv run memhall run -a mock -c cases/full -o runs` |
 
 Web UI（`uv run memhall ui`）里可以选适配器和用例库发起评测，问答与记忆快照逐条直播（SSE）；exe 双击默认走 pywebview 原生窗口。
@@ -232,4 +232,4 @@ memhall/
 
 ## 状态
 
-**v1.3.0**（2026-10-08）——测量不确定度与功效落地、heldout 脱敏、终榜 LLM 重判口径冻结。版本历史与口径变更见 [CHANGELOG.md](CHANGELOG.md)。
+**v1.3.1**（2026-10-08）——人工复核闭环、报告进阶图、口径自动识别、可复现构建（T21 冻结依赖）。版本历史与口径变更见 [CHANGELOG.md](CHANGELOG.md)。
