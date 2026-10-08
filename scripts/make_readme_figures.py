@@ -485,7 +485,7 @@ def fig6_separation(mod) -> None:
 
     fig, ax = plt.subplots(figsize=(6.8, 3.4))
     ys = np.arange(len(rows))[::-1]
-    for y, (label, ratio) in zip(ys, rows, strict=True):
+    for y, (_label, ratio) in zip(ys, rows, strict=True):
         color = "#009E73" if ratio >= 1 else "#999999"
         ax.hlines(y, 0, ratio, color=color, linewidth=1.6, zorder=2)
         ax.scatter(ratio, y, s=52, color=color, zorder=3)
