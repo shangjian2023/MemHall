@@ -138,12 +138,12 @@
   - 做法：`uv export --frozen` 出 requirements 再 download；deb 脚本记录 lock 摘要
   - 验收：两次构建 wheel 清单哈希一致
 
-- [ ] **T22 deb 元数据达标**（E，1h）
+- [x] **T22 deb 元数据达标**（E，1h）——2026-10-08：真实 maintainer + DEBIAN/copyright + changelog（构建版本号注入）；lintian 实跑随下次 VM 构建
   - 证据：Maintainer `memhall@openkylin.example` 占位符；无 `DEBIAN/copyright`、无 changelog
   - 做法：真实 maintainer + copyright 文件 + changelog；对照 lintian 清一遍
   - 验收：lintian 无 error 级告警
 
-- [ ] **T23 发布流程与社区文件**（E，2h）
+- [x] **T23 发布流程与社区文件**（E，2h）——2026-10-08：ci.yml tag(v*) 触发 release（Windows runner 出 exe 双发行物挂 Release，deb 仍目标机原生构建）；CHANGELOG.md 按版本记账；CONTRIBUTING/SECURITY/issue 模板三件套
   - 证据：无 GitHub Release/工件上传、无 CHANGELOG（README 状态节手工记账且已出现无版本号条目）、无 CONTRIBUTING/SECURITY/issue 模板
   - 做法：ci.yml 加 tag 触发 release（附 exe/deb 工件）；CHANGELOG.md 按版本记账（README 状态节迁入）；补三件套
   - 验收：打 tag 自动出 release 带产物

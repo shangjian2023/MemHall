@@ -60,3 +60,32 @@ jobs:
 
       - name: 测试套件
         run: uv run pytest tests/ -q
+
+  release:
+    # T23：tag（v*）触发——Windows runner 出 exe 双发行物挂 GitHub Release；
+    # deb 是 openKylin 目标机原生构建物（build_deb_vm.sh），不走 CI
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖（uv sync，--frozen 严格走 lockfile）
+        run: uv sync --dev --frozen
+
+      - name: 打包 exe（onedir 压缩 + 单文件）
+        shell: bash
+        run: |
+          bash scripts/build_exe.sh
+          tar -a -cf dist/MemHall-windows-onedir.zip -C dist MemHall
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/麟阁MemHall-单文件版.exe
+            dist/MemHall-windows-onedir.zip

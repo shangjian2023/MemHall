@@ -167,24 +167,23 @@ class ScriptedJudge:
                                     "子串命中可能是假阳性，转 LLM/人工")
             return JudgeOutcome(correct_keys[0] if correct_keys else "correct",
                                 0.95, refs, f"回答包含期望答案 {probe.expect}")
-        if _ABSTAIN.search(answer):
+        if _ABSTAIN.search(answer) and not (exp_vals | anchor_vals) & ans_vals:
             # P1-4（C 角色队友复核 10-05）：拒答正则不再单独定案。改述正确 +
             # 顺带一句"旧记录没找到"的混合话术（KylinBot 首跑实测分布）会被
             # 全文匹配误判 omission——回答里还有 expect/锚例的值 token 时，
             # 拒答只是半句话不是对问题的回答，脚本不定案转 LLM/人工；
             # 值 token 全缺（或本题无值）才按拒答判
-            if not (exp_vals | anchor_vals) & ans_vals:
+            abstain_keys = [k for k, v in probe.verdict_map.items()
+                            if v == "omission"]
+            if not abstain_keys and not probe.expect:
+                # 拒答题（expect 为空）：拒答本身就是正确行为
                 abstain_keys = [k for k, v in probe.verdict_map.items()
-                                if v == "omission"]
-                if not abstain_keys and not probe.expect:
-                    # 拒答题（expect 为空）：拒答本身就是正确行为
-                    abstain_keys = [k for k, v in probe.verdict_map.items()
-                                    if v == "correct"]
-                if not abstain_keys:
-                    # verdict_map 显式声明了拒答类键：按作者口径判（expect 填了注释文案的新题走这）
-                    abstain_keys = [k for k in probe.verdict_map if k in _REFUSAL_KEYS]
-                if abstain_keys:
-                    return JudgeOutcome(abstain_keys[0], 0.8, refs, "回答为拒答话术")
+                                if v == "correct"]
+            if not abstain_keys:
+                # verdict_map 显式声明了拒答类键：按作者口径判（expect 填了注释文案的新题走这）
+                abstain_keys = [k for k in probe.verdict_map if k in _REFUSAL_KEYS]
+            if abstain_keys:
+                return JudgeOutcome(abstain_keys[0], 0.8, refs, "回答为拒答话术")
         return JudgeOutcome(None, 0.0, refs, "脚本判卷无法判定，需 LLM judge 或人工复核")
 
 
