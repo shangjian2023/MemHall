@@ -48,7 +48,7 @@ hermes 的 ±30.7（两轮 22.7 / 66.1）是真实行为记录：r1 工具调用
 </p>
 <p align="center"><sub>评测管线全景：剧本引擎经 SSH 车道驱动真机智能体，被测流量必经统一网关，四类证据带哈希封印，双 LLM 判卷出六维报告</sub></p>
 
-- **「教 → 隔 → 考」三阶段剧本，不是简单问答**。教学注入 → 干扰隔离 → 多时点探测（含拨钟跨天），六维能力独立出分：长期保持 / 记忆调用 / 动态更新 / 相近区分 / 边界识别 / 任务复用。题库 full 43 + gen 21 + chains 4（六会话长链对齐 LongMemEval/LoCoMo）+ heldout 21（不可见防背题池）。
+- **「教 → 隔 → 考」三阶段剧本，不是简单问答**。教学注入 → 干扰隔离 → 多时点探测（含拨钟跨天），六维能力独立出分：长期保持 / 记忆调用 / 动态更新 / 相近区分 / 边界识别 / 任务复用。题库 full 45 + gen 21 + chains 4（六会话长链对齐 LongMemEval/LoCoMo）+ heldout 21（不可见防背题池）；终榜口径 = 冻结题集 47（full 43@10-02 + chains 4，persist-008/recall-008 入库晚于冻结未入终榜）。
 - **证据即真相**。对话、记忆快照、操作记录、文件变化统一为证据流，每条判定可下钻到证据哈希；canary 金丝雀教学时点判（probe 段删除洗白不了 over_persist）+ 超串干扰防线（188 个干扰项 100% 拒绝）。
 - **五态判定 + 分层判卷**。正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用——不止判对错，还判「记错的样子」；规则判不了的升级双 LLM judge 跨厂商交叉仲裁（锚例随提示词下发、仲裁评委 A/B 轮值），未决单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
 - **评测诚实优先**（design §5 明规则）。口径 v1→v3 全程留痕（R01–R60 共 60 项专项排查，见 [review-tasks](docs/review-tasks.md)）；敢报分差：LLM 重判比脚本判卷全面低 7–37 分，掉分机制已抽查证实（脚本判卷把判不了的点剔出分母造成幸存者偏差）；数字必须带口径出行。
@@ -86,6 +86,9 @@ uv run memhall run -a hermes -c cases/full -o runs    # 真智能体（SSH 驱�
 
 uv run memhall report runs/<run_id>   # 对已有 run 重渲染报告（缺 verdicts 时从证据重放）
 uv run memhall compare runs/A runs/B  # 对比雷达 + 判定翻转明细 + 方向翻转分桶检验
+uv run memhall verify runs/<run_id>   # 证据完整性校验（payload 哈希逐条复算 + 产物封印对账）
+uv run memhall stability runs/A runs/B  # 重跑稳定性：一致率 / pass^k / 翻转明细报告
+uv run memhall vm status              # openKylin VM 生命周期（快照/回滚/健康检查）
 uv run memhall aggregate runs/A runs/A  # N 轮聚合：六维 mean±std + bootstrap 95% CI
 
 uv run memhall systest -a hermes      # 系统级测试：重启/拨钟/多用户/断网（真机真做）
@@ -158,7 +161,7 @@ dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall�
 
 ## 评测口径速览
 
-- **判定五态**：正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用；规则判不了的升级语义判卷（脚本判卷 → 双 LLM judge 交叉仲裁），未决判定单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
+- **判定态**：正确 / 遗漏 / 混淆 / 记错（编造）/ 错误持久化 / 错误复用，运行无效单列不计分母；规则判不了的升级语义判卷（脚本判卷 → 双 LLM judge 交叉仲裁），未决判定单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
 
 <p align="center">
   <img src="images/fig-verdict-mix.png" width="720" alt="六态判定构成堆积条形图">
