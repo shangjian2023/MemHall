@@ -132,7 +132,7 @@ def main() -> int:
 
     # ④ 判卷口径差 + 环境噪声
     print("== ④ 判卷口径差（同证据 dual vs scripted）与环境噪声（invalid 率）==")
-    for a, ps in runs.items():
+    for _a, ps in runs.items():
         for p in ps:
             d_over = overall(load_verdicts(p / "verdicts.jsonl"))
             line = f"  {p.name:<28} dual {d_over:.1%}"
