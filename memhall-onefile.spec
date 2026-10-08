@@ -6,6 +6,8 @@ runs/.env 落在 exe 所在目录，重跑不丢。
 """
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_submodules
+
 ROOT = Path(SPECPATH).resolve()
 
 a = Analysis(
@@ -17,6 +19,13 @@ a = Analysis(
         (str(ROOT / "cases"), "cases"),
     ],
     hiddenimports=[
+        # 适配器注册表 / vm、systest 子命令都是运行时 import_module（lazy），
+        # 静态分析看不见——1.3.1 用户实测：UI 选 hermes（本机直连）发车即
+        # ModuleNotFoundError: memhall.adapters.hermes_local。全量收齐。
+        # remote.py 顺带把 paramiko 拉进包（exe 也能跑 SSH 真机车道）。
+        *collect_submodules("memhall.adapters"),
+        "memhall.vm",
+        "memhall.systests",
         # uvicorn 运行时按需导入的子模块，静态分析看不见
         "uvicorn.logging", "uvicorn.loops.auto",
         "uvicorn.protocols.http.auto", "uvicorn.protocols.websockets.auto",

@@ -414,7 +414,7 @@ def cmd_systest(args: argparse.Namespace) -> int:
     try:
         from memhall.systests import run_systest
     except ImportError:
-        print("系统级测试需要 paramiko（uv run / pip 安装），exe 单文件版不含", file=sys.stderr)
+        print("系统级测试需要 paramiko（uv run / pip 安装）", file=sys.stderr)
         return 2
     print("系统级测试将重启虚拟机并短暂断网（自动恢复），开始…")
     rep = run_systest(args.adapter, Path(args.out))

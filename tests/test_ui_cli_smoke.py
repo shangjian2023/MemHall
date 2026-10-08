@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 from fastapi.testclient import TestClient
+
+REPO = Path(__file__).parent.parent
 
 import memhall.ui.app as uiapp
 from memhall.ui.app import create_app
@@ -44,3 +47,13 @@ def test_cli_subcommand_help_smoke():
                  "PYTHONPATH": "src", "PYTHONIOENCODING": "utf-8"})
         assert cp.returncode == 0, f"{cmd} --help 退出 {cp.returncode}: {(cp.stderr or '')[:200]}"
         assert "usage" in (cp.stdout or "").lower(), cmd
+
+
+def test_pyinstaller_specs_collect_lazy_adapters():
+    """打包回归网（1.3.1 实测事故）：适配器注册表/子命令全是运行时
+    import_module，PyInstaller 静态分析看不见——spec 必须 collect 全量，
+    否则 exe 里选 hermes（本机直连）发车即 ModuleNotFoundError。"""
+    for spec in ("memhall.spec", "memhall-onefile.spec"):
+        text = (REPO / spec).read_text(encoding="utf-8")
+        assert 'collect_submodules("memhall.adapters")' in text, spec
+        assert '"memhall.vm"' in text, spec
