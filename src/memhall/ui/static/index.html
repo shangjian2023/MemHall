@@ -74,6 +74,8 @@ h2.sec::before{content:"";width:3px;height:12px;border-radius:2px;background:var
 .mini .meta{font-size:12.5px;color:var(--sub);margin-top:4px;
   font-family:var(--mono);word-break:break-all;line-height:1.6}
 .mini.ghost{opacity:.5;border-style:dashed}
+.mini.suspect{border-style:dashed;opacity:.8}
+.mini.pick{border-color:var(--acc)}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
 .dot.y{background:var(--ok)}
 .dot.n{background:var(--line)}
@@ -550,13 +552,23 @@ const actBadge=(d)=>{
   if(d<=30)return `<span class="tag">${d} 天前</span>`;
   return `<span class="tag idle">闲置 ${d} 天</span>`;
 };
-const cardRow=(f)=>`
-  <div class="mini ${f.found?"":"ghost"}">${f.found?'<i class="shine"></i>':""}
+const cardRow=(f)=>{
+  /* 疑疑档（evidence=cfg）：仅配置目录、PATH 无 CLI——目录可能是别的工具
+     建的（~/.cursor 属于 Cursor IDE 而非 cursor-agent CLI），不算在册 */
+  if(f.found&&f.evidence==="cfg"){
+    return `<div class="mini suspect" title="PATH 未检出该智能体的 CLI 命令，目录可能是其他工具创建的">
+    <div class="name"><span class="dot n"></span>${esc(f.name)}<span class="tag idle">疑似</span></div>
+    <div class="meta">仅发现配置目录 ${esc(f.detail)}（未检出 CLI，不计入在册）</div></div>`;
+  }
+  const jump=f.found&&f.adapter;
+  return `
+  <div class="mini ${f.found?"":"ghost"}"${jump?` data-adapter="${esc(f.adapter)}" style="cursor:pointer" title="点击去评测页并选中该智能体"`:""}>${f.found?'<i class="shine"></i>':""}
     <div class="name"><span class="dot ${f.found?"y":"n"}"></span>${esc(f.name)}
       ${f.adapter?`<span class="tag">-a ${esc(f.adapter)}</span>`:
-        f.found?`<span class="tag">可定制</span>`:""}${actBadge(f.activity_days)}</div>
+        f.found?`<span class="tag">暂无适配器</span>`:""}${f.found?actBadge(f.activity_days):""}</div>
     <div class="meta">${f.found?esc((f.version?f.version+" · ":"")+(f.detail||"")+(f.hint?" · "+f.hint:"")):"未检出"}</div>
   </div>`;
+};
 const envRow=(c)=>`
   <div class="envrow"><span class="n">${esc(c.name)}</span>
     <span class="pill ${c.ok?"ok":"warn"}">${c.ok?"通过":"未就绪"}</span>
@@ -600,7 +612,7 @@ async function loadDoctor(fresh=false){
   const btn=$("#docRefresh");btn.disabled=true;btn.classList.add("scanning");
   body.innerHTML=`
     <h2.sec>本机智能体<span class="found-badge" id="nLocal" style="display:none"><b>0</b><small>个在册</small></span></h2>
-    <div class="grid-cards" id="dgLocal"></div><div id="dgMissed"></div><div id="dgExtras"></div>
+    <div class="grid-cards" id="dgLocal"></div><div id="dgSus"></div><div id="dgMissed"></div><div id="dgExtras"></div>
     <div id="dgVmSec"><h2.sec>评测机智能体（openKylin VM）<span class="found-badge" id="nVm" style="display:none"><b>0</b><small>个在册</small></span></h2>
     <div class="grid-cards" id="dgVm"></div></div>
     <h2.sec>评测环境就绪度</h2><div id="dgEnv"></div>
@@ -647,12 +659,27 @@ async function loadDoctor(fresh=false){
     const box=$("#dgLocal");stopTick("local");
     if(d.error){box.innerHTML=`<div class="empty">失败：${esc(d.error)}</div>`;return}
     const isAgent=f=>f.category==="cli"||f.category==="ide";
-    const found=d.local.filter(f=>f.found&&isAgent(f)),
+    const found=d.local.filter(f=>f.found&&isAgent(f)&&f.evidence!=="cfg"),
+          sus=d.local.filter(f=>f.found&&isAgent(f)&&f.evidence==="cfg"),
           missed=d.local.filter(f=>!f.found),
           extras=d.local.filter(f=>f.found&&!isAgent(f));
     badge("#nLocal",found.length);
     box.innerHTML=found.map(cardRow).join("");
     revealCards(box);
+    /* 卡片点击 → 评测页并预选该智能体（有适配器的在册卡片才可跳） */
+    box.querySelectorAll("[data-adapter]").forEach(el=>el.addEventListener("click",()=>{
+      switchTab("run");
+      const sel=$("#fAdapter");
+      if(sel&&[...sel.options].some(o=>o.value===el.dataset.adapter)){
+        sel.value=el.dataset.adapter;
+        if(G){G.fromTo(sel,{scale:.92},{scale:1,duration:.3,ease:"back.out(2)"})}
+      }
+    }));
+    $("#dgSus").innerHTML=sus.length
+      ?`<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--faint);
+        font-size:12.5px;user-select:none">另有 ${sus.length} 个疑似（仅配置目录、未检出 CLI 命令，不计入在册）</summary>
+        <div class="grid-cards" style="margin-top:8px">${sus.map(cardRow).join("")}</div></details>`
+      :"";
     renderNotFoundWrap($("#dgMissed"),missed.map(f=>f.name));
     $("#dgExtras").innerHTML=extras.length
       ?`<div style="margin-top:10px;font-size:12.5px;color:var(--sub);padding:2px 2px 0">另检出（非智能体）：${extras.map(f=>`<b style="color:var(--ink)">${esc(f.name)}</b>（${esc(f.hint||"周边工具")}）`).join(" · ")}</div>`
@@ -679,10 +706,10 @@ async function loadDoctor(fresh=false){
   try{
     await Promise.all([pLocal,pVm,pEnv]);
     const usable=["mock",...new Set([...(results.local?.local||[]),...(results.vm?.vm||[])]
-      .filter(f=>f.found&&f.adapter).map(f=>f.adapter))];
-    const nFound=(results.local?.local||[])
-      .filter(f=>f.found&&(f.category==="cli"||f.category==="ide")).length;
-    $("#dgHint").innerHTML=`本机发现 <b>${nFound}</b> 个智能体 · 可用适配器 <b>${usable.join(" · ")}</b>　<span style="color:var(--faint);font-size:12px">版本信息缓存 12h，「重新体检」强制刷新</span>`;
+      .filter(f=>f.found&&f.adapter&&f.evidence!=="cfg").map(f=>f.adapter))];
+    const all=(results.local?.local||[]).filter(f=>f.found&&(f.category==="cli"||f.category==="ide"));
+    const nFound=all.filter(f=>f.evidence!=="cfg").length,nSus=all.length-nFound;
+    $("#dgHint").innerHTML=`本机发现 <b>${nFound}</b> 个智能体${nSus?`（另有 ${nSus} 个疑似，仅目录证据）`:""} · 可用适配器 <b>${usable.join(" · ")}</b>　<span style="color:var(--faint);font-size:12px">版本信息缓存 12h，「重新体检」强制刷新</span>`;
     const bar=$("#dgBar");bar.style.display="flex";
     const go=$("#docGoRun");
     if(go){go.addEventListener("click",()=>switchTab("run"));}

@@ -43,6 +43,11 @@ class Finding:
     hint: str = ""
     category: str = "cli"      # cli / ide = 智能体；runtime / tool = 周边信号，非智能体
     activity_days: int | None = None  # 最近活动（天前）；None = 无目录证据可考
+    # 检出证据分级（1.3.1 用户实测教训：仅目录存在≠装过——~/.cursor 是 Cursor
+    # IDE 的数据目录，天天被编辑器写，报"cursor-agent 在册·1 天前活跃"是误报）：
+    #   "cli" = PATH 上检出 CLI 命令（确证，计入"在册"）
+    #   "cfg" = 仅配置目录存在（疑似，不计入在册，UI 单列并说明）
+    evidence: str = "cli"
 
 
 @dataclass
@@ -61,7 +66,7 @@ class DoctorReport:
 
     def usable_adapters(self) -> list[str]:
         names = {f.adapter for f in self.local + self.vm
-                 if f.found and f.adapter}
+                 if f.found and f.adapter and f.evidence != "cfg"}
         names.add("mock")
         return sorted(names)
 
@@ -274,7 +279,8 @@ def scan_local(timeout_s: int = 4, fresh: bool = False) -> list[Finding]:
         if exe or hit_cfg:
             hits.append((Finding(name, "local", True, category=category,
                                  detail=exe or hit_cfg, adapter=adapter,
-                                 activity_days=_activity_days(cfgs)), exe))
+                                 activity_days=_activity_days(cfgs),
+                                 evidence="cli" if exe else "cfg"), exe))
         else:
             out.append(Finding(name, "local", False, category=category))
     # 周边工具：检出才列（未检出不占"未检出"名单——本来就不是智能体）
@@ -284,7 +290,8 @@ def scan_local(timeout_s: int = 4, fresh: bool = False) -> list[Finding]:
                         if Path(c).expanduser().exists()), "")
         if exe or hit_cfg:
             hits.append((Finding(name, "local", True, category=category, hint=note,
-                                 detail=exe or hit_cfg), exe))
+                                 detail=exe or hit_cfg,
+                                 evidence="cli" if exe else "cfg"), exe))
 
     # 版本是锦上添花：并行探测 + 短超时 + 12h 落盘缓存（慢 CLI 如本地 hermes 实测 11s）
     def _ver(exe: str) -> str:
@@ -492,16 +499,20 @@ def render_doctor(rep: DoctorReport) -> str:
     lines.append("── 本机智能体 ──")
     agents = [f for f in rep.local if f.category in ("", "cli", "ide")]
     for f in agents:
-        mark = "✓" if f.found else "·"
+        if not f.found:
+            lines.append(f"  · {f.name:<12}（未检出）")
+            continue
+        if f.evidence == "cfg":
+            # 疑似：目录可能是别的工具建的（~/.cursor 属于 Cursor IDE），
+            # 不能报"在册"（1.3.1 用户实测误报教训）
+            lines.append(f"  ? {f.name:<12}  疑似：仅配置目录（{f.detail}），"
+                         "PATH 未检出 CLI，不计入在册")
+            continue
         ver = f"  {f.version}" if f.version else ""
         where = f"  ({f.detail})" if f.detail else ""
         act = (f"  · {f.activity_days}天前" if f.activity_days is not None else "")
-        ad = f"  [适配器: -a {f.adapter}]" if f.adapter else \
-            "  [无适配器，可按契约 01 定制]"
-        if f.found:
-            lines.append(f"  {mark} {f.name:<12}{ver}{where}{act}{ad}")
-        else:
-            lines.append(f"  {mark} {f.name:<12}（未检出）")
+        ad = f"  [适配器: -a {f.adapter}]" if f.adapter else "  [暂无适配器]"
+        lines.append(f"  ✓ {f.name:<12}{ver}{where}{act}{ad}")
     extras = [f for f in rep.local if f.found and f.category in ("runtime", "tool")]
     if extras:
         lines.append("  · 另检出（非智能体）: "

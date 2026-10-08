@@ -28,7 +28,9 @@ def test_scan_local_signal_matrix(monkeypatch, tmp_path):
     out = scan_local()
     by_name = {f.name: f for f in out}
     assert by_name["claude-code"].found and by_name["claude-code"].version == "1.0.0-cli"
+    assert by_name["claude-code"].evidence == "cli"
     assert by_name["codex"].found and by_name["codex"].detail  # 仅配置目录命中也算发现
+    assert by_name["codex"].evidence == "cfg"  # 但只算疑似，不算在册
     assert not by_name["aider"].found
 
 
@@ -70,9 +72,28 @@ def test_dsh_sentinel_and_extras_category(monkeypatch, tmp_path):
     out = scan_local()
     by = {f.name: f for f in out}
     assert by["dsh (DeepSeek Harness)"].found            # 哨兵 profiles 佐证
+    assert by["dsh (DeepSeek Harness)"].evidence == "cfg"
     assert by["ollama"].found and by["ollama"].category == "runtime"
     agents = [f for f in out if f.found and f.category in ("cli", "ide")]
     assert all(f.name != "ollama" for f in agents)
+
+
+def test_cfg_only_not_counted_as_confirmed(monkeypatch, tmp_path):
+    """疑似档（仅目录）不进在册/可用适配器：~/.cursor 是 Cursor IDE 的数据
+    目录，不能报"cursor-agent 在册·N 天前活跃"（1.3.1 用户实测误报）。"""
+    import memhall.discovery as disc
+    monkeypatch.setattr(disc, "_which", lambda b: "")
+    monkeypatch.setattr(disc, "CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr(
+        "memhall.discovery.Path.exists", lambda self: ".cursor" in str(self))
+    rep = DoctorReport(local=scan_local(), vm=[], env=[])
+    cur = next(f for f in rep.local if f.name == "cursor-agent")
+    assert cur.found and cur.evidence == "cfg"
+    assert rep.usable_adapters() == ["mock"]
+    assert "疑似" in render_doctor(rep)
+    cli_agents = [f for f in rep.local
+                  if f.found and f.category in ("cli", "ide") and f.evidence == "cli"]
+    assert cli_agents == []  # 全目录命中时在册数应为 0
 
 
 def test_activity_days(tmp_path):
