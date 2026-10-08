@@ -1,16 +1,18 @@
-"""README 专业图表生成（三张，数据零 LLM 可复现）。
+"""README 专业图表生成（六张，数据零 LLM 可复现）。
 
 风格来源（skills）：
 - scientific-visualization：Okabe-Ito 色盲安全配色、去顶右脊线、mean±误差棒、
   显著性星标、300dpi、PNG（README 场景不用 JPEG）。
 - paper-figures 图库 seg042（Nature 柱+误差棒+散点）气质 → 图 1；
-  seg033（哑铃/状态点）气质 → 图 2。
+  seg033（哑铃/状态点）气质 → 图 2、图 5；堆积构成条（seg072/073 款）→ 图 4；
+  棒棒糖（点阵/热图族）→ 图 6。
 - architecture-diagram 设计系统（slate-950 底/语义色/圆角 6/1.5px 描边/
   箭头 marker/网格纹理）→ 图 3 评测管线 SVG。
 
 用法：uv run python scripts/make_readme_figures.py
-数据源：runs/_agg-{hermes,kylinbot,openclaw}-dual/aggregate.json（双判聚合）+
-stats_uncertainty.py 同源数字（同探测点两轮一致率 / 配对符号检验）。
+数据源：runs/_agg-{hermes,kylinbot,openclaw}-dual/aggregate.json（双判聚合）、
+六场 run 的 verdicts.jsonl / verdicts.scripted.jsonl、
+stats_uncertainty.py 同源逻辑（一致率/符号检验/区分度，经 import 复用）。
 """
 
 from __future__ import annotations
@@ -65,6 +67,29 @@ def _publication(ax: plt.Axes) -> None:
 
 def _stars(p: float) -> str:
     return "**" if p <= 0.01 else ("*" if p <= 0.05 else "ns")
+
+
+def _stats_module():
+    """import stats_uncertainty.py 复用其装载/二值化/口径逻辑（零重复实现）。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "stats_uncertainty", Path("scripts/stats_uncertainty.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+VERDICT_ZH = {
+    "correct": "正确", "omission": "遗漏", "fabrication": "混淆",
+    "over_persist": "错误持久化", "wrong_reuse": "错误复用",
+    "human_review": "人工复核", "invalid_run": "运行无效",
+}
+VERDICT_COLOR = {
+    "correct": "#009E73", "omission": "#0072B2", "fabrication": "#E69F00",
+    "over_persist": "#D55E00", "wrong_reuse": "#CC79A7",
+    "human_review": "#999999", "invalid_run": "#CCCCCC",
+}
 
 
 def load_caps() -> dict[str, dict[str, dict]]:
@@ -331,13 +356,175 @@ def fig3_pipeline_svg() -> None:
     (OUT / "pipeline-dark.svg").write_text("\n".join(parts), encoding="utf-8")
 
 
+def fig4_verdict_mix(mod) -> None:
+    """图 4：六态判定构成（六场 run 100% 堆积条）——"记错的样子"可视化。"""
+    from collections import Counter
+
+    _setup_font()
+    rows = []
+    for a in AGENTS:
+        for i, rid in enumerate(mod.AGENTS[a], start=1):
+            vs = mod.load_verdicts(RUNS / rid / "verdicts.jsonl")
+            rows.append((f"{AGENT_LABEL[a]} r{i}", Counter(vs.values())))
+    states = [k for k in VERDICT_ZH if any(c.get(k) for _, c in rows)]
+
+    fig, ax = plt.subplots(figsize=(9.6, 3.4))
+    ys = np.arange(len(rows))[::-1]
+    totals = np.array([sum(c.values()) for _, c in rows], dtype=float)
+    left = np.zeros(len(rows))
+    for s in states:
+        vals = np.array([c.get(s, 0) for _, c in rows], dtype=float)
+        shares = vals / totals * 100
+        ax.barh(ys, shares, left=left, height=0.62, color=VERDICT_COLOR[s],
+                label=VERDICT_ZH[s], edgecolor="white", linewidth=0.5,
+                alpha=0.92 if s != "invalid_run" else 0.7, zorder=2)
+        for y, x0, sh in zip(ys, left, shares, strict=True):
+            if sh >= 7:
+                ax.text(x0 + sh / 2, y, f"{sh:.0f}", ha="center", va="center",
+                        fontsize=8.5, color="white", zorder=3)
+        left += shares
+    ax.set_yticks(ys)
+    ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("判定占比（%）")
+    ax.xaxis.grid(True, color="0.88", linewidth=0.7, zorder=0)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, ncol=len(states), loc="upper center",
+              bbox_to_anchor=(0.5, -0.22), fontsize=8.5, columnspacing=1.1,
+              handlelength=1.0, handleheight=1.0)
+    _publication(ax)
+    ax.spines["left"].set_visible(False)
+    ax.tick_params(left=False)
+    fig.tight_layout()
+    fig.savefig(OUT / "fig-verdict-mix.png", dpi=300,
+                bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+
+
+def fig5_dual_vs_scripted(mod) -> None:
+    """图 5：同证据双判 vs 脚本判卷哑铃——"敢报分差"可视化。"""
+    _setup_font()
+    rows = []
+    for a in AGENTS:
+        for i, rid in enumerate(mod.AGENTS[a], start=1):
+            dual = mod.overall(mod.load_verdicts(RUNS / rid / "verdicts.jsonl"))
+            s_path = RUNS / rid / "verdicts.scripted.jsonl"
+            scripted = (mod.overall(mod.load_verdicts(s_path))
+                        if s_path.exists() else None)
+            if dual is not None and scripted is not None:
+                rows.append((f"{AGENT_LABEL[a]} r{i}", scripted * 100,
+                             dual * 100))
+
+    fig, ax = plt.subplots(figsize=(6.4, 3.2))
+    ys = np.arange(len(rows))[::-1]
+    for y, (label, s, d) in zip(ys, rows, strict=True):
+        ax.plot([d, s], [y, y], color="0.75", linewidth=1.6, zorder=2)
+        ax.scatter(s, y, s=42, facecolor="white", edgecolor="#666666",
+                   linewidth=1.2, zorder=3)
+        ax.scatter(d, y, s=46, color=COLOR[{"Hermes": "hermes",
+                                            "KylinBot": "kylinbot",
+                                            "OpenClaw": "openclaw"}[
+                                                label.split()[0]]], zorder=4)
+        ax.text(s + 1.2, y + 0.24, f"{s:.1f}", fontsize=7.5, color="#666666")
+        ax.text(d - 1.2, y + 0.24, f"{d:.1f}", fontsize=7.5, ha="right",
+                color="#222222")
+        ax.text(103.5, y, f"Δ {d - s:+.1f}", fontsize=8.5, va="center",
+                color="#D55E00" if d < s else "#009E73", clip_on=False)
+    ax.set_yticks(ys)
+    ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("总体正确率（%）")
+    ax.xaxis.grid(True, color="0.88", linewidth=0.7, zorder=0)
+    ax.set_axisbelow(True)
+    # 图例（手工代理元素）
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([], [], marker="o", ls="", markerfacecolor="white",
+               markeredgecolor="#666666", markersize=7, label="脚本判卷"),
+        Line2D([], [], marker="o", ls="", color="#0072B2", markersize=7,
+               label="双 LLM 判卷"),
+    ]
+    ax.legend(handles=handles, frameon=False, loc="lower right", fontsize=9)
+    ax.set_title("同一批证据，两种判卷口径", fontsize=10.5, loc="left", pad=8)
+    _publication(ax)
+    ax.spines["left"].set_visible(False)
+    ax.tick_params(left=False)
+    fig.tight_layout()
+    fig.savefig(OUT / "fig-dual-vs-scripted.png", dpi=300,
+                bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+
+
+def fig6_separation(mod) -> None:
+    """图 6：维度区分度棒棒糖（组间/组内方差比，n=2/组）。
+
+    比值 <1 = 两轮轮间方差盖过智能体间差异，该维在 n=2 下不构成区分；
+    ≥1 才是"这个维真的在分开不同系统"。
+    """
+    _setup_font()
+    vd = {a: [mod.load_verdicts(RUNS / rid / "verdicts.jsonl")
+              for rid in rids] for a, rids in mod.AGENTS.items()}
+    rows = []
+    for fam, cap in mod.FAMILY_CAP.items():
+        per_agent: dict[str, list[float]] = {}
+        for a in vd:
+            scores = []
+            for r in vd[a]:
+                ps = [p for p in r if p.split("-")[0] == fam]
+                vals = [mod.binary(r[p]) for p in ps]
+                valid = [x for x in vals if x is not None]
+                scores.append(sum(valid) / len(valid) if valid else float("nan"))
+            per_agent[a] = scores
+        means = [sum(v) / len(v) for v in per_agent.values()]
+        between = sum((m - sum(means) / len(means)) ** 2
+                      for m in means) / (len(means) - 1)
+        within = sum(sum((x - sum(v) / len(v)) ** 2 for x in v) / (len(v) - 1)
+                     for v in per_agent.values()) / len(per_agent)
+        ratio = between / within if within > 0 else float("inf")
+        rows.append((f"{mod.CAP_ZH[cap]} · {fam}", ratio))
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.4))
+    ys = np.arange(len(rows))[::-1]
+    for y, (label, ratio) in zip(ys, rows, strict=True):
+        color = "#009E73" if ratio >= 1 else "#999999"
+        ax.hlines(y, 0, ratio, color=color, linewidth=1.6, zorder=2)
+        ax.scatter(ratio, y, s=52, color=color, zorder=3)
+        ax.text(ratio + 0.12, y, f"{ratio:.1f}", fontsize=8.5,
+                va="center", color=color)
+    ax.axvline(1.0, color="#D55E00", linewidth=0.9, linestyle=(0, (4, 3)),
+               alpha=0.8)
+    ax.text(1.0, len(rows) - 0.28, " n=2 可区分阈值", fontsize=8,
+            color="#D55E00", va="bottom")
+    ax.set_yticks(ys)
+    ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
+    ax.set_xlim(0, 7.6)
+    ax.set_xlabel("维度区分度 = 组间方差（智能体间）/ 组内方差（同智能体轮间）")
+    ax.xaxis.grid(True, color="0.9", linewidth=0.7, zorder=0)
+    ax.set_axisbelow(True)
+    ax.set_title("哪些维在 n=2 下真的分开了系统（灰=尚不区分）",
+                 fontsize=10.5, loc="left", pad=8)
+    _publication(ax)
+    ax.spines["left"].set_visible(False)
+    ax.tick_params(left=False)
+    fig.tight_layout()
+    fig.savefig(OUT / "fig-separation.png", dpi=300,
+                bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+
+
 def main() -> int:
     OUT.mkdir(exist_ok=True)
     caps = load_caps()
     fig1_six_dim_bars(caps)
     fig2_uncertainty()
     fig3_pipeline_svg()
-    for name in ["fig-six-dim.png", "fig-uncertainty.png", "pipeline-dark.svg"]:
+    mod = _stats_module()
+    fig4_verdict_mix(mod)
+    fig5_dual_vs_scripted(mod)
+    fig6_separation(mod)
+    for name in ["fig-six-dim.png", "fig-uncertainty.png", "pipeline-dark.svg",
+                 "fig-verdict-mix.png", "fig-dual-vs-scripted.png",
+                 "fig-separation.png"]:
         p = OUT / name
         print(f"{name}: {p.stat().st_size // 1024} KB")
     return 0

@@ -159,15 +159,30 @@ dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall�
 ## 评测口径速览
 
 - **判定五态**：正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用；规则判不了的升级语义判卷（脚本判卷 → 双 LLM judge 交叉仲裁），未决判定单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
+
+<p align="center">
+  <img src="images/fig-verdict-mix.png" width="720" alt="六态判定构成堆积条形图">
+</p>
+<p align="center"><sub>判定构成（六场 run，100% 堆积）——不止判对错，还判「记错的样子」：hermes 两轮正确率 21%↔61% 的方差、三家共同的遗漏主导错误模式，一眼可读</sub></p>
 - **评分口径 v3**（2026-10-05，R01–R60 整改留痕见 [review-tasks](docs/review-tasks.md)）：探测点 score / diagnostic 分层——存储态断言（memory.*）与 actions 断言只进故障定位表（没存 / 存了没用上 / 存了但内容错 / 该删没删），不进六维分母；canary 教学时点判；无有效探测的维输出「未测」不画轴；报告附「未决按错计」保守下界与按用例等权总分。旧 run 可 `memhall report runs/<id>` 按新口径重渲染。
 - **正式口径 = full + chains**；heldout 为不可见防背题池（`gen_cases.py --seed 4210` 评测时现场生成，题目文本不入库、seed 公布保复现）；全量跑 ≥2 轮报 mean±std + bootstrap 95% CI（`memhall aggregate`）。
 - **LLM 重判 vs 脚本判卷**：重判比脚本全面低 7–37 分（六轮分差全部 >5 分，集中在记忆调用/动态更新两维），掉分机制已抽查证实——脚本把判不了的探测点剔出分母（幸存者偏差）、模式匹配会把语义答错的回答计对。脚本判卷数字仅存档对账（`verdicts.scripted.jsonl`），不用于排名。
+
+<p align="center">
+  <img src="images/fig-dual-vs-scripted.png" width="560" alt="双判 vs 脚本判卷哑铃图">
+</p>
+<p align="center"><sub>同一批证据、两种判卷口径（空心=脚本判卷，实心=双 LLM 判卷）——六轮全部下移不是判官严，是脚本判卷的分母幸存者偏差被摘除</sub></p>
 - **测量边界**（`uv run python scripts/stats_uncertainty.py` 可复现，零 LLM）：①系统内稳定性（同探测点两轮一致率）openclaw 85% > kylinbot 73% > hermes 47%——被测系统自身的随机性是测量结果；②排名主张过配对符号检验：hermes 显著低于两家（p=0.002 / 0.027），kylinbot vs openclaw 38:38 平手（p=1.0）并列呈现；③判卷口径差 -0.8 ～ -19.0 分方向一致；④hermes 的 11 分轮级差距需 ≈60 轮才达显著，配对探测点检验 n=2 已分出。详见 [dataset-card §9](docs/dataset-card.md)。
 
 <p align="center">
   <img src="images/fig-uncertainty.png" width="720" alt="测量可信度面板：两轮一致率与配对符号检验">
 </p>
 <p align="center"><sub>测量可信度：(a) 同探测点两轮六态一致率与对错翻转率；(b) 排名主张的配对符号检验（log 轴，虚线=α=0.05；ns=不显著并列）</sub></p>
+
+<p align="center">
+  <img src="images/fig-separation.png" width="560" alt="维度区分度棒棒糖图">
+</p>
+<p align="center"><sub>维度区分度（组间/组内方差比，n=2/组）：只有边界识别（3.0）与时间推理（6.8）在两轮内真的分开了系统——其余维的轮间方差还盖过智能体间差异，这是我们如实标注的测量边界，不是藏起来的缺点</sub></p>
 
 ## 文档
 
