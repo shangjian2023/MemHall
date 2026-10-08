@@ -33,6 +33,15 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         lanes = "、".join(f"{v.get('model', '?')}@{k}"
                          for k, v in mb["lanes"].items())
         lines.append(f"- 模型口径：直连（{lanes}）")
+    # LLM 运行时口径自动识别（实际请求模型 id / 思考强度，逐请求账单归并）
+    rt = manifest.get("llm_runtime")
+    if rt:
+        models = "、".join(rt.get("models") or ["?"])
+        thinking = "；".join(rt.get("reasoning") or ["未设置（各智能体默认）"])
+        lines.append(f"- 实际请求模型：`{models}`"
+                     + ("（网关强制改写）" if rt.get("forced_model") else "")
+                     + f"　思考强度：{thinking}"
+                     f"（{rt.get('requests', 0)} 次请求实测归并）")
     tu = manifest.get("token_usage")
     if tu:
         lines.append(f"- Token 消耗（网关记账）：{tu.get('total_tokens', 0):,}"

@@ -62,6 +62,12 @@ class HermesAdapter(AgentAdapter):
                 f"export DEEPSEEK_BASE_URL={_q(self._url)}\n"
                 f"export DEEPSEEK_MODEL={_q(self._model)}\n")
 
+    def version_info(self) -> str | None:
+        """被测版本自动识别（manifest.agent_version）——口径展示的锚点之一。"""
+        rc, out, _ = self.ch.run(f"{HERMES_BIN} --version 2>&1 | head -1", timeout=30)
+        line = out.strip().splitlines()[0] if out.strip() else ""
+        return line or None
+
     def reset(self) -> None:
         # *.lock 是 hermes 写记忆时的文件锁空壳（0 字节，写完不回收）——
         # R02 防线 2026-10-05 真机首战逮住过 9-28 残留的 MEMORY.md.lock/
@@ -124,14 +130,13 @@ class HermesAdapter(AgentAdapter):
     def end_session(self, session_id: str) -> None:
         pass  # oneshot 每次独立进程，会话隔离天然成立
 
-    def version_info(self) -> str | None:
-        rc, out, _ = self.ch.run(f"{HERMES_BIN} --version 2>/dev/null", timeout=30)
-        line = out.strip().splitlines()[0] if out.strip() else ""
-        return line or None
-
     def dump_memory(self) -> MemorySnapshot:
+        # 末尾 ; true：for 循环的退出码=最后一次 [ -f ] 的结果——USER.md
+        # 合法缺席（boundary 题智能体本就不写）会把"文件不存在"误报成
+        # "导出失败"→25 例假 invalid_run（2026-10-08 r3 实锤）；真实传输
+        # 故障走 run() 的异常路径，不会被这里吞掉
         cmd = (f"for f in {MEM_DIR}/MEMORY.md {MEM_DIR}/USER.md; do "
-               f"[ -f $f ] && echo \"=== $f\" && cat $f; done")
+               f"[ -f $f ] && echo \"=== $f\" && cat $f; done; true")
         rc, out, _ = self.ch.run(cmd)
         # R31：导出失败如实标注（dump_ok=False → 规则层判运行无效），
         # 不再与"空记忆"混淆——canary 泄漏洗白面就此关死

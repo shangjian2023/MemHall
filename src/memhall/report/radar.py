@@ -27,8 +27,11 @@ def _setup_font():
 
 
 def render_radar(agent_scores: dict[str, dict[str, float]], out_path: str,
-                 title: str = "麟阁 MemHall 六维记忆能力对比") -> str:
-    """agent_scores: {agent_name: {capability: 0-1}}，输出 PNG 路径。"""
+                 title: str = "麟阁 MemHall 六维记忆能力对比",
+                 subtitle: str = "") -> str:
+    """agent_scores: {agent_name: {capability: 0-1}}，输出 PNG 路径。
+
+    subtitle：口径披露行（版本/模型/轮数）——对外对比图必带，放标题下方。"""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -53,6 +56,9 @@ def render_radar(agent_scores: dict[str, dict[str, float]], out_path: str,
     ax.set_ylim(0, 1)
     ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_title(title, fontsize=14, pad=20)
+    if subtitle:
+        ax.text(0.5, 1.075, subtitle, transform=ax.transAxes, ha="center",
+                fontsize=8.5, color="0.35")
     ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.1))
     # R53 构念注脚：六维是设计先验切分，recall/persist 机制同源、temporal 计入
     # recall——轴间不独立（维度区分度表见 dataset-card），读图勿当六个独立因子

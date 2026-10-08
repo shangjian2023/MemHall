@@ -85,8 +85,7 @@ def _retry_after_seconds(retry_after: str | None) -> float | None:
     return (dt - datetime.now(UTC)).total_seconds()
 
 
-def _backoff_delay(attempt: int, retry_after: str | None,
-                   base: float, cap: float) -> float:
+def _backoff_delay(attempt: int, retry_after: str | None,                   base: float, cap: float) -> float:
     """指数退避 + 等抖动 + Retry-After。
 
     delay = min(base·2^attempt, cap) 再取 [d/2, d) 等抖动——多客户端同拍
@@ -99,6 +98,71 @@ def _backoff_delay(attempt: int, retry_after: str | None,
     if ra is not None:
         d = max(d, min(max(ra, 0.0), cap))
     return d
+
+
+def _reasoning_desc(payload: dict) -> str | None:
+    """从请求体提取思考强度参数（口径自动识别，结果展示用）。
+
+    各家叫法不一，按已见形态归一成紧凑描述：reasoning_effort（openai 系）、
+    enable_thinking（qwen/dashscope）、thinking.type/budget_tokens
+    （anthropic/qwen3 结构）、thinking_budget / max_reasoning_tokens。
+    都没有 → None（=各智能体默认，展示层如实标注"未设置"）。
+    """
+    if payload.get("reasoning_effort") is not None:
+        return f"reasoning_effort={payload['reasoning_effort']}"
+    if payload.get("enable_thinking") is not None:
+        return f"enable_thinking={payload['enable_thinking']}"
+    th = payload.get("thinking")
+    if isinstance(th, dict):
+        parts = []
+        if th.get("type"):
+            parts.append(f"type={th['type']}")
+        if th.get("budget_tokens"):
+            parts.append(f"budget={th['budget_tokens']}")
+        return "thinking(" + ",".join(parts) + ")" if parts else "thinking(present)"
+    for key in ("thinking_budget", "max_reasoning_tokens"):
+        if payload.get(key) is not None:
+            return f"{key}={payload[key]}"
+    return None
+
+
+def summarize_reasoning(start_iso: str, end_iso: str, agent_tag: str,
+                        log_file: Path | None = None) -> dict | None:
+    """按时间窗归并某智能体在网关账单里的模型与思考参数（run 收尾进 manifest）。
+
+    只认 tag == agent_tag 的行——判卷流量（memhall-judge*）与其他车道不掺。
+    返回 None = 窗口内无该 tag 流量（直连模式/网关没跑），不落键。
+    """
+    path = log_file or default_log_path()
+    if not path.is_file() or not start_iso or not end_iso:
+        return None
+    models: set[str] = set()
+    reasoning: set[str] = set()
+    n = 0
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        ts = str(rec.get("ts", ""))
+        if not (start_iso[:19] <= ts[:19] <= end_iso[:19]):
+            continue
+        if rec.get("agent") != agent_tag or rec.get("status") != 200:
+            continue
+        n += 1
+        if rec.get("asked_model"):
+            models.add(str(rec["asked_model"]))
+        if rec.get("reasoning"):
+            reasoning.add(str(rec["reasoning"]))
+    if not n:
+        return None
+    return {"agent_tag": agent_tag, "requests": n,
+            "models": sorted(models),
+            "reasoning": sorted(reasoning) or ["未设置（各智能体默认）"]}
 
 
 def create_gateway_app(upstream: str, api_key: str, model: str,
@@ -167,12 +231,14 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             pace_state["t"] = max(pace_state["t"], time.monotonic() + delay)
 
     def _record(tag: str, asked: str, usage: dict | None, ms: float, status: int,
-                retries: int = 0) -> None:
+                retries: int = 0, reasoning: str | None = None) -> None:
         rec = {"ts": datetime.now(UTC).isoformat(),
                "agent": tag, "model": model, "asked_model": asked,
                "status": status, "ms": round(ms)}
         if retries:
             rec["retries"] = retries   # 上游瞬态被退避重试吸收的次数（可观测）
+        if reasoning:
+            rec["reasoning"] = reasoning  # 思考强度参数（口径自动识别）
         if usage:
             rec.update({k: usage.get(k) for k in
                         ("prompt_tokens", "completion_tokens", "total_tokens")})
@@ -206,6 +272,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             return JSONResponse({"error": {"message": "请求体不是合法 UTF-8 JSON",
                                            "type": "gateway_bad_request"}}, status_code=400)
         asked = str(payload.get("model", ""))
+        reasoning = _reasoning_desc(payload)
         payload["model"] = model  # 核心保证：模型一律网关说了算
         stream = bool(payload.get("stream"))
         if stream:
@@ -259,7 +326,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             break
         if up is None:
             _record(tag, asked, None, (time.monotonic() - t0) * 1000, 599,
-                    retries=n_retry)
+                    retries=n_retry, reasoning=reasoning)
             return JSONResponse({"error": {"message": f"上游不可达: {last_err}",
                                            "type": "gateway_upstream_unreachable"}},
                                 status_code=502)
@@ -267,7 +334,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             text = (await up.aread()).decode("utf-8", "replace")[:500]
             await up.aclose()
             _record(tag, asked, None, (time.monotonic() - t0) * 1000, up.status_code,
-                    retries=n_retry)
+                    retries=n_retry, reasoning=reasoning)
             log.warning("网关转发失败 %d: %s", up.status_code, text[:200])
             return JSONResponse({"error": {
                 "message": f"上游 {up.status_code}: {text}",
@@ -277,7 +344,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             data = up.json()
             await up.aclose()
             _record(tag, asked, data.get("usage"), (time.monotonic() - t0) * 1000, 200,
-                    retries=n_retry)
+                    retries=n_retry, reasoning=reasoning)
             return JSONResponse(data)
 
         async def relay():
@@ -289,7 +356,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             finally:
                 usage = _usage_from_sse(bytes(buf))
                 _record(tag, asked, usage, (time.monotonic() - t0) * 1000, 200,
-                        retries=n_retry)
+                        retries=n_retry, reasoning=reasoning)
                 with contextlib.suppress(Exception):
                     await up.aclose()
 

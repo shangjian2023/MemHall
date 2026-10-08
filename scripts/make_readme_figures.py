@@ -37,6 +37,41 @@ NS_GRAY = "#7f7f7f"
 OUT = Path("images")
 RUNS = Path("runs")
 
+# 口径披露：自动识别优先（run 时 manifest 记录），旧 run 回退 VM 实测补记
+AGENT_VERSION_FALLBACK = {
+    "hermes": "Hermes v0.21.3",
+    "kylinbot": "KylinBot 0.7.5",
+    "openclaw": "OpenClaw 2026.9.8",
+}
+
+
+def build_caliber(mod) -> tuple[str, str]:
+    """从各 run 的 manifest 自动拼口径 → (版本串, 口径串)。
+
+    manifest.agent_version / model_backend / llm_runtime 都是 run 时自动
+    识别落盘（v1.3.2 起逐请求账单归并）；旧 run 缺字段回退补记值并标注。
+    """
+    versions, models, thinkings, dates = [], set(), set(), set()
+    for a in AGENTS:
+        rid = mod.AGENTS[a][0]
+        dates.add(rid[:8])
+        m = json.loads((RUNS / rid / "manifest.json").read_text(encoding="utf-8"))
+        versions.append(m.get("agent_version") or AGENT_VERSION_FALLBACK[a])
+        mb = m.get("model_backend") or {}
+        if mb.get("mode") == "gateway" and mb.get("model"):
+            models.add(f"{mb['model']}（网关强制改写）")
+        rt = m.get("llm_runtime")
+        if rt and rt.get("reasoning"):
+            thinkings.update(rt["reasoning"])
+    if not thinkings:
+        thinkings = {"各智能体默认（旧 run 账单未记，v1.3.2 起自动识别）"}
+    date_str = "/".join(f"{d[4:6]}-{d[6:]}" for d in sorted(dates))
+    ver_str = " / ".join(v.split("(")[0].strip() for v in versions)
+    caliber = (f"统一模型 {'、'.join(sorted(models)) or '?'} · 推理档 "
+               f"{'；'.join(sorted(thinkings))} · n={len(mod.AGENTS[AGENTS[0]])} 轮"
+               f"（2026-{date_str}）")
+    return ver_str, caliber
+
 # stats_uncertainty.py 2026-10-08 输出（同源可复算）
 AGREE = {"hermes": 47.2, "kylinbot": 73.0, "openclaw": 85.4}   # 六态一致率 %
 FLIP = {"hermes": 44, "kylinbot": 23, "openclaw": 13}          # 对错翻转 %
@@ -101,7 +136,8 @@ def load_caps() -> dict[str, dict[str, dict]]:
     return out
 
 
-def fig1_six_dim_bars(caps: dict[str, dict[str, dict]]) -> None:
+def fig1_six_dim_bars(caps: dict[str, dict[str, dict]], ver_str: str,
+                      caliber: str) -> None:
     """六维 mean±std 分组柱 + 各轮散点（n=2，散点=两轮实际值）。"""
     _setup_font()
     fig, ax = plt.subplots(figsize=(9.6, 4.0))
@@ -109,6 +145,8 @@ def fig1_six_dim_bars(caps: dict[str, dict[str, dict]]) -> None:
     n_a, n_d = len(AGENTS), len(dims)
     width = 0.8 / n_a
     x = np.arange(n_d)
+    ver_parts = dict(zip(AGENTS, [v.strip() for v in ver_str.split("/")],
+                         strict=True))
     for i, a in enumerate(AGENTS):
         means = [caps[a][d]["mean"] * 100 for d in dims]
         stds = [caps[a][d]["std"] * 100 for d in dims]
@@ -116,7 +154,7 @@ def fig1_six_dim_bars(caps: dict[str, dict[str, dict]]) -> None:
         his = [caps[a][d]["max"] * 100 for d in dims]
         pos = x - 0.4 + width / 2 + i * width
         ax.bar(pos, means, width * 0.92, color=COLOR[a], alpha=0.88,
-               label=AGENT_LABEL[a], zorder=2)
+               label=f"{ver_parts[a]}（{AGENT_LABEL[a]}）", zorder=2)
         ax.errorbar(pos, means, yerr=stds, fmt="none",
                     ecolor="#333333", elinewidth=1.1, capsize=2.5, zorder=4)
         # 各轮实际值散点（n=2：min 与 max 即两轮）
@@ -128,6 +166,7 @@ def fig1_six_dim_bars(caps: dict[str, dict[str, dict]]) -> None:
     ax.set_xticklabels([CAP_LABELS_ZH[d] for d in dims], fontsize=11)
     ax.set_ylim(0, 100)
     ax.set_ylabel("正确率（%）")
+    ax.set_title(caliber, loc="left", fontsize=8.5, color="0.4", pad=10)
     ax.yaxis.grid(True, color="0.88", linewidth=0.7, zorder=0)
     ax.set_axisbelow(True)
     ax.legend(frameon=False, ncol=3, loc="upper right", fontsize=10,
@@ -356,7 +395,7 @@ def fig3_pipeline_svg() -> None:
     (OUT / "pipeline-dark.svg").write_text("\n".join(parts), encoding="utf-8")
 
 
-def fig4_verdict_mix(mod) -> None:
+def fig4_verdict_mix(mod, caliber: str) -> None:
     """图 4：六态判定构成（六场 run 100% 堆积条）——"记错的样子"可视化。"""
     from collections import Counter
 
@@ -387,6 +426,7 @@ def fig4_verdict_mix(mod) -> None:
     ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
     ax.set_xlim(0, 100)
     ax.set_xlabel("判定占比（%）")
+    ax.set_title(caliber, loc="left", fontsize=8, color="0.4", pad=10)
     ax.xaxis.grid(True, color="0.88", linewidth=0.7, zorder=0)
     ax.set_axisbelow(True)
     ax.legend(frameon=False, ncol=len(states), loc="upper center",
@@ -512,14 +552,33 @@ def fig6_separation(mod) -> None:
     plt.close(fig)
 
 
+def fig0_final_radar(ver_str: str, caliber: str) -> None:
+    """图 0：终榜雷达（带口径披露副标题，README 首图）。"""
+    from memhall.report.radar import render_radar
+
+    scores: dict[str, dict[str, float]] = {}
+    for a in AGENTS:
+        d = json.loads((RUNS / f"_agg-{a}-dual" / "aggregate.json")
+                       .read_text(encoding="utf-8"))
+        ver_parts = dict(zip(AGENTS, [v.strip() for v in ver_str.split("/")],
+                              strict=True))
+        scores[ver_parts[a]] = {
+            c: v["mean"] for c, v in d["capabilities"].items()}
+    render_radar(scores, str(OUT / "radar-final-dual.png"),
+                 title="麟阁 MemHall 终榜：三智能体六维记忆能力对比",
+                 subtitle=caliber)
+
+
 def main() -> int:
     OUT.mkdir(exist_ok=True)
+    mod = _stats_module()
+    ver_str, caliber = build_caliber(mod)
+    fig0_final_radar(ver_str, caliber)
     caps = load_caps()
-    fig1_six_dim_bars(caps)
+    fig1_six_dim_bars(caps, ver_str, caliber)
     fig2_uncertainty()
     fig3_pipeline_svg()
-    mod = _stats_module()
-    fig4_verdict_mix(mod)
+    fig4_verdict_mix(mod, caliber)
     fig5_dual_vs_scripted(mod)
     fig6_separation(mod)
     for name in ["fig-six-dim.png", "fig-uncertainty.png", "pipeline-dark.svg",

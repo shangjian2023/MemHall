@@ -420,6 +420,27 @@ def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
         version = None
     if version:
         manifest["agent_version"] = version
+    # LLM 运行时口径自动识别（用户要求：结果必须带模型 id/思考强度）——
+    # 从网关账单按本 run 时间窗归并被测 tag 的 asked_model 与 reasoning 参数；
+    # 直连模式/网关没跑 → None 不落键，展示层写"未记账"
+    try:
+        from memhall.gateway import summarize_reasoning
+        # started_at 是 run_id 紧凑格式（YYYYMMDD-HHMMSS，宿主本地钟），
+        # 账单 ts 是 UTC ISO——统一转 UTC 再比窗，防混入同名 tag 的前一场
+        stamp = str(manifest.get("started_at", ""))
+        start_iso = ""
+        if len(stamp) >= 14:
+            local_start = datetime.strptime(stamp[:15], "%Y%m%d-%H%M%S")
+            start_iso = local_start.replace(
+                tzinfo=datetime.now().astimezone().tzinfo
+            ).astimezone(UTC).isoformat()
+        end_iso = datetime.now(UTC).isoformat()
+        llm_rt = summarize_reasoning(start_iso, end_iso, f"memhall-{adapter.name}")
+        if llm_rt:
+            llm_rt["forced_model"] = True  # 网关车道：model 网关说了算
+            manifest["llm_runtime"] = llm_rt
+    except Exception:  # noqa: BLE001 口径元数据不阻塞评测
+        pass
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
