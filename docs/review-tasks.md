@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | R01 | 4 个 actions 断言探测点对真智能体恒 omission（reuse 维 17% 结構性地板）；ActionDump.coverage 字段无人消费 | `_action_items`：coverage != "full" 或无 actions 证据 → `EvidenceMissing` → invalid_run（证据不足≠答错） | A | ✅ |
 | R02 | 同问异答 × reset 彻底性是适配器私有知识（hermes 只删 2 个 md，会话转录保留；openclaw 整目录重建）→ 跨用例泄漏放大 | ① adapter 加 `verify_reset()`（reset 后 dump_memory 必须为空，违者 fail fast）；② hermes reset 补清 sessions 目录 | B | ✅（hermes sessions 路径 VM 关机未核实，rm 不存在路径无害，下次联调验证） |
-| R03 | 正式跑用脚本判卷 + HUMAN_REVIEW 不计分 → 分母随答案风格漂移 | metrics 补 `overall_score_floor`（未决按错计的区间下界）+ n_human_review 单列；报告展示分数区间；正式口径建议 dual judge 收尾 | A | ✅（机制落地；正式跑切 dual judge 是运营项） |
+| R03 | 正式跑用脚本判卷 + HUMAN_REVIEW 不计分 → 分母随答案风格漂移 | metrics 补 `overall_score_floor`（未决按错计的区间下界）+ n_human_review 单列；报告展示分数区间；正式口径建议 dual judge 收尾 | A | ✅（机制落地；R25 已完成六 run dual 重判并切终榜，运营项闭环） |
 | R04 | anchors 没进 LLM 判卷提示词——few-shot 防漂移是纸面能力 | JUDGE_PROMPT 加 anchors 槽位，JUDGE_PROMPT_VERSION 升版 | B | ✅（版本 2026-10-04，判卷自检/诱饵全过） |
 | R05 | recall 与 persist 在无会话适配器下不可区分（每消息独立进程，end_session 空操作） | 文档重定义：recall=写后即取（即时调用）、persist=跨干扰保持；dataset-card 注明当前机制差异 | D | ✅（design §4.2 注记 + dataset-card §8） |
 | R06 | "长期"没被拉长：inject 1-2 句、confound 1-3 句，检索竞争不存在 | 新增 2 道大容量注入题（persist-008 / recall-008：一次教 16 条再考 5 条），制造检索竞争 | D | ✅（mock 10/10 全对，token 重叠唯一命中验证过） |
@@ -45,7 +45,7 @@
 | R21 | verdict_map 键名各题自造（reported/right_one/correct_path…） | lint 加词表统计提示（advisory 不拦截）+ 契约文档给标准键名词表 | D | ✅（correct 类实测 33 种写法，advisory 已可见） |
 | R22 | _answer_for 同问取最后一条、跨全 case 搜——ask 复现两次会静默取后者 | 优先 probe 段对话、精确匹配、取最后；无命中再全库回退 | B | ✅ |
 | R23 | runner 无 case 级异常隔离：一个未预期异常=整轮无 manifest 报废 | run_suite 每 case try/except 续跑 + manifest 在 finally 落盘 + failed_cases 记录 | B | ✅（pair_stores 按 case_id 配对防错位） |
-| R24 | fs 证据覆盖不对等：openclaw 剪枝自家 workspace（chain 写沙箱内看不见）；claude-local 相对路径永不匹配 ~/ 断言 | openclaw 快照并入 workspace 子树；claude-local 路径加 ~/ 前缀归一 | C | ✅（openclaw 侧待 VM 实跑复核） |
+| R24 | fs 证据覆盖不对等：openclaw 剪枝自家 workspace（chain 写沙箱内看不见）；claude-local 相对路径永不匹配 ~/ 断言 | openclaw 快照并入 workspace 子树；claude-local 路径加 ~/ 前缀归一 | C | ✅（openclaw 两轮马拉松 invalid_run=0，剪枝面已被全量实测覆盖，2026-10-04 复核闭环） |
 
 ## 第二轮任务表（R25–R60，2026-10-05 五智能体复审）
 
