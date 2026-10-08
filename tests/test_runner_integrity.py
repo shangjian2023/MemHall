@@ -44,6 +44,9 @@ def test_verifier_accepts_case_without_optional_confound_phase(tmp_path: Path):
     assert result.ok, result.errors
     # 主线格式降级路径生效：无封印只警告，不算篡改
     assert any("无 case_results" in warning for warning in result.warnings)
+    # 报告辅助图（最终展示物多样化）：构成条生成并嵌入报告
+    assert (run_dir / "report-verdict-mix.png").is_file()
+    assert "![判定构成]" in (run_dir / "report.md").read_text(encoding="utf-8")
 
 
 def test_verifier_detects_payload_tampering(tmp_path: Path):

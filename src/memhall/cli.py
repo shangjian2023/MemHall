@@ -108,7 +108,11 @@ def _finish_run(run_dir: Path, run_id: str, manifest: dict,
             f.write(v.model_dump_json() + "\n")
     render_radar({manifest.get("adapter", "agent"): metrics["capability_scores"]},
                  str(run_dir / "radar.png"))
-    report = render_report(run_dir, run_id, manifest, verdicts, cases, metrics)
+    # 最终展示物多样化：报告辅助图（判定构成/判卷口径对照），零 LLM 离线生成
+    from memhall.report.panels import render_panels
+    panels_md = render_panels(run_dir, verdicts, cases)
+    report = render_report(run_dir, run_id, manifest, verdicts, cases, metrics,
+                           extra_panels=panels_md)
     (run_dir / "report.md").write_text(report, encoding="utf-8")
     _seal_outputs(run_dir, manifest)
     (run_dir / "manifest.json").write_text(

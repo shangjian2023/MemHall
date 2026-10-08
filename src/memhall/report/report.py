@@ -18,7 +18,7 @@ VERDICT_ZH = {
 
 def render_report(run_dir: Path, run_id: str, manifest: dict,
                   verdicts: list[Verdict], cases: dict[str, MemoryCase],
-                  metrics: dict) -> str:
+                  metrics: dict, extra_panels: list[str] | None = None) -> str:
     lines: list[str] = []
     lines.append(f"# 麟阁 MemHall 评测报告 · {run_id}")
     lines.append("")
@@ -108,6 +108,8 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         lines.append(f"| {CAP_LABELS_ZH[cap]} | {score_s} | "
                      f"{d['n_correct']}/{d['n_valid']} | {errs} |")
     lines.append("")
+    if extra_panels:
+        lines.extend(extra_panels)
 
     # 故障定位四态（design §6.3）：不只看对错，还定位坏在哪一环
     fl = metrics.get("fault_localization") or {}
