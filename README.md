@@ -49,7 +49,7 @@ hermes 的 ±30.7（两轮 22.7 / 66.1）是真实行为记录：r1 工具调用
 
 | 我想… | 入口 |
 |---|---|
-| **双击就用**（Windows） | [Releases](https://github.com/shangjian2023/MemHall/releases) 下载 `麟阁MemHall-单文件版.exe`，双击进 Web UI；选 mock 适配器跑一轮，离线零成本 |
+| **双击就用**（Windows） | [Releases](https://github.com/shangjian2023/MemHall/releases) 下载 `MemHall-onefile-v1.3.0.exe`，双击进 Web UI；选 mock 适配器跑一轮，离线零成本 |
 | **装到 openKylin** | `sudo dpkg -i memhall_*_all.deb`（依赖全部内置，安装不联网；见[安装节](#安装openkylin--debian-系)） |
 | 看全流程 | 🎬 [演示视频：两款智能体「教→隔→考」实机评测 + 六维雷达产出](https://github.com/shangjian2023/MemHall/releases/tag/v1.3.0)（5 分钟） |
 | 三条命令试用 | `uv sync --group dev` → `uv run memhall doctor` → `uv run memhall run -a mock -c cases/full -o runs` |
