@@ -481,6 +481,110 @@ def create_app() -> FastAPI:
                 "memories": memories, "fs_created": fs_created,
                 "actions": actions}
 
+    # ---------- 人工复核入口（HUMAN_REVIEW 未决判定的裁决闭环） ----------
+
+    @app.get("/api/runs/{run_id}/review")
+    def review_list(run_id: str) -> dict:
+        """待复核队列：每条未决判定带完整裁决上下文（题面/期望/判定选项/
+        智能体回答/判卷说明）——评审看得到证据再拍板，不是盲选。"""
+        from memhall.cli import load_cases_for_run
+
+        d = _safe_run_id(run_id)
+        vfile = d / "verdicts.jsonl"
+        if not vfile.is_file():
+            raise HTTPException(404, "无判定文件")
+        verdicts = [json.loads(line)
+                    for line in vfile.read_text(encoding="utf-8").splitlines()]
+        cases = load_cases_for_run(d)
+        items = []
+        for v in verdicts:
+            if v.get("verdict") != "human_review":
+                continue
+            case = cases.get(v.get("case_id", ""))
+            probe = None
+            if case is not None:
+                probe = next((p for p in case.probes
+                              if getattr(p, "id", "") == v.get("probe_id")), None)
+            items.append({
+                "probe_id": v.get("probe_id"),
+                "case_id": v.get("case_id"),
+                "capability": case.capability.value if case else "?",
+                "ask": getattr(probe, "ask", "") if probe else "",
+                "expect": getattr(probe, "expect", "") if probe else "",
+                "verdict_map": getattr(probe, "verdict_map", {}) if probe else {},
+                "explanation": v.get("explanation", ""),
+                "agent_reply": _probe_reply_text(d, v.get("case_id", "")),
+            })
+        return {"run_id": d.name, "n_pending": len(items), "items": items}
+
+    @app.post("/api/runs/{run_id}/review/{probe_id}")
+    def review_decide(run_id: str, probe_id: str, payload: dict) -> dict:
+        """裁决一条未决判定：verdict 置为人的决定（decided_by=human），
+        原 verdicts 先备份留痕，指标/报告/封印全链路自动重算。"""
+        import shutil as _shutil
+
+        from memhall.cli import _finish_run, load_cases_for_run
+        from memhall.schema.evidence import Verdict
+
+        allowed = {"correct", "omission", "confusion", "fabrication",
+                   "over_persist", "wrong_reuse", "invalid_run"}
+        decision = payload.get("verdict")
+        if decision not in allowed:
+            raise HTTPException(400, f"非法判定值: {decision}")
+        note = str(payload.get("note", "")).strip()[:500]
+        d = _safe_run_id(run_id)
+        vfile = d / "verdicts.jsonl"
+        if not vfile.is_file():
+            raise HTTPException(404, "无判定文件")
+        verdicts = [json.loads(line)
+                    for line in vfile.read_text(encoding="utf-8").splitlines()]
+        hit = next((v for v in verdicts if v.get("probe_id") == probe_id), None)
+        if hit is None:
+            raise HTTPException(404, f"无此探测点: {probe_id}")
+        if hit.get("verdict") != "human_review":
+            raise HTTPException(409, "该判定不在待复核队列（可能已裁决）")
+        # 留痕：首次裁决前整份备份原始判定（含未决态）
+        bak = d / "verdicts.pre-review.jsonl"
+        if not bak.is_file():
+            _shutil.copy2(vfile, bak)
+        hit["verdict"] = decision
+        hit["decided_by"] = "human"
+        suffix = f"｜人工复核→{decision}" + (f"：{note}" if note else "")
+        hit["explanation"] = (hit.get("explanation", "") + suffix)[:1000]
+        vfile.write_text(
+            "\n".join(json.dumps(v, ensure_ascii=False) for v in verdicts) + "\n",
+            encoding="utf-8")
+        # 指标/雷达/报告/封印一键重算（_finish_run 内 output_hashes 自动刷新）
+        manifest = json.loads(
+            (d / "manifest.json").read_text(encoding="utf-8"))
+        manifest["human_review_applied"] = manifest.get("human_review_applied", 0) + 1
+        cases = load_cases_for_run(d)
+        mode = manifest.get("judge", {}).get("mode", "scripted")
+        metrics = _finish_run(d, manifest.get("run_id", d.name), manifest,
+                              [Verdict.model_validate(v) for v in verdicts],
+                              cases, judge_mode=mode)
+        return {"ok": True, "probe_id": probe_id, "verdict": decision,
+                "metrics": {k: metrics[k] for k in
+                            ("overall_score", "n_valid", "n_probes_total")
+                            if k in metrics}}
+
+    def _probe_reply_text(run_dir: Path, case_id: str) -> str:
+        """probe 阶段最后一条对话的智能体回答（复核卡片的"它当时怎么说"）。"""
+        ev = run_dir / "cases" / case_id / "evidence.jsonl"
+        if not ev.is_file():
+            return ""
+        last = ""
+        for line in ev.read_text(encoding="utf-8").splitlines():
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("type") == "dialogue" and e.get("phase") == "probe":
+                reps = (e.get("payload") or {}).get("replies") or []
+                if reps and reps[-1].get("text"):
+                    last = str(reps[-1]["text"])
+        return last[:800]
+
     @app.get("/api/compare")
     def compare(runs: str) -> FileResponse:
         ids = [r for r in runs.split(",") if r.strip()][:2]

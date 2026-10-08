@@ -383,6 +383,11 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
           </div>
         </div>
         <h2.sec>判定明细</h2.sec>
+        <div id="reviewBar" style="display:none;margin:0 0 12px;padding:10px 14px;border:1px solid #e8b31a66;border-radius:10px;background:#e8b31a14;cursor:pointer" onclick="openReview()">
+          <span style="font-weight:600;color:#b8860b">⚖ 人工复核</span>
+          <span id="reviewCount" style="margin-left:8px;color:var(--sub)"></span>
+          <span style="float:right;color:#b8860b;font-size:12.5px">点击进入裁决 →</span>
+        </div>
         <div class="chips" id="vChips"></div>
         <table class="verdict-table"><thead><tr>
           <th>探测点</th><th>用例</th><th>判定</th><th>判卷</th><th>说明</th></tr></thead>
@@ -424,6 +429,17 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
     <div class="ev-body" id="evBody"></div>
   </div>
 </div>
+<div id="rvOverlay" class="ev-overlay">
+  <div class="ev-card" id="rvCard" style="max-width:760px">
+    <div class="ev-head">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <span style="font-weight:600;font-size:14px;color:#b8860b">⚖ 人工复核</span>
+        <span class="tag" id="rvCount"></span></div>
+      <button class="xbtn" onclick="closeReview()">×</button>
+    </div>
+    <div class="ev-body" id="rvBody"></div>
+  </div>
+</div>
 <div id="toast"></div>
 <script src="/static/gsap.min.js"></script>
 <script>
@@ -444,7 +460,8 @@ function whenLive(cb){
 const CAPS={persist:"长期保持",recall:"记忆调用",dynamic_update:"动态更新",
   discriminate:"相近区分",boundary:"边界识别",reuse:"任务复用"};
 const VMETA={correct:["正确","ok"],omission:["遗漏","dim"],confusion:["混淆","warn"],
-  over_persist:["错误持久化","bad"],wrong_reuse:["错误复用","purple"],invalid_run:["无效","dim"]};
+  over_persist:["错误持久化","bad"],wrong_reuse:["错误复用","purple"],invalid_run:["无效","dim"],
+  human_review:["人工复核","warn"],fabrication:["记错(编造)","bad"]};
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pct=x=>(x*100).toFixed(1)+"%";
 const fmtCap=k=>CAPS[k]||k;
@@ -866,6 +883,7 @@ async function selectRun(runId){
     animBars($("#rdCaps"),d.metrics.capability_scores);
     $("#rdRadar").src=`/api/runs/${encodeURIComponent(runId)}/radar?t=${Date.now()}`;
     renderVerdicts(d.verdicts);
+    loadReview(runId);
     if(G){
       G.fromTo(det,{y:12,opacity:0},{y:0,opacity:1,duration:.42,ease:"power2.out"});
       G.fromTo("#rdRadar",{opacity:0,scale:.97},{opacity:1,scale:1,duration:.5,delay:.08,ease:"power2.out"});
@@ -896,6 +914,74 @@ function renderVerdicts(vs){
   $$("#vBody tr.vrow").forEach(tr=>tr.addEventListener("click",()=>{
     if(tr.dataset.case){openCase(tr.dataset.case);}}));
   popIn($("#vBody").querySelectorAll(".pill"));
+}
+
+/* ---------- 人工复核（未决判定的裁决闭环） ---------- */
+const RV_OPTIONS=[["correct","正确"],["omission","遗漏"],["confusion","混淆"],
+  ["fabrication","记错(编造)"],["over_persist","错误持久化"],["wrong_reuse","错误复用"],
+  ["invalid_run","运行无效"]];
+let reviewItems=[],reviewSel={};
+async function loadReview(runId){
+  const bar=$("#reviewBar");
+  try{
+    const r=await api(`/api/runs/${encodeURIComponent(runId)}/review`);
+    reviewItems=r.items||[];reviewSel={};
+    bar.style.display=r.n_pending>0?"block":"none";
+    $("#reviewCount").textContent=`${r.n_pending} 条未决判定待人工裁决（不计入当前分数，裁决后自动重算）`;
+  }catch(e){bar.style.display="none";}
+}
+function openReview(){
+  const ov=$("#rvOverlay");
+  if(!reviewItems.length){toast("无待复核判定");return}
+  ov.classList.add("on");
+  if(G){G.fromTo(ov,{opacity:0},{opacity:1,duration:.25});
+    G.fromTo("#rvCard",{y:26,opacity:0,scale:.98},
+      {y:0,opacity:1,scale:1,duration:.4,ease:"power3.out"});}
+  renderReview();
+}
+function closeReview(){$("#rvOverlay").classList.remove("on");}
+function renderReview(){
+  $("#rvCount").textContent=`待裁决 ${reviewItems.length} 条`;
+  $("#rvBody").innerHTML=reviewItems.map((it,i)=>{
+    const vm=Object.entries(it.verdict_map||{}).map(([k,v])=>
+      `<span class="pill dim" style="margin:2px 4px 2px 0;font-size:11.5px">${esc(k)}→${esc(VMETA[v]?.[0]||v)}</span>`).join("");
+    return `<div style="border:1px solid var(--bd,#e5e7eb);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="mono" style="font-size:13px;font-weight:600">${esc(it.probe_id)}</span>
+        <span class="tag">${esc(it.capability)}</span></div>
+      <div style="margin:10px 0 6px;font-size:13.5px"><b>问：</b>${esc(it.ask)}</div>
+      <div style="font-size:13px;color:var(--sub);margin-bottom:6px"><b>期望：</b>${esc(it.expect)}</div>
+      ${vm?`<div style="margin-bottom:6px">${vm}</div>`:""}
+      <div style="font-size:13px;background:var(--bg2,#f6f7f9);border-radius:8px;padding:8px 10px;margin-bottom:6px"><b>智能体回答：</b>${esc(it.agent_reply||"（空）")}</div>
+      <div style="font-size:12px;color:var(--sub);margin-bottom:10px"><b>判卷说明：</b>${esc(it.explanation||"")}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="rvOpts${i}">
+        ${RV_OPTIONS.map(([v,label])=>`<button class="pill" style="cursor:pointer;border:1px solid var(--bd,#e5e7eb)" onclick="selectReview(${i},'${v}',this)">${label}</button>`).join("")}
+      </div>
+      <input id="rvNote${i}" placeholder="裁决备注（可选，写入判定的 explanation 留痕）"
+        style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--bd,#e5e7eb);border-radius:8px;font-size:12.5px;margin-bottom:8px">
+      <button id="rvGo${i}" disabled style="opacity:.45;cursor:not-allowed;padding:7px 16px;border-radius:8px;border:none;background:#b8860b;color:#fff;font-weight:600;font-size:13px" onclick="submitReview(${i})">提交裁决</button>
+    </div>`;}).join("");
+}
+function selectReview(i,verdict,btn){
+  reviewSel[i]=verdict;
+  $$(`#rvOpts${i} button`).forEach(b=>b.style.outline="");
+  btn.style.outline="2px solid #b8860b";
+  const go=$("#rvGo"+i);go.disabled=false;go.style.opacity="1";go.style.cursor="pointer";
+}
+async function submitReview(i){
+  const it=reviewItems[i],verdict=reviewSel[i];
+  if(!it||!verdict){toast("先选择一个判定值");return}
+  const note=($("#rvNote"+i)?.value||"").trim();
+  $("#rvGo"+i).disabled=true;
+  try{
+    await api(`/api/runs/${encodeURIComponent(currentRunId)}/review/${encodeURIComponent(it.probe_id)}`,
+      {method:"POST",body:JSON.stringify({verdict,note})});
+    toast(`已裁决 ${it.probe_id} → ${VMETA[verdict]?.[0]||verdict}`);
+    reviewItems.splice(i,1);delete reviewSel[i];
+    if(reviewItems.length){renderReview();}
+    else{closeReview();}
+    selectRun(currentRunId);  // 指标/判定表/复核条全刷新
+  }catch(e){toast("裁决失败："+e.message);}
 }
 
 /* ---------- 证据下钻 ---------- */

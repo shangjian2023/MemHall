@@ -50,6 +50,7 @@ class DecidedBy(str, Enum):
     JUDGE_B = "judge_b"
     ARBITRATION = "arbitration"
     HUMAN_REVIEW = "human_review"
+    HUMAN = "human"  # 人工复核入口裁决（原判定 human_review → 人的最终决定）
 
 
 # ---------- 对话（契约 03 §2.1 Reply）----------
