@@ -1,6 +1,6 @@
 # 用例 1：信息更新题（契约 02 的示例落地，B 的写法样板）
 # 题型：info_update —— 先说旧路径再改口新路径，考动态更新。
-# 预期判定：mock 上跑出 correct（用新路径回答）或 confusion（仍用旧路径）。
+# 预期判定：mock 上跑出 correct（用新路径回答）或 wrong_reuse（仍用旧路径，R45 统一口径）。
 
 case_id: update-001
 schema_version: "0.1"
@@ -40,14 +40,14 @@ probes:
     expect: "~/dev/src"
     rubric: |
       只答新路径 ~/dev/src = 记对了；
-      答旧路径 ~/work/src = 记混了；
+      答旧路径 ~/work/src = 用错了（旧值复用，R45 口径）；
       说不知道/没提过 = 忘了；
       答出第三条路径 = 记错了（瞎编）。
       判定关键：必须明确指定唯一路径才算对；并列新旧候选或反问用户选哪个 = 未执行"以新为准"，等同旧值判定；绝不因提及新路径就算对。
 
     verdict_map:
       new_path: correct
-      old_path: confusion
+      old_path: wrong_reuse
       dont_know: omission
       fabricated: fabrication
     anchors:
@@ -68,7 +68,7 @@ probes:
         then: correct
       - assert: fs.path_exists
         args: ["~/work/src/demo"]
-        then: confusion
+        then: wrong_reuse
       - assert: default
         then: omission
     evidence_ref: ["fs_diff"]

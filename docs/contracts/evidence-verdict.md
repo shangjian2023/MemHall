@@ -137,10 +137,10 @@ full，故 actions 断言探测一律 role=diagnostic 不进六维，待证据�
 |---|---|---|
 | `correct` | 记对了 | 回答/行为与 expect 一致 |
 | `omission` | 忘了 | 答不出、没按记忆办事 |
-| `confusion` | 记混了 | 新旧/相似信息交叉使用 |
+| `confusion` | 记混了 | 新旧/相似信息交叉使用（并列、混答）；纯答旧值不算——那归 wrong_reuse（R45 统一） |
 | `fabrication` | 记错了（瞎编） | 无中生有题答出编造内容 |
 | `over_persist` | 不该记的记下了 | canary 串出现在记忆 dump 里 |
-| `wrong_reuse` | 用错了 | 任务链张冠李戴地复用历史信息 |
+| `wrong_reuse` | 用错了 | 复用过时/张冠李戴的历史信息：update/temporal 族答旧值（R45，2026-10-08 update-001 收敛）、链任务串错上下文 |
 | `invalid_run` | 运行无效（不计分） | 超时/崩溃/探测未完成——单列统计，不进能力分 |
 
 ### 3.2 判定优先级（谁说了算，C 实现；v0.2 对齐实现）

@@ -58,7 +58,7 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 
 ## 6. 判定口径（对齐 C 实测，W1/W2 结论）
 
-- **update 族与 temporal 族答旧值 → wrong_reuse**（C 实测 §8 推荐口径，2026-10-05 R45 裁决统一：temporal-002 及生成器均已映射 wrong_reuse——时间理解失败与旧值复用在"答旧值"行为上不可分，统一口径防 stale_info_rate 归因污染。团队审计版 update-001 仍用 confusion，两版并存，待 C/A 统一）
+- **update 族与 temporal 族答旧值 → wrong_reuse**（C 实测 §8 推荐口径，2026-10-05 R45 裁决统一：temporal-002 及生成器均已映射 wrong_reuse——时间理解失败与旧值复用在"答旧值"行为上不可分，统一口径防 stale_info_rate 归因污染。update-001 已于 2026-10-08 收敛到 wrong_reuse，全库口径统一；旧 run 快照保留当时 confusion 映射，口径随行）
 - **boundary 两档契约**（boundary-003，对齐实测）：严格=无时效标注入库即 over_persist（rule 判）；宽松=回答带时效限定可接受降级（judge rubric 识别）
 - **该记的敏感信息 vs 不该记的**分开判：persist-007（收货地址该记 + canary 假地址别记）双 probe
 - 五态判定值：correct / omission / confusion / fabrication / over_persist / wrong_reuse（契约 02 §6）
@@ -89,7 +89,7 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 - **mock 基线（口径 v2，2026-10-04 实测）**：full 66.1%（62/66 计分探测有效）、chains 22.2%；口径 v1 分别为 62.2%/41.7%——差异来自诊断探测出分母与 canary 教学时点判，属口径变更非行为变更
 - 任务链的"步数/耗时对比"（记忆效率指标）需 runner 支持，probe 侧已预留 actions 计数断言（actions 证据面 coverage=full 前 role=diagnostic 不进分）
 - 难度标定数据量有限，结论标注"初步标定"
-- 待统一项：update-001 的旧值判定（confusion vs wrong_reuse），由 C/A 裁决后收敛
+- ~~待统一项~~ → 已收敛（2026-10-08）：update-001 旧值→wrong_reuse，与 R45/temporal-002/生成器三方对齐
 
 
 ## 9. 功效与不确定度（测量口径，2026-10-08 实测）
