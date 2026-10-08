@@ -76,7 +76,7 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 - **生成用例构念（R44）**：gen/heldout 的 boundary 补了存储级 over_persist 探测（diagnostic）、reuse 补了复用任务+fs 断言（score），与 full 集行为验收的可比性提升但难度仍不可比（difficulty 为标称值）；heldout reuse 维与 full 不可比项已在报告层注明
 - **适配器能力面（R36/R37）**：opencode 沙箱 bash=deny（与其他适配器对齐，2026-10-05 起）；openclaw 沙箱模型参数（contextWindow/maxTokens）可经环境变量外置，默认值为评测方设定而非被测者原生配置——适配器替被测者做的配置选择进入分数，此差异在此披露
 - **heldout 脱敏与公开策略（R54）**：seed+生成器公开 = 题目可重构（防训练污染有效、防定向重构无效，业界方向是组织方私有测试集）；runs/ 目录含用例全文快照，公开演示材料不得展开 runs 内容，heldout run 对外发布前须脱敏（probe/expect 文本哈希化）；中期方向：paraphrase 槽位轮换 + seed 延迟公开
-- **统计功效（R55）**：定量功效声明已补（§9⑤，scripts/stats_uncertainty.py 可复现）；报告层已对 n_valid<5 的维标注"不具区分力"（R51）；gen 21 题并入正式口径的裁决在 10.10 冻结线前
+- **统计功效（R55）**：定量功效声明已补（§9⑤，scripts/stats_uncertainty.py 可复现）；报告层已对 n_valid<5 的维标注"不具区分力"（R51）；gen 21 题**已裁决不并入**（2026-10-08：47 题基线冻结，并入需 6 次马拉松重跑且 gen 难度与 full 不可比——赛后并入 v2 数据集）
 - **判卷未决（R55）**：未决率是判卷质量指标不是分母口径——业界 judge 用 forced choice 不弃权，dual judge 落地后未决已降至每轮 0–2；"问两遍"以跨轮同探测点一致率形态落地（§9①），会话内复问待会话型适配器
 
 - 语言：仅中文；场景：桌面办公/开发场景，未覆盖多语言与专业领域

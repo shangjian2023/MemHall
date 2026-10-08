@@ -50,7 +50,7 @@ cat > $STAGE/DEBIAN/control <<CEOF
 Package: memhall
 Version: $VERSION
 Architecture: all
-Maintainer: MemHall Team <memhall@openkylin.example>
+Maintainer: MemHall Team <shangjian2023@users.noreply.github.com>
 Depends: python3 (>= 3.11)
 Section: utils
 Priority: optional
@@ -73,6 +73,29 @@ cat > $STAGE/DEBIAN/prerm <<'REOF'
 rm -rf /usr/lib/memhall/pylib
 REOF
 chmod 755 $STAGE/DEBIAN/postinst $STAGE/DEBIAN/prerm
+
+# T22：deb 元数据达标——copyright + changelog（dpkg 标准位置）
+cat > $STAGE/DEBIAN/copyright <<'KEOF'
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: memhall
+Source: https://github.com/shangjian2023/MemHall
+
+Files: *
+Copyright: 2026 MemHall contributors
+License: Apache-2.0
+ On Debian systems, the full text is available at
+ /usr/share/common-licenses/Apache-2.0.
+KEOF
+
+cat > $STAGE/DEBIAN/changelog <<LEOF
+memhall (\$VERSION) unstable; urgency=medium
+
+  * openKylin 目标机原生构建；变更明细见仓库 CHANGELOG.md
+    （https://github.com/shangjian2023/MemHall/blob/dev/CHANGELOG.md）
+
+ -- MemHall Team <shangjian2023@users.noreply.github.com>  \$(date -R)
+LEOF
+chmod 644 $STAGE/DEBIAN/copyright $STAGE/DEBIAN/changelog
 
 cd ~/deb-stage
 fakeroot dpkg-deb --root-owner-group -Zxz --build memhall memhall_${VERSION}_all.deb 2>/dev/null || dpkg-deb -Zxz --build memhall memhall_${VERSION}_all.deb
