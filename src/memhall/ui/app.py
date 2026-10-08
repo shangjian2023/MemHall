@@ -5,8 +5,12 @@
 
 路由一览：
 - GET  /                     单页界面（static/index.html）
-- GET  /api/doctor           三路体检（结构化 JSON）
+- GET  /api/doctor           三路体检聚合（脚本面用；页面走下面三个子端点）
+- GET  /api/doctor/local|vm|env  体检三分段（页面并行拉取）
+- GET  /api/deploy-mode      部署形态（宿主 remote / openKylin 原生）
+- GET  /api/adapter-status   适配器可用态（下拉过滤）
 - GET  /api/case-dirs        可选用例目录
+- GET  /api/estimate         token 成本预估（跑前确认弹窗）
 - GET  /api/agents           智能体注册表名单（体检扫描动画素材）
 - GET  /api/meta             服务端版本信息（页面据此自检新旧）
 - POST /api/start            开始一轮评测（后台线程跑，SSE 推进度）
@@ -15,6 +19,9 @@
 - GET  /api/runs             历史运行列表
 - GET  /api/runs/{id}/data   单次运行指标+判定
 - GET  /api/runs/{id}/radar  雷达图 PNG
+- GET  /api/runs/{id}/case/{cid}/evidence  证据下钻（对话/记忆/文件/操作）
+- GET  /api/runs/{id}/review 人工复核队列（HUMAN_REVIEW 未决+裁决上下文）
+- POST /api/runs/{id}/review/{probe_id}  裁决一条未决判定（指标自动重算）
 - GET  /api/compare          双运行对比雷达 PNG
 - GET/POST /api/config       .env 图形化（密钥脱敏回显，留空=不变）
 """
