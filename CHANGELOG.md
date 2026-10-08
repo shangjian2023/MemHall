@@ -22,6 +22,30 @@
   `.build.json` sidecar 存在校验、缺失跳过
 - 修 `test_p1_credentials` 两个 fake 缺 `get_transport`/`exit_status_ready`
   （50fdc1a keepalive 引入的漏网，origin CI 因此红过一轮）
+- **人工复核入口（评测闭环收口）**：UI 报告页复核横幅 + 弹层裁决（两步确认防误触），
+  `GET/POST /api/runs/{run_id}/review/{probe_id}`；裁决前自动备份
+  `verdicts.pre-review.jsonl`，落 `human` 判定后 `_finish_run` 全量重算
+  指标/雷达/报告/封印——未决判定不再只能挂在报告里
+- **报告进阶图（最终展示物多样化）**：每份报告自动嵌入两张辅助图——
+  分能力判定构成堆积条（错误集中在哪一维、什么形态）+ 双判 vs 脚本判卷
+  哑铃（同证据两口径差）；零 LLM、离线可复现
+- **口径自动识别**：网关逐请求抽取模型 id / 思考强度（reasoning_effort、
+  thinking budget 等五类字段），run 结束按时间窗 + agent 标签归并进
+  `manifest.llm_runtime`，报告头与 README 图自动标注（不再手填口径）
+- **网关韧性**：上游重试预算 4→7 次（扛分钟级坏窗口，r3 事故回归），
+  退避基数参数化（`backoff_base`，默认环境变量回退）
+- **hermes dump 退出码陷阱修复**：for 循环 `[ -f ]` 残留 rc=1 把合法文件缺席
+  误记成导出失败（25 例假无效），循环末尾 `; true`；配套
+  `scripts/repair_dump_ok.py` 修复重放（payload 哈希重算、`.bak-repair` 备份、
+  manifest.repair 留痕）。r3 修复后 63.8%，三轮 24.7 / 70.0 / 63.8（r1 坐实离群）
+- **UI/CLI 冒烟网**：22 条路由一览回正 + 11 个子命令 `--help` 全通（subprocess
+  显式 UTF-8，Windows GBK 读线程坑入档）
+- **README 九图重制**：六维对比（带智能体版本/模型口径标注）、不确定性带、
+  评测管线架构图、判定构成、双判哑铃、分离度棒棒糖等（素材自 skills 风格库）
+- **docs 口径收口**：系统级测试实做四项（回滚/写入监控/auditd 扩展未实现）、
+  零代码档降级为 doctor 建议、金标准未实施标注、auditd 已具备未接线披露
+- **T21 deb 冻结依赖**：`packaging/deb-wheels.txt`（`uv export --frozen` 生成 +
+  paramiko 链手工补行），构建机按精确清单装——可复现构建（评分项）
 
 ## [1.3.0] - 2026-10-08
 

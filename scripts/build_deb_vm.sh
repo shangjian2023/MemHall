@@ -8,10 +8,15 @@ cd $SRC
 # 版本单一来源：pyproject.toml（此前三处硬编码，已经漂移过一次）
 VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
 
+# T21：依赖按 uv.lock 冻结清单安装——同版本源码任何时间构建产物一致（可复现）。
+# 清单 = 源码仓 packaging/deb-wheels.txt（`uv export --frozen --no-dev --no-hashes
+# --no-emit-project` 生成 + paramiko 链手工补行）；升级依赖 = 本地重 export 后提交，
+# 构建机不联网解析版本。清单缺席直接报错（宁可不构建，不悄悄漂回"当天最新"）。
+WHEELS=$SRC/packaging/deb-wheels.txt
+[ -f $WHEELS ] || { echo "缺冻结清单 $WHEELS（uv export --frozen 生成）"; exit 1; }
 W=~/wheels
 rm -rf $W && mkdir -p $W
-pip3 download -q -i https://pypi.tuna.tsinghua.edu.cn/simple -d $W \
-  pydantic pyyaml matplotlib paramiko fastapi uvicorn httpx
+pip3 download -q -i https://pypi.tuna.tsinghua.edu.cn/simple -d $W -r $WHEELS
 pip3 wheel -q --no-deps -i https://pypi.tuna.tsinghua.edu.cn/simple -w $W .
 
 STAGE=~/deb-stage/memhall
