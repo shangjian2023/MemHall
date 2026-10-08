@@ -1,6 +1,12 @@
 """向 openKylin 虚拟机推送文件（paramiko SFTP）。
 
-用法：VM_PASS=xxx uv run python scripts/vm_put.py <本地文件> <远端路径>
+用法：MSYS_NO_PATHCONV=1 VM_PASS=xxx uv run python scripts/vm_put.py <本地文件> <远端路径>
+（本地文件在 Git Bash 下用 $(cygpath -w <路径>) 转成 Windows 路径再传）
+
+背景：openKylin 裁剪版 open-vm-tools 无剪贴板/拖拽/共享文件夹，VM→宿主只能走网络。
+远端路径以 / 开头时在 Git Bash 下必须加 MSYS_NO_PATHCONV=1，否则被 MSYS 转成
+Windows 路径报 ENOENT（与 vm_get 同坑；本地 /tmp/... 同理会被原生 Python 解析成
+当前盘符根下的 \tmp\，用 cygpath -w 指明真实路径）。
 """
 
 from __future__ import annotations
