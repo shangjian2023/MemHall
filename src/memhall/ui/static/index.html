@@ -144,8 +144,8 @@ select:focus,input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(55,14
 .panel-imgs{display:flex;gap:24px;flex-wrap:wrap;margin-top:6px}
 .panel-imgs figure{margin:0}
 .panel-imgs figcaption{font-size:12.5px;color:var(--sub);margin:0 0 6px 2px}
-.panel-imgs img{width:min(560px,100%);height:auto;border-radius:var(--r);
-  border:1px solid #2e2e36;background:#111116}
+.panel-imgs img{max-width:min(560px,100%);max-height:720px;width:auto;
+  height:auto;border-radius:var(--r);border:1px solid #2e2e36;background:#111116}
 .result{margin-top:16px;display:none}
 .score-big{font-family:var(--serif);font-weight:700;color:var(--acc-ink);
   font-variant-numeric:tabular-nums;line-height:1.3}
@@ -401,6 +401,26 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
           <figure id="rdCalFig" style="display:none">
             <figcaption>判卷口径对比（双判 vs 脚本）</figcaption>
             <img id="rdPCal" alt="同证据两判卷口径的判定差">
+          </figure>
+          <figure id="rdLatFig" style="display:none">
+            <figcaption>回答延迟分布（教/扰/考）</figcaption>
+            <img id="rdPLat" alt="三阶段单次回复耗时——隔段变慢/超时尾">
+          </figure>
+          <figure id="rdMemFig" style="display:none">
+            <figcaption>记忆库存量变化（教后 → 考后）</figcaption>
+            <img id="rdPMem" alt="逐用例教完/考完的记忆条目数与留存">
+          </figure>
+          <figure id="rdDurFig" style="display:none">
+            <figcaption>用例耗时构成（教/扰/考）</figcaption>
+            <img id="rdPDur" alt="各用例回合耗时按阶段拆分，马拉松时间花在哪">
+          </figure>
+          <figure id="rdPrbFig" style="display:none">
+            <figcaption>探测点跨轮通过矩阵（同智能体历轮）</figcaption>
+            <img id="rdPPrb" alt="同一探测点历次重跑对错——稳定失分 vs 偶发翻转">
+          </figure>
+          <figure id="rdCsFig" style="display:none">
+            <figcaption>用例正确率排序</figcaption>
+            <img id="rdPCs" alt="逐用例计分通过率由低到高——哪几道题最不会">
           </figure>
         </div>
         <h2.sec>判定明细</h2.sec>
@@ -970,17 +990,22 @@ async function selectRun(runId){
     countUp($("#rdScore"),d.metrics.overall_score,v=>pct(v));
     animBars($("#rdCaps"),d.metrics.capability_scores);
     $("#rdRadar").src=`/api/runs/${encodeURIComponent(runId)}/radar?t=${Date.now()}`;
-    // 附图各挂本名：判定构成每轮都有，口径对比仅 dual 判卷的 run 有；
-    // 旧 run 无图整段隐藏（figure 独立显隐，哪张在显哪张的名字）
-    const mix=$("#rdPMix"),cal=$("#rdPCal"),
-          mixFig=$("#rdMixFig"),calFig=$("#rdCalFig");
-    const updPanels=()=>{const any=mixFig.style.display!=="none"||calFig.style.display!=="none";
+    // 附图各挂本名：哪张有数据显哪张（旧 run/价值闸门未过的图 404 自动隐藏）
+    const PANELS=[["rdMixFig","rdPMix","report-verdict-mix.png"],
+      ["rdCalFig","rdPCal","report-caliber.png"],
+      ["rdLatFig","rdPLat","report-latency.png"],
+      ["rdMemFig","rdPMem","report-memory.png"],
+      ["rdDurFig","rdPDur","report-durations.png"],
+      ["rdPrbFig","rdPPrb","report-probe-history.png"],
+      ["rdCsFig","rdPCs","report-case-scores.png"]];
+    const updPanels=()=>{const any=PANELS.some(([f])=>$("#"+f).style.display!=="none");
       $("#rdPanels").style.display=any?"flex":"none";};
-    mix.onerror=()=>{mixFig.style.display="none";updPanels()};
-    cal.onerror=()=>{calFig.style.display="none";updPanels()};
-    mixFig.style.display="";calFig.style.display="";
-    mix.src=`/api/runs/${encodeURIComponent(runId)}/img/report-verdict-mix.png?t=${Date.now()}`;
-    cal.src=`/api/runs/${encodeURIComponent(runId)}/img/report-caliber.png?t=${Date.now()}`;
+    PANELS.forEach(([fig,img,file])=>{
+      const f=$("#"+fig),i=$("#"+img);
+      i.onerror=()=>{f.style.display="none";updPanels()};
+      f.style.display="";
+      i.src=`/api/runs/${encodeURIComponent(runId)}/img/${file}?t=${Date.now()}`;
+    });
     renderVerdicts(d.verdicts);
     loadReview(runId);
     if(G){
