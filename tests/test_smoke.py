@@ -160,3 +160,75 @@ class TestEndToEnd:
         verdict, _ = run_check(check, store)
         # mock 不真建目录 -> fs.path_exists 均未命中 -> default 兜底
         assert verdict == "omission"
+
+
+# ---------- 直播流过程事件（10-09 用户点名：会话翻卷/拨钟要可见） ----------
+
+def test_case_runner_emits_session_and_clock_events(tmp_path):
+    """CaseRunner 的 on_event 补齐 session/clock 两类：UI 直播流里
+    "什么时候开新会话"是跨会话保持机制的可见性，拨钟是 temporal 隔考的
+    可见性——静默发生 = 看直播的人不知道考察点在哪里。"""
+    from memhall.runner.orchestrator import CaseRunner
+    from memhall.schema.evidence import ActionDump, MemorySnapshot
+    from memhall.schema.models_case import Phase, Step, SystemEvents
+
+    events: list[dict] = []
+
+    class _EchoAdapter:
+        name = "echo"
+        ended: list[str] = []
+
+        def reset(self):
+            pass
+
+        def verify_reset(self):
+            pass
+
+        def fs_snapshot(self):
+            return []
+
+        def send(self, session_id, message):
+            return Reply(session_id=session_id, text="ok", sent_at=_utc(),
+                         reply_at=_utc(), latency_ms=12)
+
+        def end_session(self, sid):
+            self.ended.append(sid)
+
+        def dump_memory(self):
+            return MemorySnapshot(format="files", dumped_at=_utc(),
+                                  entries=[], raw=None)
+
+        def dump_actions(self):
+            return ActionDump(actions=[], coverage="unknown")
+
+        def clock_shift(self, days):
+            pass
+
+        def clock_restore(self):
+            pass
+
+    case = MemoryCase(
+        case_id="persist-999", capability="persist",
+        question_type="cross_session_recall", content_type="fact",
+        difficulty=1,
+        meta={"author": "t", "created": "2026-10-09", "source": "seed"},
+        phases=[
+            Phase(name="inject", steps=[Step(user="记住：代码目录是 ~/src")]),
+            Phase(name="confound", steps=[Step(user="聊点别的")],
+                  end_session=True,
+                  system_events=SystemEvents(clock_shift_days=3)),
+            Phase(name="probe", steps=[Step(user="我代码目录在哪？")]),
+        ],
+        probes=[])
+    runner = CaseRunner(_EchoAdapter(), case, "run-x", tmp_path,
+                        on_event=events.append)
+    runner.run()
+    sess = [e for e in events if e["type"] == "session"]
+    assert sess == [{"type": "session", "case": "persist-999",
+                     "id": "s-02", "after": "confound"}]
+    clock = [e for e in events if e["type"] == "clock"]
+    assert clock == [{"type": "clock", "case": "persist-999",
+                      "days": 3, "total": 3}]
+    assert _EchoAdapter.ended == ["s-01"]                # 真的关了旧会话
+    asks = [e for e in events if e["type"] == "ask"]
+    assert [a["phase"] for a in asks] == ["inject", "confound", "probe"]

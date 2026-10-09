@@ -129,6 +129,10 @@ class CaseRunner:
                     log.info("%s 拨钟 %+d 天（累计 %+d）", self.case.case_id,
                              se.clock_shift_days, self.clock_offset + se.clock_shift_days)
                     self.clock_offset += se.clock_shift_days
+                    _safe_emit(self.on_event, {"type": "clock",
+                                               "case": self.case.case_id,
+                                               "days": se.clock_shift_days,
+                                               "total": self.clock_offset})
                 messages: list[str] = []
                 replies: list[Reply] = []
                 for step in phase.steps:
@@ -185,6 +189,12 @@ class CaseRunner:
                     self.adapter.end_session(session_id)
                     n = int(session_id.split("-")[1]) + 1
                     session_id = f"s-{n:02d}"
+                    # 会话翻卷是跨会话保持的考察机制本身（10-09 用户点名要
+                    # 在 UI 直播流里可见），静默滚号会让"考"看起来还在原会话
+                    _safe_emit(self.on_event, {"type": "session",
+                                               "case": self.case.case_id,
+                                               "id": session_id,
+                                               "after": phase.name})
             # probe 结束后全量采集
             snap = self.adapter.dump_memory()
             self._collect("probe", EvidenceType.MEMORY_SNAPSHOT, snap.model_dump(mode="json"))

@@ -140,6 +140,7 @@ select:focus,input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(55,14
 .console .lv-ask{color:#8ec5ff;font-weight:600}.console .lv-ask-dim{color:#62626b}
 .console .lv-reply{color:#ececf1}.console .lv-reply-dim{color:#9d9da6}
 .console .lv-mem{color:#7fd4a8}
+.console .lv-session{color:#b8a3e8}.console .lv-clock{color:#e0a878}
 .result{margin-top:16px;display:none}
 .score-big{font-family:var(--serif);font-weight:700;color:var(--acc-ink);
   font-variant-numeric:tabular-nums;line-height:1.3}
@@ -748,8 +749,9 @@ function logLine(cls,msg,title){
   if(G){G.from(div,{y:6,opacity:0,duration:.22,ease:"power2.out"});}
   c.scrollTop=c.scrollHeight;
 }
-let es=null, pendingRunId=null;
+let es=null, pendingRunId=null, caseT0=0;
 function fmtTok(n){return n>=1e6?(n/1e6).toFixed(1)+"M":Math.round(n/1e3)+"k"}
+function fmtDur(ms){const s=Math.round(ms/1000);return s<60?s+" 秒":Math.floor(s/60)+" 分 "+(s%60)+" 秒"}
 function confirmRun(body){
   return new Promise(async(res)=>{
     let e=null;
@@ -794,7 +796,14 @@ $("#btnStart").addEventListener("click",async()=>{
   es.onmessage=(ev)=>{
     const m=JSON.parse(ev.data);
     if(m.type==="start"){logLine("lv-start",`开始评测：${m.adapter} × ${m.cases}（${m.n_cases} 用例，${m.judge==="dual"?"LLM 判卷":"脚本判卷"}）`);}
-    else if(m.type==="case_start"){logLine("lv-casehead",`——【${m.i}/${m.n}】${m.case} ——`);}
+    else if(m.type==="case_start"){caseT0=Date.now();logLine("lv-casehead",`——【${m.i}/${m.n}】${m.case} ——`);}
+    else if(m.type==="session"){
+      const ph=({inject:"教",confound:"扰",probe:"考"})[m.after]||m.after;
+      logLine("lv-session",`┄┄ 换新会话 ${m.id}（${ph}阶段结束，考察跨会话保持）┄┄`);
+    }
+    else if(m.type==="clock"){
+      logLine("lv-clock",`拨钟 ${m.days>0?"+":""}${m.days} 天（累计 ${m.total>0?"+":""}${m.total} 天）——模拟时间流逝后隔考`);
+    }
     else if(m.type==="ask"){
       const tag=m.phase==="probe"?"考":m.phase==="inject"?"教":"扰";
       logLine(m.phase==="probe"?"lv-ask":"lv-ask-dim",`${tag}｜${m.q}`);
@@ -808,7 +817,7 @@ $("#btnStart").addEventListener("click",async()=>{
     else if(m.type==="memory"){logLine("lv-mem",`记忆快照：${m.n} 条${m.final?"（本例终态）":""}`);}
     else if(m.type==="err"){logLine("lv-error",`运行错误：${m.msg}`);}
     else if(m.type==="case"){
-      logLine("lv-case",`[${m.i}/${m.n}] ${m.case} 完成`);
+      logLine("lv-case",`[${m.i}/${m.n}] ${m.case} 完成${caseT0?`（用时 ${fmtDur(Date.now()-caseT0)}）`:""}`);
       $("#progLabel").textContent=`${m.case}`;
       $("#progCount").textContent=`${m.i} / ${m.n}`;
       const w=(m.i/m.n*100).toFixed(1)+"%";
