@@ -90,6 +90,23 @@ def test_upstream_preflight_lanes(monkeypatch):
     assert msg3 and "claude 直连上游不可达" in msg3
 
 
+def test_ui_run_image_endpoint(tmp_path, monkeypatch):
+    """进阶图进 UI（10-09 用户点名：panels 产物 10-08 就随 _finish_run 生成，
+    但 UI 只引用过 radar）。/api/runs/{id}/img/{name} 只放行 run 目录内
+    无路径分隔的 .png 文件名，非 png / 不存在一律 404。"""
+    app = create_app()
+    monkeypatch.setattr(uiapp, "_runs_root", lambda: tmp_path)
+    rd = tmp_path / "r1"
+    rd.mkdir()
+    (rd / "report-verdict-mix.png").write_bytes(b"\x89PNG-fake")
+    (rd / "manifest.json").write_text("{}", encoding="utf-8")
+    c = TestClient(app)
+    r = c.get("/api/runs/r1/img/report-verdict-mix.png")
+    assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
+    assert c.get("/api/runs/r1/img/manifest.json").status_code == 404   # 非 png
+    assert c.get("/api/runs/r1/img/report-caliber.png").status_code == 404  # 不存在
+
+
 def test_cli_subcommand_help_smoke():
     """每个子命令 --help 必须退出 0（argparse 树完整、入口未坏）。"""
     for cmd in SUBCOMMANDS:

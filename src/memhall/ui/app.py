@@ -449,6 +449,19 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "无雷达图")
         return FileResponse(p, media_type="image/png")
 
+    @app.get("/api/runs/{run_id}/img/{name}")
+    def run_image(run_id: str, name: str) -> FileResponse:
+        """run 目录内的产物图（进阶图 report-*.png 等）。名字只放行
+        无路径分隔的 .png 文件名——报告进阶图 10-08 就随 _finish_run 生成，
+        但 UI 只引用过 radar，产物一直在盘上没人看（10-09 用户点名）。"""
+        d = _safe_run_id(run_id)
+        if not re.fullmatch(r"[A-Za-z0-9._-]+\.png", name):
+            raise HTTPException(404, "无此图")
+        f = d / name
+        if not f.is_file():
+            raise HTTPException(404, "无此图（旧 run 或未生成）")
+        return FileResponse(f, media_type="image/png")
+
     @app.get("/api/runs/{run_id}/case/{case_id}/evidence")
     def case_evidence(run_id: str, case_id: str) -> dict:
         if not re.fullmatch(r"[\w.-]+", case_id):

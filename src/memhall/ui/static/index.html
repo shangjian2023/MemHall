@@ -141,6 +141,9 @@ select:focus,input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(55,14
 .console .lv-reply{color:#ececf1}.console .lv-reply-dim{color:#9d9da6}
 .console .lv-mem{color:#7fd4a8}
 .console .lv-session{color:#b8a3e8}.console .lv-clock{color:#e0a878}
+.panel-imgs{display:flex;gap:24px;flex-wrap:wrap;margin-top:6px}
+.panel-imgs img{width:min(560px,100%);height:auto;border-radius:var(--r);
+  border:1px solid #2e2e36;background:#111116}
 .result{margin-top:16px;display:none}
 .score-big{font-family:var(--serif);font-weight:700;color:var(--acc-ink);
   font-variant-numeric:tabular-nums;line-height:1.3}
@@ -384,6 +387,11 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
             <h2.sec style="margin-top:0">六维能力</h2.sec>
             <div class="capbars" id="rdCaps"></div>
           </div>
+        </div>
+        <h2.sec id="rdPanelsTitle" style="display:none">进阶图表</h2.sec>
+        <div class="panel-imgs" id="rdPanels" style="display:none">
+          <img id="rdPMix" alt="分能力判定构成（错误集中在哪一维）">
+          <img id="rdPCal" alt="双判 vs 脚本判卷口径对照">
         </div>
         <h2.sec>判定明细</h2.sec>
         <div id="reviewBar" style="display:none;margin:0 0 12px;padding:10px 14px;border:1px solid #e8b31a66;border-radius:10px;background:#e8b31a14;cursor:pointer" onclick="openReview()">
@@ -902,6 +910,7 @@ $("#btnCompare").addEventListener("click",()=>{
   const img=$("#rdRadar");
   img.src=`/api/compare?runs=${encodeURIComponent(compareSel.join(","))}&t=${Date.now()}`;
   $("#reportDetail").style.display="block";
+  $("#rdPanels").style.display="none";$("#rdPanelsTitle").style.display="none";
   if(G){G.fromTo(img,{opacity:0,scale:.97},{opacity:1,scale:1,duration:.5,ease:"power2.out"});}
 });
 let vFilter="all";
@@ -918,6 +927,16 @@ async function selectRun(runId){
     countUp($("#rdScore"),d.metrics.overall_score,v=>pct(v));
     animBars($("#rdCaps"),d.metrics.capability_scores);
     $("#rdRadar").src=`/api/runs/${encodeURIComponent(runId)}/radar?t=${Date.now()}`;
+    // 进阶图：mix 每轮都有，caliber 仅 dual 判卷；旧 run 无图整段隐藏
+    const mix=$("#rdPMix"),cal=$("#rdPCal");
+    const updPanels=()=>{const any=mix.style.display!=="none"||cal.style.display!=="none";
+      $("#rdPanels").style.display=any?"flex":"none";
+      $("#rdPanelsTitle").style.display=any?"":"none";};
+    mix.onerror=()=>{mix.style.display="none";updPanels()};
+    cal.onerror=()=>{cal.style.display="none";updPanels()};
+    mix.style.display="";cal.style.display="";
+    mix.src=`/api/runs/${encodeURIComponent(runId)}/img/report-verdict-mix.png?t=${Date.now()}`;
+    cal.src=`/api/runs/${encodeURIComponent(runId)}/img/report-caliber.png?t=${Date.now()}`;
     renderVerdicts(d.verdicts);
     loadReview(runId);
     if(G){
