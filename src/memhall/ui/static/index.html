@@ -337,7 +337,8 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
         <div class="formrow">
           <div class="field"><label>被测智能体</label>
             <select id="fAdapter"><option value="mock">mock（离线演示）</option></select></div>
-          <div class="field"><label>用例集</label><select id="fCases"></select></div>
+          <div class="field"><label>用例集</label><select id="fCases"></select>
+            <div id="fCasesHint" style="display:none;font-size:12px;color:var(--faint);margin-top:4px"></div></div>
           <div class="field" id="fModelField" style="display:none"><label>模型<span style="color:var(--faint)">（网关改写）</span></label>
             <select id="fModel"></select></div>
           <div class="field"><label>判卷</label>
@@ -741,10 +742,18 @@ async function loadDoctor(fresh=false){
 $("#docRefresh").addEventListener("click",()=>loadDoctor(true));
 
 /* ---------- 评测 ---------- */
+let CASE_HINTS={};
 async function loadCaseDirs(){
   try{const d=await api("/api/case-dirs");
     $("#fCases").innerHTML=d.sets.map(x=>`<option value="${esc(x.id)}">${esc(x.label)}</option>`).join("");
+    CASE_HINTS=Object.fromEntries(d.sets.map(x=>[x.id,x.hint||""]));
   }catch(e){$("#fCases").innerHTML='<option value="cases/full">cases/full</option>';}
+  updCaseHint();
+}
+function updCaseHint(){
+  const h=$("#fCasesHint");if(!h)return;
+  h.textContent=CASE_HINTS[$("#fCases").value]||"";
+  h.style.display=h.textContent?"":"none";
 }
 async function loadAdapters(){
   /* 下拉只列真实可跑的：本机检出 / 评测机（VM）内检出 / mock——未检出的
@@ -1190,6 +1199,7 @@ window.addEventListener("load",()=>{
     }
     loadDoctor();loadCaseDirs();loadAdapters();loadModels();
     $("#fAdapter").addEventListener("change",updModelSel);
+    $("#fCases").addEventListener("change",updCaseHint);
     api("/api/meta").then(d=>{$("#ftVer").textContent="服务端 v"+d.version+" · py"+d.python;}).catch(()=>{});
   });
 });

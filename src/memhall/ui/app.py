@@ -68,10 +68,17 @@ def _case_roots() -> list[Path]:
 
 # 用例集中文说明（键=目录名）。顺序即 UI 下拉框排序，quick 在最前：装完先冒烟。
 CASE_SET_DESC = {
-    "quick": "冒烟自检 · {n} 题 · 分钟级离线，装完先跑这个",
-    "full": "种子题库 · {n} 题 · 六能力×六内容全覆盖（主力评测集）",
-    "gen": "生成器扩量 · {n} 题 · 参数化模板生成，防智能体背题",
-    "chains": "任务链 · {n} 题 · 多步任务弧，考操作与文件证据",
+    "quick": {"label": "快速冒烟 · {n} 题 · 六能力各 1（分钟级）",
+              "hint": "装完先跑这个，验证链路通；不含拨钟/任务链，mock 离线可跑"},
+    "full": {"label": "题库全量 · {n} 题 · 正式口径主体",
+             "hint": "六能力全覆盖的种子题库；对外分数 = full + chains 各 ≥2 轮取均值"},
+    "chains": {"label": "任务链 · {n} 题 · 多会话翻卷 + 拨钟隔天",
+               "hint": "多步任务弧考操作与文件证据；temporal 题会拨系统时钟"
+                       "（直播流里的拨钟/换会话行就在这）"},
+    "gen": {"label": "生成扩量 · {n} 题 · 不进正式口径",
+            "hint": "参数化模板生成（同 seed 可复现），用于难度旋钮对照实验"},
+    "heldout": {"label": "held-out 加试 · {n} 题 · 防背题",
+                "hint": "现场生成、题目文本不入公开库；正式跑完后作考后加试"},
 }
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -252,15 +259,20 @@ def create_app() -> FastAPI:
                     if d.is_dir() and d.name != "quick":
                         found.setdefault(d.name, d)
         order = {k: i for i, k in enumerate(CASE_SET_DESC)}
+        desc = CASE_SET_DESC["quick"]
         sets = [{"id": "cases/quick",
-                 "label": CASE_SET_DESC["quick"].format(n=len(QUICK_IDS))}]
+                 "label": desc["label"].format(n=len(QUICK_IDS)),
+                 "hint": desc["hint"]}]
         sets += [
             {"id": f"cases/{name}",
-             "label": CASE_SET_DESC.get(name, "{name} · {n} 题")
-                      .format(n=len(list(d.glob("*.y*ml"))), name=name)}
+             "label": (CASE_SET_DESC.get(name, {}).get("label")
+                       or "{name} · {n} 题").format(
+                           n=len(list(d.glob("*.y*ml"))), name=name),
+             "hint": CASE_SET_DESC.get(name, {}).get("hint", "")}
             for name, d in sorted(found.items(), key=lambda kv: (order.get(kv[0], 99), kv[0]))
         ]
-        return {"sets": sets if found else [{"id": "cases/full", "label": "种子题库（默认）"}]}
+        return {"sets": sets if found else [{"id": "cases/full", "label": "种子题库（默认）",
+                                              "hint": ""}]}
 
     # ---------- 运行会话 ----------
     @app.get("/api/estimate")
