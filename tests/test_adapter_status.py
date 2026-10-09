@@ -17,21 +17,43 @@ from memhall.discovery import Finding, adapter_availability
 
 
 def test_native_mode_local_view(monkeypatch):
-    """原生：只列评测车道（mock + 回环 SSH 三家）按"本机"口径；
-    本机直连车道（hermes-local/claude/qwen）不进列表——原生形态下列出
-    只会与评测车道重复扰视（2026-10-05 用户反馈，一套形态一套列表）。"""
+    """原生：列评测车道（mock + 回环 SSH 三家）+ claude-local（例外：本机
+    安装、无重复车道）按"本机"口径；其余本机直连车道（hermes-local/qwen）
+    不进列表——原生形态下列出只会与评测车道重复扰视（2026-10-05 用户反馈，
+    一套形态一套列表）。"""
     monkeypatch.setattr(disc, "vm_is_self", lambda: True)
     monkeypatch.setenv("VM_HOST", "127.0.0.1")
     monkeypatch.setenv("VM_PASS", "x")
     monkeypatch.setattr(disc, "find_cli",
                         lambda *c: "/usr/bin/kylin-bot" if "kylin-bot" in c else "")
+    for k in ("GATEWAY_URL", "GATEWAY_VM_URL"):
+        monkeypatch.delenv(k, raising=False)
     st = adapter_availability(vm_probe=lambda: [])
     assert st["mode"] == "native"
     a = st["adapters"]
     assert a["kylinbot"] == {"label": "kylinbot", "ok": True}
     assert not a["hermes"]["ok"]            # 本机没检出 hermes → 不进下拉
     assert a["mock"]["ok"]                  # mock 恒可用，下拉永不空
-    assert set(a) == {"mock", "hermes", "kylinbot", "openclaw"}  # 不多不少
+    assert not a["claude-local"]["ok"]      # 没检出 claude 二进制
+    assert set(a) == {"mock", "claude-local", "hermes", "kylinbot", "openclaw"}
+
+
+def test_native_mode_claude_lane(monkeypatch):
+    """claude 车道（2026-10-09 补）：openKylin 原生形态下 claude code 是
+    本机智能体且无同名评测车道，检出二进制即可跑；统一网关模式下适配器
+    起跑即拒（anthropic 进不了 openai 网关面），下拉诚实不列。"""
+    monkeypatch.setattr(disc, "vm_is_self", lambda: True)
+    monkeypatch.setattr(disc, "find_cli",
+                        lambda *c: "/home/okim/.local/bin/claude" if "claude" in c else "")
+    monkeypatch.setenv("VM_HOST", "127.0.0.1")
+    monkeypatch.setenv("VM_PASS", "x")
+    for k in ("GATEWAY_URL", "GATEWAY_VM_URL"):
+        monkeypatch.delenv(k, raising=False)
+    a = adapter_availability(vm_probe=lambda: [])["adapters"]
+    assert a["claude-local"] == {"label": "claude code", "ok": True}
+    monkeypatch.setenv("GATEWAY_URL", "http://192.168.61.1:8311/v1")
+    a2 = adapter_availability(vm_probe=lambda: [])["adapters"]
+    assert not a2["claude-local"]["ok"]
 
 
 def test_native_mode_needs_loopback_channel(monkeypatch):

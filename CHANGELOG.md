@@ -4,6 +4,26 @@
 口径遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 精简版；
 评测数字随口径变更的，一律注明口径而非只报数字。
 
+## [未发布]
+
+- **上游预检（发车防呆）**：`_gateway_preflight` 扩为 `_upstream_preflight`——
+  统一网关模式探 GATEWAY_URL/VM_URL，直连模式探 AGENT_LLM_BASE_URL（claude
+  车道走 anthropic 协议，探 CLAUDE_LLM_BASE_URL），mock 免检；UI `/api/start`
+  接入同一道闸（此前只接在 CLI 的 cmd_run——2026-10-09 VM 上从 UI 发车冲进
+  死网关+hosts 毒解析，2 用例纯超时烧废才暴露缺口）
+- **环境自检跨平台适配化（npm/pnpm/volta 布局差异）**：候选清单按包管理器
+  布局扩容（win %APPDATA%\npm、pnpm PNPM_HOME/%LOCALAPPDATA%\pnpm、
+  volta；nvm/fnm 靠 shell 激活不静态枚举）；node 进体检"另检出"名单
+  （npm 系智能体硬依赖，缺了就是"检出 CLI 但发车即 env node 扑空"）；
+  `_which` 绝对路径分支补 win 同名多扩展 PATHEXT 优先级（npm 布局下
+  裸 sh 脚本会 ENOEXEC）
+- **claude code 车道进 openKylin 原生模式**：体检注册表 claude-code 挂
+  claude-local 适配器（卡片可点击跳评测页）；适配器 PATH 加固——node 与
+  claude 同居 `~/.local/bin`（npm 布局）而服务进程 PATH 未必含它，
+  `#!/usr/bin/env node` shebang 会扑空，发车前把 claude 与 node 所在目录
+  前置进 PATH；统一网关模式下下拉诚实不列（anthropic 协议进不了 openai
+  网关面，起跑即拒的车道不装可跑）
+
 ## [1.3.1] - 2026-10-08
 
 - **集成队友 PR #3 四模块（择优移植，Co-authored leeyu44）**：

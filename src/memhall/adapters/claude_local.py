@@ -88,6 +88,20 @@ class LocalClaudeAdapter(AgentAdapter):
             for tier in ("SONNET", "OPUS", "HAIKU", "FABLE"):
                 env[f"ANTHROPIC_DEFAULT_{tier}_MODEL"] = model
         env["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
+        # openKylin 侧 node 与 claude 同居 ~/.local/bin（npm 布局），服务进程
+        # 的 PATH 未必含它——claude 包装脚本的 #!/usr/bin/env node 会扑空
+        # （2026-10-09 VM 实测 which claude 空、node --version 127）。pnpm/
+        # volta 的 shim 还会自己再找 env node，claude 旁边不一定有——两处
+        # 都前置：claude 所在目录 + node 所在目录（布局清单见 discovery）。
+        # 非致命：CLI 没装时不在这里炸（认证/网关拒绝仍在前面优先报）
+        from memhall.discovery import ADAPTER_CLI, find_cli
+        prepend: set[str] = set()
+        for cands in (ADAPTER_CLI["claude"], ADAPTER_CLI["node"]):
+            hit = find_cli(*cands)
+            if hit:
+                prepend.add(str(Path(hit).resolve().parent))
+        if prepend:
+            env["PATH"] = os.pathsep.join([*sorted(prepend), env.get("PATH", "")])
         return env
 
     # ---------- 契约 01 ----------

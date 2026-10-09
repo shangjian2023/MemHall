@@ -536,31 +536,42 @@ def test_gateway_429_honors_retry_after(tmp_path, monkeypatch):
     assert dt >= 0.45  # 公式值 ~0.005s，等待来自 Retry-After
 
 
-# ---------- 发车前网关心跳预检（2026-10-08 r3 网关死掉空转事故的回归网） ----------
+# ---------- 发车前上游预检（2026-10-08 网关死掉空转 + 10-09 hosts 毒解析的回归网） ----------
 
 def test_preflight_mock_needs_no_gateway(monkeypatch):
-    from memhall.cli import _gateway_preflight
+    from memhall.cli import _upstream_preflight
     monkeypatch.setenv("GATEWAY_URL", "http://127.0.0.1:1/v1")
-    assert _gateway_preflight("mock") is None
+    assert _upstream_preflight("mock") is None
 
 
 def test_preflight_dead_gateway_blocks_run(monkeypatch):
-    from memhall.cli import _gateway_preflight
+    from memhall.cli import _upstream_preflight
     monkeypatch.setenv("GATEWAY_URL", "http://127.0.0.1:1/v1")  # 端口 1 必不通
-    err = _gateway_preflight("hermes")
-    assert err is not None and "网关不可达" in err
+    err = _upstream_preflight("hermes")
+    assert err is not None and "统一网关不可达" in err
 
 
 def test_preflight_live_port_passes(monkeypatch):
     import socket as _socket
 
-    from memhall.cli import _gateway_preflight
+    from memhall.cli import _upstream_preflight
     srv = _socket.socket()
     srv.bind(("127.0.0.1", 0))
     srv.listen(1)
     port = srv.getsockname()[1]
     try:
         monkeypatch.setenv("GATEWAY_URL", f"http://127.0.0.1:{port}/v1")
-        assert _gateway_preflight("hermes") is None
+        assert _upstream_preflight("hermes") is None
     finally:
         srv.close()
+
+
+def test_preflight_direct_lane_poisoned_hosts(monkeypatch):
+    """直连车道预检（2026-10-09 VM 事故）：没配网关时探 AGENT_LLM_BASE_URL，
+    域名被 /etc/hosts 钉到不可达地址要拦下。"""
+    from memhall.cli import _upstream_preflight
+    for k in ("GATEWAY_URL", "GATEWAY_VM_URL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("AGENT_LLM_BASE_URL", "http://127.0.0.1:1/v1")
+    err = _upstream_preflight("hermes")
+    assert err is not None and "直连上游不可达" in err and "/etc/hosts" in err

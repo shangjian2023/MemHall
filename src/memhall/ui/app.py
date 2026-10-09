@@ -290,13 +290,13 @@ def create_app() -> FastAPI:
         judge_mode = body.get("judge", "scripted")
         out_root = _runs_root()
 
-        # 网关预检（与 CLI cmd_run 同一道闸，2026-10-09 实锤缺口：预检只接在
-        # CLI，VM 上从 UI 发车直接冲进死网关，2 用例纯超时假忙）。TCP 探测
-        # 放线程池，不挡事件循环（SSE 心跳照常）
-        from memhall.cli import _gateway_preflight
-        gw_err = await asyncio.to_thread(_gateway_preflight, adapter_name)
-        if gw_err is not None:
-            raise HTTPException(503, gw_err)
+        # 上游预检（与 CLI cmd_run 同一道闸，2026-10-09 实锤缺口：预检只接在
+        # CLI，VM 上从 UI 发车直接冲进死网关/毒解析，2 用例纯超时假忙）。
+        # TCP 探测放线程池，不挡事件循环（SSE 心跳照常）
+        from memhall.cli import _upstream_preflight
+        up_err = await asyncio.to_thread(_upstream_preflight, adapter_name)
+        if up_err is not None:
+            raise HTTPException(503, up_err)
 
         loop = asyncio.get_running_loop()
 

@@ -89,14 +89,43 @@ def _hermes_candidates() -> list[str]:
     return ["hermes", *cands]
 
 
+def _js_pm_bin_dirs() -> list[str]:
+    """JS 包管理器/版本管理器的全局 bin 布局（Linux/Win 环境特性差异，
+    2026-10-09 用户点名适配化）：同一个 npm 系 CLI（claude/qwen/openclaw）
+    在不同管理器下落点完全不同——npm 默认 prefix（win=%APPDATA%\\npm、
+    linux 常见 ~/.local/bin 或 /usr/local/bin）、pnpm（PNPM_HOME，缺省
+    ~/.local/share/pnpm、win %LOCALAPPDATA%\\pnpm）、volta（~/.volta/bin）。
+    nvm/fnm 不列：版本目录带版本号没法静态枚举，且它们的激活模式就是把
+    bin 塞进 shell PATH（激活了就一定能 which 到）。探测是毫秒级 stat，
+    宁可多列不可漏。"""
+    pnpm = os.environ.get("PNPM_HOME", "")
+    dirs = [pnpm] if pnpm else []
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA", "")
+        lad = os.environ.get("LOCALAPPDATA", "")
+        if appdata:
+            dirs.append(f"{appdata}/npm")          # npm 默认 prefix（claude.cmd 在这）
+        if lad:
+            dirs += [f"{lad}/pnpm", f"{lad}/Volta/bin"]
+    else:
+        dirs += ["~/.local/share/pnpm", "~/.volta/bin"]
+    return dirs
+
+
 ADAPTER_CLI: dict[str, list[str]] = {
     "hermes": _hermes_candidates(),
-    "claude": ["claude", "~/.local/bin/claude"],
-    "qwen": ["qwen", "~/.local/bin/qwen"],
+    "claude": ["claude", "~/.local/bin/claude",
+               *[f"{d}/claude" for d in _js_pm_bin_dirs()]],
+    "qwen": ["qwen", "~/.local/bin/qwen",
+             *[f"{d}/qwen" for d in _js_pm_bin_dirs()]],
     # openKylin 侧智能体：绝对路径兜底（SSH/桌面起的进程 PATH 不含用户安装位）
     "kylinbot": ["kylin-bot", "/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"],
-    "openclaw": ["openclaw", "~/.local/bin/openclaw"],
+    "openclaw": ["openclaw", "~/.local/bin/openclaw",
+                 *[f"{d}/openclaw" for d in _js_pm_bin_dirs()]],
     "opencode": ["opencode"],   # R57：UI 下拉曾漏 opencode（适配器早已注册）
+    # node 不是适配器，是 npm 系 CLI 的运行时依赖——适配器 PATH 加固
+    # （claude_local._sandbox_env）借这份清单找 node 所在目录
+    "node": ["node", *[f"{d}/node" for d in _js_pm_bin_dirs()]],
 }
 
 
@@ -114,7 +143,7 @@ def find_cli(*candidates: str) -> str:
 # (名字, 可执行候选, 配置目录候选, 适配器名, 类别)
 LOCAL_AGENTS: list[tuple[str, list[str], list[str], str, str]] = [
     # --- CLI 编程智能体 ---
-    ("claude-code", ADAPTER_CLI["claude"], ["~/.claude"], "", "cli"),
+    ("claude-code", ADAPTER_CLI["claude"], ["~/.claude"], "claude-local", "cli"),
     ("codex", ["codex"], ["~/.codex"], "", "cli"),
     ("dsh (DeepSeek Harness)", ["dsh"], ["~/.dsh"], "", "cli"),
     ("gemini-cli", ["gemini"], ["~/.gemini"], "", "cli"),
@@ -162,6 +191,9 @@ CFG_SENTINELS: dict[str, dict[str, list[str]]] = {
 EXTRA_TOOLS: list[tuple[str, list[str], list[str], str, str]] = [
     ("ollama", ["ollama"], ["~/.ollama"], "runtime", "本地推理运行时"),
     ("lm-studio", ["lms", "lmstudio"], ["~/.lmstudio"], "runtime", "本地推理运行时"),
+    # node 是 npm 系智能体（claude/qwen/openclaw）的硬依赖，缺了就是
+    # "检测到 CLI 但发车即 env node 扑空"（2026-10-08 VM openclaw 实录）
+    ("node", ADAPTER_CLI["node"], [], "runtime", "JS 运行时（npm 系智能体依赖）"),
     ("cc-switch", ["ccswitch", "cc-switch"], ["~/.cc-switch"], "tool", "智能体配置切换器"),
     ("cherry-studio", ["cherry"], ["~/.cherrystudio"], "tool", "聊天客户端"),
 ]
@@ -199,9 +231,18 @@ def _which(name: str) -> str:
     最高者——fnm/git 的无扩展 bash shim 蹭不掉真身 claude.exe/claude.cmd
     （否则版本探测时 CreateProcess 找不到可执行文件直接失败）。"""
     # ~/ 或绝对路径：直接验文件，不走 PATH 索引（clawd 同款思路：
-    # 候选清单里混排 PATH 名与安装位全路径）
+    # 候选清单里混排 PATH 名与安装位全路径）。win 下 npm 布局同名多扩展
+    # （无扩展 sh 脚本与 .cmd 并存），取 PATHEXT 优先级最高者——裸 sh
+    # 脚本喂给 subprocess 会 ENOEXEC（2026-10-09 包管理器布局适配补齐，
+    # 与下方 PATH 索引分支同一条规矩）
     if name.startswith(("~", "/")) or (os.name == "nt" and name[1:2] == ":"):
         p = Path(name).expanduser()
+        if os.name == "nt":
+            for ext in (".cmd", ".exe", ".bat", ""):
+                c = Path(str(p) + ext)
+                if c.is_file() and os.access(c, os.X_OK):
+                    return str(c)
+            return ""
         return str(p) if p.is_file() and os.access(p, os.X_OK) else ""
     global _path_idx
     if _path_idx is None:
@@ -398,10 +439,11 @@ def adapter_availability(vm_probe=None) -> dict:
     """跑页下拉框的真实可跑性（UI /api/adapter-status 数据源，不装不骗人）。
 
     部署形态决定口径与可见车道（UI 描述随形态切换，一套形态一套列表）：
-    - native：VM_HOST 指向本机 = openKylin 原生模式，本机即评测机。只列评测
-      车道：hermes/kylinbot/openclaw 走回环 SSH 驱动本机智能体，label 按
-      "本机"讲；可跑 = 本机检出二进制 + 回环通道（VM_HOST/VM_PASS）配好。
-      本机直连车道不进列表（宿主机冒烟备胎，原生形态下列出只会重复扰视）。
+    - native：VM_HOST 指向本机 = openKylin 原生模式，本机即评测机。列
+      mock + 回环 SSH 三家（hermes/kylinbot/openclaw）+ claude-local（例外：
+      本机安装且无重复车道，2026-10-09 补），label 按"本机"讲；可跑 =
+      本机检出二进制 + 回环通道（VM_HOST/VM_PASS）配好。其余本机直连车道
+      不进列表（宿主机冒烟备胎，原生形态下列出只会重复扰视）。
     - remote：Windows 宿主 + 评测 VM。列本机直连车道（hermes-local/claude/
       qwen）+ VM 车道，后者可跑由 VM 内 SSH 实测决定（vm_probe 返回
       list[Finding]，可注入；缺省走 scan_vm）。
@@ -411,13 +453,20 @@ def adapter_availability(vm_probe=None) -> dict:
     native = vm_is_self()
     channel = bool(os.environ.get("VM_HOST") and os.environ.get("VM_PASS"))
     local = {k: bool(find_cli(*cands)) for k, cands in ADAPTER_CLI.items()}
+    # claude 车道额外门槛：统一网关模式下 claude-local 起跑即拒（anthropic
+    # 协议进不了 openai 网关面，适配器里显式报错）——ok=False 让下拉直接
+    # 不列，好过发车才撞墙
+    from memhall.gateway import gateway_settings
+    claude_ok = local["claude"] and not gateway_settings("claude-local")
     if native:
-        # 原生模式只列评测车道（mock + 回环 SSH 三家）：本机直连车道
-        # （hermes-local/claude/qwen）是宿主机无 SSH 时的冒烟备胎，在 VM 里
-        # 与评测车道重复列出只会让人困惑"两个 hermes 有什么区别"（10-05 反馈）。
+        # 原生模式列 mock + 回环 SSH 三家；claude-local 例外（2026-10-09 补）：
+        # openKylin 上 claude code 是本机安装、无同名评测车道（hermes 车道驱动
+        # 的是 hermes），不列反而丢一个真实被测对象。其余本机直连车道
+        # （hermes-local/qwen）仍不进列表——与评测车道重复扰视（10-05 反馈）。
         # 原生侧只有一套车道，label 不带后缀（全是本机，后缀是噪音）
         return {"mode": "native", "adapters": {
             "mock": {"label": "mock（离线演示）", "ok": True},
+            "claude-local": {"label": "claude code", "ok": claude_ok},
             "hermes": {"label": "hermes", "ok": channel and local["hermes"]},
             "kylinbot": {"label": "kylinbot", "ok": channel and local["kylinbot"]},
             "openclaw": {"label": "openclaw", "ok": channel and local["openclaw"]},
@@ -425,7 +474,7 @@ def adapter_availability(vm_probe=None) -> dict:
     adapters = {
         "mock": {"label": "mock（离线演示）", "ok": True},
         "hermes-local": {"label": "hermes（本机直连）", "ok": local["hermes"]},
-        "claude-local": {"label": "claude code（本机）", "ok": local["claude"]},
+        "claude-local": {"label": "claude code（本机）", "ok": claude_ok},
         "qwen-local": {"label": "qwen code（本机）", "ok": local["qwen"]},
         "opencode": {"label": "opencode（本机）", "ok": local["opencode"]},
     }

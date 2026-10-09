@@ -29,6 +29,7 @@ def test_scan_local_signal_matrix(monkeypatch, tmp_path):
     by_name = {f.name: f for f in out}
     assert by_name["claude-code"].found and by_name["claude-code"].version == "1.0.0-cli"
     assert by_name["claude-code"].evidence == "cli"
+    assert by_name["claude-code"].adapter == "claude-local"  # 2026-10-09 补接线
     assert by_name["codex"].found and by_name["codex"].detail  # 仅配置目录命中也算发现
     assert by_name["codex"].evidence == "cfg"  # 但只算疑似，不算在册
     assert not by_name["aider"].found
@@ -54,6 +55,22 @@ def test_which_prefers_pathext_over_shim(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.setattr(disc, "_path_idx", None)
     assert disc._which("claude") == "claude.cmd"
+
+
+def test_which_absolute_prefers_cmd_over_sh_on_windows(tmp_path):
+    """win 绝对路径候选同理：npm 布局下 claude（无扩展 sh 脚本）与
+    claude.cmd 并存，裸 sh 喂给 subprocess 会 ENOEXEC——绝对路径分支
+    也要按 PATHEXT 优先级取（2026-10-09 包管理器布局适配）。"""
+    import os
+
+    import pytest
+
+    import memhall.discovery as disc
+    if os.name != "nt":
+        pytest.skip("Windows 专属扩展名优先级")
+    for n in ("claude", "claude.cmd"):
+        (tmp_path / n).write_text("")
+    assert disc._which(str(tmp_path / "claude")) == str(tmp_path / "claude.cmd")
 
 
 def test_dsh_sentinel_and_extras_category(monkeypatch, tmp_path):

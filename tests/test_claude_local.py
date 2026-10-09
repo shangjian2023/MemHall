@@ -28,6 +28,24 @@ def test_reset_layout_and_env_mapping(adapter, tmp_path):
     assert env["CLAUDE_CONFIG_DIR"] == str(adapter.config_dir)
     assert str(adapter.config_dir).startswith(str(tmp_path))
     assert env["ANTHROPIC_BASE_URL"] == "https://gw.example/api/anthropic"
+
+
+def test_sandbox_env_prepends_exe_and_node_dirs(adapter, tmp_path, monkeypatch):
+    """PATH 加固（2026-10-09 VM 实测 which claude 空、node 127）：claude/node
+    不在服务进程 PATH 上时，沙箱 env 把两者所在目录前置——保证
+    #!/usr/bin/env node 的 shebang 与 pnpm/volta shim 都找得到 node。"""
+    import os
+
+    import memhall.discovery as disc
+    exe = tmp_path / "jsbin" / "claude"
+    node = tmp_path / "jsbin" / "node"
+    exe.parent.mkdir()
+    exe.write_text("")
+    node.write_text("")
+    monkeypatch.setattr(disc, "find_cli",
+                        lambda *c: str(exe) if "claude" in c else str(node))
+    env = adapter._sandbox_env()
+    assert env["PATH"].startswith(str(tmp_path / "jsbin") + os.pathsep)
     assert env["ANTHROPIC_AUTH_TOKEN"] == "sk-test"
 
 

@@ -35,16 +35,59 @@ def test_ui_app_core_endpoints(tmp_path, monkeypatch):
 
 
 def test_ui_start_blocked_when_gateway_down(tmp_path, monkeypatch):
-    """UI 发车必须过网关预检（10-09 实锤：_gateway_preflight 只接在 CLI，
-    VM 上从 UI 发车直接冲进死网关，2 用例纯超时假忙才被发现）。"""
+    """UI 发车必须过上游预检（10-09 实锤：预检只接在 CLI，VM 上从 UI 发车
+    直接冲进死网关/毒解析，2 用例纯超时假忙才被发现）。"""
     app = create_app()
     monkeypatch.setattr(uiapp, "_runs_root", lambda: tmp_path)
-    monkeypatch.setattr("memhall.cli._gateway_preflight",
+    monkeypatch.setattr("memhall.cli._upstream_preflight",
                         lambda a: "网关不可达 192.168.61.1:8311 —— 测试桩")
     c = TestClient(app)
     r = c.post("/api/start", json={"adapter": "hermes"})
     assert r.status_code == 503 and "网关不可达" in r.json()["detail"]
     assert list(tmp_path.glob("**/*")) == []  # 未起跑、不留残骸
+
+
+def test_upstream_preflight_lanes(monkeypatch):
+    """上游预检分车道探端点：网关模式探 GATEWAY_*，直连模式探
+    AGENT_LLM_BASE_URL，claude 探 CLAUDE_LLM_*（anthropic 面），
+    mock 免检——10-09 VM hosts 毒解析 2 例烧废的直接防复发件。"""
+    import contextlib
+    import socket
+
+    from memhall.cli import _upstream_preflight
+    probed: list[tuple[str, int]] = []
+
+    def fake_connect(addr, timeout=None):
+        host, port = addr[:2]
+        probed.append((host, port))
+        if port == 1 or host.endswith(".invalid"):   # 测试桩：.invalid 必拒
+            raise OSError(111, "refused（测试桩）")
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr(socket, "create_connection", fake_connect)
+    for k in ("GATEWAY_URL", "GATEWAY_VM_URL", "AGENT_LLM_BASE_URL",
+              "CLAUDE_LLM_BASE_URL"):
+        monkeypatch.delenv(k, raising=False)
+    assert _upstream_preflight("mock") is None
+    assert probed == []                                 # mock 免检
+    monkeypatch.setenv("GATEWAY_URL", "http://gw.invalid:8311/v1")
+    msg = _upstream_preflight("hermes")
+    assert msg and "统一网关不可达" in msg and "GATEWAY_URL" in msg
+    monkeypatch.setenv("GATEWAY_URL", "http://gw.live:8311/v1")
+    assert _upstream_preflight("hermes") is None
+    monkeypatch.setenv("AGENT_LLM_BASE_URL", "http://direct.invalid/v1")
+    assert _upstream_preflight("hermes") is None       # 网关模式下不探直连
+    monkeypatch.setenv("GATEWAY_VM_URL", "http://gw.live:8311/v1")
+    probed.clear()
+    _upstream_preflight("hermes")
+    assert probed == [("gw.live", 8311)]               # 同址去重只探一次
+    monkeypatch.delenv("GATEWAY_URL")
+    monkeypatch.delenv("GATEWAY_VM_URL")
+    msg2 = _upstream_preflight("hermes")
+    assert msg2 and "直连上游不可达" in msg2
+    monkeypatch.setenv("CLAUDE_LLM_BASE_URL", "http://direct.invalid/v1")
+    msg3 = _upstream_preflight("claude-local")
+    assert msg3 and "claude 直连上游不可达" in msg3
 
 
 def test_cli_subcommand_help_smoke():
