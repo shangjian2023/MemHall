@@ -440,10 +440,11 @@ def adapter_availability(vm_probe=None) -> dict:
 
     部署形态决定口径与可见车道（UI 描述随形态切换，一套形态一套列表）：
     - native：VM_HOST 指向本机 = openKylin 原生模式，本机即评测机。列
-      mock + 回环 SSH 三家（hermes/kylinbot/openclaw）+ claude-local（例外：
-      本机安装且无重复车道，2026-10-09 补），label 按"本机"讲；可跑 =
-      本机检出二进制 + 回环通道（VM_HOST/VM_PASS）配好。其余本机直连车道
-      不进列表（宿主机冒烟备胎，原生形态下列出只会重复扰视）。
+      mock + 三家评测车道（hermes/kylinbot/openclaw 本机直跑——LocalChannel
+      不绕 SSH，2026-10 架构收尾；拨钟等 sudo 操作仍需 VM_PASS）+
+      claude-local（例外：本机安装且无重复车道，2026-10-09 补），label 按
+      "本机"讲；可跑 = 本机检出二进制 + VM_HOST/VM_PASS 配好。其余本机
+      直连车道不进列表（宿主机冒烟备胎，原生形态下列出只会重复扰视）。
     - remote：Windows 宿主 + 评测 VM。列本机直连车道（hermes-local/claude/
       qwen）+ VM 车道，后者可跑由 VM 内 SSH 实测决定（vm_probe 返回
       list[Finding]，可注入；缺省走 scan_vm）。
@@ -455,9 +456,13 @@ def adapter_availability(vm_probe=None) -> dict:
     local = {k: bool(find_cli(*cands)) for k, cands in ADAPTER_CLI.items()}
     # claude 车道额外门槛：统一网关模式下 claude-local 起跑即拒（anthropic
     # 协议进不了 openai 网关面，适配器里显式报错）——ok=False 让下拉直接
-    # 不列，好过发车才撞墙
+    # 不列，好过发车才撞墙。GATEWAY_EXEMPT=claude-local 为明示豁免
+    # （混合形态：其余车道走网关、claude 直连 anthropic）
     from memhall.gateway import gateway_settings
-    claude_ok = local["claude"] and not gateway_settings("claude-local")
+    exempt = "claude-local" in {
+        s.strip() for s in os.environ.get("GATEWAY_EXEMPT", "").split(",")
+        if s.strip()}
+    claude_ok = local["claude"] and (exempt or not gateway_settings("claude-local"))
     if native:
         # 原生模式列 mock + 回环 SSH 三家；claude-local 例外（2026-10-09 补）：
         # openKylin 上 claude code 是本机安装、无同名评测车道（hermes 车道驱动

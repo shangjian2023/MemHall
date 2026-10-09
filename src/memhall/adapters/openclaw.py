@@ -25,7 +25,13 @@ import threading
 import time
 
 from memhall.adapters.base import AdapterError, AgentAdapter, AgentUnavailable
-from memhall.adapters.remote import SshChannel, elapsed_ms, now_utc
+from memhall.adapters.remote import (
+    LocalChannel,
+    SshChannel,
+    default_channel,
+    elapsed_ms,
+    now_utc,
+)
 from memhall.schema.evidence import (
     ActionDump,
     MemoryEntry,
@@ -76,8 +82,8 @@ class OpenClawAdapter(AgentAdapter):
 
     name = "openclaw"
 
-    def __init__(self, channel: SshChannel | None = None):
-        self.ch = channel or SshChannel()
+    def __init__(self, channel: SshChannel | LocalChannel | None = None):
+        self.ch = channel or default_channel()
         self._clock_epoch: int | None = None
         self._model = ""
         self._provider_model = ""

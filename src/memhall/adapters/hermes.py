@@ -19,7 +19,14 @@ import time
 from datetime import UTC
 
 from memhall.adapters.base import AdapterError, AgentAdapter, AgentUnavailable
-from memhall.adapters.remote import SshChannel, b64, elapsed_ms, now_utc
+from memhall.adapters.remote import (
+    LocalChannel,
+    SshChannel,
+    b64,
+    default_channel,
+    elapsed_ms,
+    now_utc,
+)
 from memhall.schema.evidence import ActionDump, MemoryEntry, MemorySnapshot, Reply
 
 HERMES_BIN = "~/.hermes/bin/hermes"
@@ -38,8 +45,8 @@ class HermesAdapter(AgentAdapter):
 
     name = "hermes"
 
-    def __init__(self, channel: SshChannel | None = None):
-        self.ch = channel or SshChannel()
+    def __init__(self, channel: SshChannel | LocalChannel | None = None):
+        self.ch = channel or default_channel()
         self._log_offset = 0
         self._clock_epoch: int | None = None
         # 统一模型模式（GATEWAY_VM_URL，VM 走宿主网关的明文 http 腿）优先：

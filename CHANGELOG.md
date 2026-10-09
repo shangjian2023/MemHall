@@ -6,6 +6,16 @@
 
 ## [未发布]
 
+- **openKylin 原生化：LocalChannel 本机执行通道（消灭回环 SSH）**：
+  remote.py 增 LocalChannel——与 SshChannel 接口逐方法对齐（run/sudo/
+  run_json/close，POSIX 语义不变，~/.local/bin 前置进 PATH），default_channel()
+  按部署形态选路：VM_HOST 指向本机（原生模式）时 hermes/kylinbot/openclaw
+  三车道直接本机 bash 执行，不再绕 SSH 回环、不依赖 sshd（拨钟等 sudo
+  操作仍走 VM_PASS stdin）；宿主+VM 形态照旧 SSH，通道注入式测试不受影响
+- **GATEWAY_EXEMPT 混合形态豁免**：openKylin 原生装机同时要网关车道与
+  claude 直连（anthropic 协议进不了 openai 网关面）——`GATEWAY_EXEMPT=
+  claude-local` 明示豁免后 claude 车道照常直连，manifest 侧各记自己的
+  model_backend，compare 口径告警可对账
 - **上游预检（发车防呆）**：`_gateway_preflight` 扩为 `_upstream_preflight`——
   统一网关模式探 GATEWAY_URL/VM_URL，直连模式探 AGENT_LLM_BASE_URL（claude
   车道走 anthropic 协议，探 CLAUDE_LLM_BASE_URL），mock 免检；UI `/api/start`

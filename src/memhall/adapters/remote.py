@@ -1,9 +1,14 @@
-"""SSH 远程执行通道：适配器与被测智能体之间的传输层。
+"""命令执行通道：适配器与被测智能体之间的传输层。
 
-被测智能体跑在 openKylin 虚拟机里（环境见 environment.md），评测器在宿主机。
-send = SSH 执行一条命令；凭据从环境变量读（VM_HOST/VM_USER/VM_PASS），不入 git。
-消息体与凭据一律走 stdin / base64，不落 shell 命令行（VM 内 ps/history 不可见，
-值含引号也不会把命令拼碎）。
+两种实现，接口逐方法对齐（run/sudo/run_json/close）：
+- SshChannel：宿主 + 评测机两机形态——被测智能体在远端（openKylin VM，
+  环境见 environment.md），评测器在宿主机，SSH 连过去执行。
+- LocalChannel：openKylin 原生形态——被测智能体与评测器同机，直接本机
+  bash 执行（2026-10 架构收尾：原生跑不依赖 sshd，也不绕 SSH 回环）。
+
+凭据从环境变量读（VM_HOST/VM_USER/VM_PASS），不入 git。消息体与凭据一律
+走 stdin / base64，不落 shell 命令行（ps/history 不可见，值含引号也不会
+把命令拼碎）。
 
 主机密钥：TOFU（首次记录指纹到 ~/.memhall/known_hosts，此后指纹变化即拒连）。
 """
@@ -15,6 +20,8 @@ import contextlib
 import json
 import logging
 import os
+import shutil
+import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -143,6 +150,86 @@ class SshChannel:
             raise paramiko.SSHException("无活动传输层，取不到主机密钥")
         digest = hashlib.sha256(t.get_remote_server_key().asbytes()).digest()
         return base64.b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+class LocalChannel:
+    """本机执行通道（openKylin 原生模式）：智能体与评测器同机时直接落
+    本机 bash，不绕 SSH 回环（2026-10 架构收尾，用户设计初衷：win 和
+    openKylin 原生各自成立）。命令语义与 SSH 会话一致——POSIX 命令、
+    ~ 展开、stdin/stdout/stderr 三通，适配器代码零改动。
+
+    sudo（拨钟等系统操作）仍需 VM_PASS，密码走 stdin（sudo -S）与 SSH
+    通道同一条纪律；不出 sudo 时不需要它。
+    """
+
+    def __init__(self, password: str | None = None):
+        self.bash = shutil.which("bash")
+        if not self.bash:
+            raise ValueError("本机执行通道需要 bash（openKylin/Linux 环境）")
+        self.password = password or _env("VM_PASS")
+        self._env = self._build_env()
+
+    @staticmethod
+    def _build_env() -> dict:
+        # 智能体常装在 ~/.local/bin（npm 布局），服务进程 PATH 未必含它
+        # （10-09 VM 实测 which claude 空、node 127）——把登录 shell 才会
+        # 补的目录前置进 PATH
+        env = os.environ.copy()
+        env["PATH"] = (str(Path.home() / ".local" / "bin") + os.pathsep
+                       + env.get("PATH", ""))
+        env.setdefault("HOME", str(Path.home()))
+        return env
+
+    def _exec(self, cmd: str, timeout: int,
+              stdin_data: str | None) -> tuple[int, str, str]:
+        t0 = time.monotonic()
+        try:
+            r = subprocess.run([self.bash, "-c", cmd], input=stdin_data,
+                               capture_output=True, encoding="utf-8",
+                               errors="replace", timeout=timeout, env=self._env)
+        except subprocess.TimeoutExpired as e:
+            raise TimeoutError(
+                f"本机命令 {timeout}s 未返回（超时）: {cmd[:120]}") from e
+        dt = time.monotonic() - t0
+        log.debug("local [%.1fs rc=%d] %s", dt, r.returncode, cmd[:160])
+        if r.returncode != 0:
+            log.warning("本机命令失败 rc=%d (%.1fs): %s", r.returncode, dt,
+                        (r.stderr or "").strip()[:200])
+        return r.returncode, r.stdout or "", r.stderr or ""
+
+    def run(self, cmd: str, timeout: int = 300,
+            stdin_data: str | None = None) -> tuple[int, str, str]:
+        """执行命令，返回 (exit_code, stdout, stderr)；stdin_data 走 stdin。"""
+        return self._exec(cmd, timeout, stdin_data)
+
+    def sudo(self, cmd: str, timeout: int = 120) -> tuple[int, str, str]:
+        """sudo 执行：密码走 stdin（sudo -S），不落命令行（ps/history 不可见）。"""
+        if not self.password:
+            raise ValueError("缺 VM_PASS（本机 sudo：拨钟等系统操作需要）")
+        return self._exec(f"sudo -S -p '' -- {cmd}", timeout,
+                          self.password + "\n")
+
+    def run_json(self, cmd: str, timeout: int = 300) -> list | dict:
+        rc, out, err = self.run(cmd, timeout=timeout)
+        if rc != 0:
+            raise RuntimeError(f"本机命令失败({rc}): {err.strip()[:500]}")
+        return json.loads(out)
+
+    def close(self) -> None:
+        pass  # 无连接可关
+
+    def host_key_sha256(self) -> str:
+        return ""  # 无 SSH 跳——环境指纹如实缺省（仅 vm.py 健康检查用到）
+
+
+def default_channel():
+    """按部署形态选传输通道：VM_HOST 指向本机（openKylin 原生）= 本机
+    直跑，否则 SSH 连评测机。三个 VM 车道适配器共用这一个选路口。"""
+    from memhall.discovery import vm_is_self
+    if vm_is_self():
+        log.info("原生模式：本机执行通道（智能体与评测器同机，不绕 SSH 回环）")
+        return LocalChannel()
+    return SshChannel()
 
 
 def remote_environment(channel: SshChannel, adapter_name: str,

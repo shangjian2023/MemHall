@@ -22,7 +22,14 @@ import time
 from datetime import datetime
 
 from memhall.adapters.base import AdapterError, AgentAdapter, AgentUnavailable
-from memhall.adapters.remote import SshChannel, b64, elapsed_ms, now_utc
+from memhall.adapters.remote import (
+    LocalChannel,
+    SshChannel,
+    b64,
+    default_channel,
+    elapsed_ms,
+    now_utc,
+)
 from memhall.schema.evidence import (
     ActionDump,
     MemoryEntry,
@@ -72,8 +79,8 @@ class KylinBotAdapter(AgentAdapter):
 
     name = "kylinbot"
 
-    def __init__(self, channel: SshChannel | None = None):
-        self.ch = channel or SshChannel()
+    def __init__(self, channel: SshChannel | LocalChannel | None = None):
+        self.ch = channel or default_channel()
         self._clock_epoch: int | None = None
 
     def _apply_model_lane(self) -> None:

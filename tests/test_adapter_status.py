@@ -54,6 +54,9 @@ def test_native_mode_claude_lane(monkeypatch):
     monkeypatch.setenv("GATEWAY_URL", "http://192.168.61.1:8311/v1")
     a2 = adapter_availability(vm_probe=lambda: [])["adapters"]
     assert not a2["claude-local"]["ok"]
+    monkeypatch.setenv("GATEWAY_EXEMPT", "claude-local")   # 混合形态明示豁免
+    a3 = adapter_availability(vm_probe=lambda: [])["adapters"]
+    assert a3["claude-local"]["ok"]
 
 
 def test_native_mode_needs_loopback_channel(monkeypatch):

@@ -109,3 +109,15 @@ def test_clock_shift_unsupported(adapter):
     with pytest.raises(AdapterError):
         adapter.clock_shift(3)
     adapter.clock_shift(0)  # 0 天 no-op
+
+
+def test_gateway_exempt_allows_mixed_mode(adapter, monkeypatch):
+    """GATEWAY_EXEMPT=claude-local：混合形态明示豁免（openKylin 原生装机
+    网关车道与 claude 直连并存，2026-10-09 架构收尾）——不豁免照旧拒，
+    豁免后走 CLAUDE_LLM_* 直连，manifest 侧口径照记可对账。"""
+    monkeypatch.setenv("GATEWAY_URL", "http://127.0.0.1:8311/v1")
+    with pytest.raises(AgentUnavailable):
+        adapter._sandbox_env()
+    monkeypatch.setenv("GATEWAY_EXEMPT", "claude-local")
+    env = adapter._sandbox_env()
+    assert env["ANTHROPIC_BASE_URL"] == "https://gw.example/api/anthropic"
