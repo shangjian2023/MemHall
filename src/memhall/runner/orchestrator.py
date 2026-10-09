@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import platform
 import subprocess
 import sys
@@ -321,13 +322,18 @@ class _GlobalRunLock:
 
 def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
               adapter_name: str, case_source: str = "",
-              on_case_done=None, on_event=None) -> tuple[str, list[EvidenceStore]]:
+              on_case_done=None, on_event=None,
+              model_override: str | None = None) -> tuple[str, list[EvidenceStore]]:
     """跑整套用例，落盘 manifest，返回 (run_id, 每 case 的证据视图)。
 
     on_case_done(case_id, i, n)：每用例跑完后回调（UI 进度流用）；
         回调抛异常即中止（配合 UI 的停止按钮，已完成的用例证据已落盘）。
     on_event(ev)：逐条过程事件（ask/reply/memory/err/case_start），
         供 UI 直播问答过程；回调异常被吞，不影响评测。
+    model_override：网关车道逐 run 模型改写（(agent, model) 二元组对照）。
+        发车前写进网关改写表（按 memhall-<agent> tag 键控），收尾必清；
+        直连/mock 车道忽略（不经网关无从改写），manifest 记 model_override
+        供 compare 侧与官方口径区分。
     """
     run_id = _utc().strftime("%Y%m%d-%H%M%S") + f"-{adapter_name}"
     # 快机同秒跑两轮（mock 单轮 2 秒级）会互相覆盖，冲突时加序号后缀
@@ -343,6 +349,16 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
     failed: list[str] = []
     clock_restore_failed: list[str] = []
     usage_before = usage_snapshot()
+    # 网关车道逐 run 模型改写：只在网关模式落表（直连模式写了也没人读，
+    # 还污染共享家目录）；tag 推导与 gateway_settings 同源
+    gw_tag = ""
+    if model_override:
+        from memhall.gateway import gateway_settings, set_model_override
+        if gateway_settings(adapter_name):
+            gw_tag = os.environ.get("GATEWAY_AGENT_KEY",
+                                    f"memhall-{adapter_name}")
+            set_model_override(gw_tag, model_override)
+            log.info("模型改写: %s → %s（网关）", gw_tag, model_override)
     with _GlobalRunLock():   # R57：CLI/UI 跨进程互斥
         try:
             for i, case in enumerate(cases):
@@ -370,9 +386,15 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
                 if getattr(runner, "_clock_restore_error", None):
                     clock_restore_failed.append(case.case_id)
         finally:
-            _write_manifest(run_dir, run_id, adapter_name, case_source, cases,
-                            failed, usage_before, adapter,
-                            clock_restore_failed=clock_restore_failed)
+            try:
+                _write_manifest(run_dir, run_id, adapter_name, case_source,
+                                cases, failed, usage_before, adapter,
+                                clock_restore_failed=clock_restore_failed,
+                                model_override=model_override)
+            finally:
+                if gw_tag:   # 改写表必清——残留会把下一场 run 偷偷挂到旧模型上
+                    from memhall.gateway import set_model_override
+                    set_model_override(gw_tag, None)
             # R57：SshChannel 等底层资源统一收口——此前全链路无人调 close，靠 GC
             # getattr 防御 duck-typed 适配器（契约建议继承基类，不强求）
             close = getattr(adapter, "close", None)
@@ -396,7 +418,8 @@ def pair_stores(cases: list[MemoryCase],
 def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
                     case_source: str, cases: list[MemoryCase], failed: list[str],
                     usage_before, adapter: AgentAdapter,
-                    clock_restore_failed: list[str] | None = None) -> None:
+                    clock_restore_failed: list[str] | None = None,
+                    model_override: str | None = None) -> None:
     manifest = {
         "run_id": run_id,
         "tool": "memhall",
@@ -413,6 +436,10 @@ def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
     }
     if failed:
         manifest["failed_cases"] = failed
+    # 复现元数据：本轮实际挂在哪个模型（网关/直连两模式 + 逐 run 改写口径）。
+    # 此前只在 CLI cmd_run 补写——UI 发车的 run 一直缺这格（compare 对账盲区）
+    from memhall.gateway import model_backend
+    manifest["model_backend"] = model_backend(model_override)
     if clock_restore_failed:
         # R33：时钟残留警报——这些 case 之后系统时间可能仍 +N 天，
         # 后续 run 的时间语义（temporal 族）需对照本字段核查
@@ -431,8 +458,9 @@ def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
     if version:
         manifest["agent_version"] = version
     # LLM 运行时口径自动识别（用户要求：结果必须带模型 id/思考强度）——
-    # 从网关账单按本 run 时间窗归并被测 tag 的 asked_model 与 reasoning 参数；
-    # 直连模式/网关没跑 → None 不落键，展示层写"未记账"
+    # 从网关账单按本 run 时间窗归并被测 tag 的实际模型（网关改写后生效值）
+    # 与 reasoning 参数，配置漂移单列 asked_models；直连模式/网关没跑 →
+    # None 不落键，展示层写"未记账"
     try:
         from memhall.gateway import summarize_reasoning
         # started_at 是 run_id 紧凑格式（YYYYMMDD-HHMMSS，宿主本地钟），

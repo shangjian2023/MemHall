@@ -6,6 +6,19 @@
 
 ## [未发布]
 
+- **「模型（网关改写）」下拉——(agent, model) 二元组对照进 UI**：跑页选
+  车道后可选模型（菜单由网关透传上游 /v1/models，mock/claude 直连车道
+  自动隐藏），选中即逐 run 改写网关模型。机制：改写表
+  `~/.memhall/gateway-model.json` 按 memhall-<agent> tag 键控（入站 dummy
+  Bearer 本就唯一标识智能体，是唯一能跨进程、穿透智能体自带 HTTP 客户端
+  的信道），runner 发车写、收尾必清；CLI 同款 `memhall run --model <id>`。
+  账单记实际生效模型（改写值），manifest.model_backend 增 model_override
+  口径键、llm_runtime.models 改记生效模型（智能体侧漂移单列
+  asked_models——"怎么接的 deepseek"这类困惑从 manifest 直接可答）。
+  model_backend 落盘从 CLI 收进 _write_manifest：UI 发车的 run 此前一直
+  缺这格（compare 对账盲区）
+- **网关 /v1/models 上游菜单透传**：原只回静态单模型；现转发上游菜单
+  （默认模型保证在列，失败回落静态），鉴权对齐 /usage（回环免 token）
 - **openKylin 原生化：LocalChannel 本机执行通道（消灭回环 SSH）**：
   remote.py 增 LocalChannel——与 SshChannel 接口逐方法对齐（run/sudo/
   run_json/close，POSIX 语义不变，~/.local/bin 前置进 PATH），default_channel()

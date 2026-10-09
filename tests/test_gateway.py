@@ -188,6 +188,10 @@ def test_model_backend_modes(monkeypatch):
     assert model_backend() == {"mode": "gateway",
                                "url": "http://127.0.0.1:8311/v1",
                                "model": "qwen3.7-plus"}
+    # 逐 run 改写口径（二元组对照）：单列 model_override，compare 侧可对账
+    assert model_backend("deepseek-v4-pro") == {
+        "mode": "gateway", "url": "http://127.0.0.1:8311/v1",
+        "model": "qwen3.7-plus", "model_override": "deepseek-v4-pro"}
 
 
 def test_hermes_local_gateway_mode(tmp_path, monkeypatch):
@@ -575,3 +579,127 @@ def test_preflight_direct_lane_poisoned_hosts(monkeypatch):
     monkeypatch.setenv("AGENT_LLM_BASE_URL", "http://127.0.0.1:1/v1")
     err = _upstream_preflight("hermes")
     assert err is not None and "直连上游不可达" in err and "/etc/hosts" in err
+
+
+def test_gateway_model_override(tmp_path, monkeypatch):
+    """逐 run 模型改写（(agent, model) 二元组对照的网关侧落点）：按
+    memhall-<agent> tag 键控——改写的 tag 走 override、别的 tag 照走默认、
+    收尾清掉恢复默认；账单记实际生效模型（不是智能体侧漂移值）。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("HOME", str(home))
+    from memhall.gateway import model_overrides, set_model_override
+    seen: list[str] = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.read())["model"])
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1,
+                      "total_tokens": 2}})
+
+    async def go():
+        set_model_override("memhall-hermes", "deepseek-v4-pro")
+        async with _mk_app(tmp_path, upstream) as c:
+            h = {"Authorization": "Bearer memhall-hermes"}
+            r1 = await c.post("/v1/chat/completions",
+                              json={"model": "drift-m", "messages": []},
+                              headers={"Authorization": "Bearer memhall-hermes"})
+            r2 = await c.post("/v1/chat/completions",
+                              json={"model": "drift-m", "messages": []},
+                              headers={"Authorization": "Bearer memhall-kylinbot"})
+            set_model_override("memhall-hermes", None)   # 收尾清（runner 同款）
+            r3 = await c.post("/v1/chat/completions",
+                              json={"model": "drift-m", "messages": []}, headers=h)
+            return r1.status_code, r2.status_code, r3.status_code
+
+    assert asyncio.run(go()) == (200, 200, 200)
+    assert seen == ["deepseek-v4-pro", "unified-m", "unified-m"]
+    assert model_overrides() == {}
+    recs = [json.loads(ln) for ln in
+            (tmp_path / "usage.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [r["model"] for r in recs] == ["deepseek-v4-pro", "unified-m",
+                                          "unified-m"]
+    assert all(r["asked_model"] == "drift-m" for r in recs)  # 漂移单列可对账
+
+
+def test_gateway_models_passthrough(tmp_path):
+    """GET /v1/models 透传上游菜单（模型下拉数据源）；默认模型不在菜单时
+    保证在列；上游腿失败回落静态单模型（菜单是锦上添花，不挡车道）。"""
+    menu = {"object": "list", "data": [
+        {"id": "qwen3.7-plus", "object": "model"},
+        {"id": "kimi-k2.7-code", "object": "model"},
+        {"id": "deepseek-v4-pro", "object": "model"}]}
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == f"Bearer {REAL_KEY}"
+        return httpx.Response(200, json=menu)
+
+    def upstream_dead(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "x"})
+
+    async def go():
+        async with _mk_app(tmp_path, upstream) as c:
+            ok = await c.get("/v1/models")
+        async with _mk_app(tmp_path, upstream_dead) as c:
+            fb = await c.get("/v1/models")
+        return ok.json(), fb.json()
+
+    ok, fb = asyncio.run(go())
+    ids = [m["id"] for m in ok["data"]]
+    assert ids[0] == "unified-m"        # 默认模型补进菜单头
+    assert set(ids) == {"unified-m", "qwen3.7-plus", "kimi-k2.7-code",
+                        "deepseek-v4-pro"}
+    assert [m["id"] for m in fb["data"]] == ["unified-m"]   # 失败回落
+
+
+def test_run_suite_model_override_lifecycle(tmp_path, monkeypatch):
+    """run_suite(model_override=...)：网关模式发车写改写表（memhall-<agent>
+    tag）、收尾必清（残留会把下一场偷偷挂旧模型）、manifest 记口径；
+    直连模式不落表（写了也没人读，还污染共享家目录）。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("HOME", str(home))
+    from memhall.gateway import model_overrides
+    from memhall.runner.orchestrator import run_suite
+    from memhall.schema.models_case import MemoryCase
+
+    case = MemoryCase(
+        case_id="t-001", schema_version="0.1", capability="persist",
+        question_type="session_recall", content_type="path", difficulty=1,
+        meta={"author": "t", "created": "2026-10-03", "source": "seed"},
+        phases=[], probes=[])
+
+    class _Noop:
+        name = "hermes"
+
+    for k in ("GATEWAY_URL", "GATEWAY_VM_URL", "GATEWAY_AGENT_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    rid, _ = run_suite(_Noop(), [case], tmp_path, "hermes",
+                       model_override="m2")
+    m = json.loads((tmp_path / rid / "manifest.json")
+                   .read_text(encoding="utf-8"))
+    assert model_overrides() == {}                    # 直连：全程不落表
+    assert "model_override" not in m["model_backend"]
+    assert m["model_backend"]["mode"] == "unknown"    # （无任何车道 env）
+
+    monkeypatch.setenv("GATEWAY_URL", "http://127.0.0.1:8311/v1")
+    calls: list[tuple[str, str | None]] = []
+    import memhall.gateway as gw_mod
+    orig = gw_mod.set_model_override
+
+    def spy(tag: str, model: str | None) -> None:
+        calls.append((tag, model))
+        orig(tag, model)
+
+    monkeypatch.setattr(gw_mod, "set_model_override", spy)
+    rid2, _ = run_suite(_Noop(), [case], tmp_path, "hermes",
+                        model_override="deepseek-v4-pro")
+    assert calls == [("memhall-hermes", "deepseek-v4-pro"),
+                     ("memhall-hermes", None)]        # 写 → 收尾清
+    assert model_overrides() == {}
+    m2 = json.loads((tmp_path / rid2 / "manifest.json")
+                    .read_text(encoding="utf-8"))
+    assert m2["model_backend"]["model_override"] == "deepseek-v4-pro"

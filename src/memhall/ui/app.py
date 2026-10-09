@@ -281,6 +281,29 @@ def create_app() -> FastAPI:
                             "（直连/mock 模式无记账）"}
         return {"available": True, **est}
 
+    @app.get("/api/models")
+    def models() -> dict:
+        """跑页「模型（网关改写）」下拉数据源：网关模式拉网关 /models（网关
+        转发上游菜单），默认模型来自 GATEWAY_MODEL；直连/mock 模式
+        available=False，前端隐藏下拉（无从改写就不给选）。"""
+        import httpx
+
+        from memhall.gateway import gateway_settings
+        gw = gateway_settings("ui-menu")
+        if not gw:
+            return {"available": False, "reason": "direct"}
+        try:
+            r = httpx.get(f"{gw['base_url']}/models", timeout=5,
+                          headers={"Authorization": f"Bearer {gw['key']}"})
+            ids = ([str(m.get("id")) for m in r.json().get("data", [])
+                    if isinstance(m, dict) and m.get("id")]
+                   if r.status_code == 200 else [])
+        except Exception:
+            return {"available": False, "reason": "网关不可达"}
+        if not ids:
+            ids = [gw["model"]]
+        return {"available": True, "default": gw["model"], "models": ids}
+
     @app.post("/api/start")
     async def start(body: dict) -> dict:
         if session.active:
@@ -288,6 +311,13 @@ def create_app() -> FastAPI:
         adapter_name = body.get("adapter", "mock")
         case_dir = body.get("cases", "cases/full")
         judge_mode = body.get("judge", "scripted")
+        model_override = (body.get("model") or "").strip() or None
+        if model_override:
+            from memhall.gateway import gateway_settings
+            if adapter_name in ("mock", "claude-local") or \
+                    not gateway_settings(adapter_name):
+                raise HTTPException(400, "该车道不经统一网关，无从改写模型"
+                                          "（mock 无上游；claude 走豁免直连）")
         out_root = _runs_root()
 
         # 上游预检（与 CLI cmd_run 同一道闸，2026-10-09 实锤缺口：预检只接在
@@ -321,7 +351,7 @@ def create_app() -> FastAPI:
                     return
                 emit({"type": "start", "n_cases": len(cases),
                       "adapter": adapter_name, "cases": case_dir,
-                      "judge": judge_mode})
+                      "judge": judge_mode, "model": model_override})
 
                 def on_case_done(cid: str, i: int, n: int) -> None:
                     if session.stop:
@@ -333,7 +363,8 @@ def create_app() -> FastAPI:
                 run_id, stores = run_suite(adapter, cases, out_root,
                                            adapter_name, case_source=case_dir,
                                            on_case_done=on_case_done,
-                                           on_event=emit)
+                                           on_event=emit,
+                                           model_override=model_override)
                 emit({"type": "phase", "msg": "评测完成，开始判卷…"})
                 verdicts = []
                 from memhall.runner.orchestrator import pair_stores

@@ -46,6 +46,46 @@ def default_log_path() -> Path:
     return Path.home() / ".memhall" / "gateway-usage.jsonl"
 
 
+# ---------- 按智能体的模型改写（(agent, model) 二元组对照的落点） ----------
+# 智能体的 HTTP 客户端在我们掌控之外（hermes 自己发请求），逐 run 的模型
+# 选择只能借既有信道跨进程传递：入站 dummy Bearer 已经唯一标识智能体身份
+# （记账归因同款），改写表按 tag 键控、网关逐请求读取——runner 发车时写、
+# 收尾清（run.lock 保证同一时刻只有一场评测在跑，不存在互相覆盖）。
+
+def _override_path() -> Path:
+    return Path.home() / ".memhall" / "gateway-model.json"
+
+
+def set_model_override(tag: str, model: str | None) -> None:
+    """写/清某智能体的网关模型改写（tag=memhall-<agent>；model=None 删键）。"""
+    p = _override_path()
+    data: dict = {}
+    try:
+        loaded = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            data = loaded
+    except (OSError, ValueError):
+        pass
+    if model:
+        data[tag] = model
+    else:
+        data.pop(tag, None)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:
+        log.warning("模型改写写盘失败: %s", e)
+
+
+def model_overrides() -> dict[str, str]:
+    """当前生效的改写表（文件缺失/损坏 → 空，转发照走 GATEWAY_MODEL）。"""
+    try:
+        loaded = json.loads(_override_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _agent_tag(bearer: str) -> str:
     """入站 dummy Bearer → 智能体身份；其余一律 unknown（防真凭据落日志）。"""
     return bearer if bearer.startswith("memhall-") else "unknown"
@@ -140,6 +180,7 @@ def summarize_reasoning(start_iso: str, end_iso: str, agent_tag: str,
     if not path.is_file() or not start_iso or not end_iso:
         return None
     models: set[str] = set()
+    asked: set[str] = set()   # 智能体侧配置漂移（被网关改写前的请求 model 字段）
     reasoning: set[str] = set()
     n = 0
     try:
@@ -157,15 +198,20 @@ def summarize_reasoning(start_iso: str, end_iso: str, agent_tag: str,
         if rec.get("agent") != agent_tag or rec.get("status") != 200:
             continue
         n += 1
-        if rec.get("asked_model"):
-            models.add(str(rec["asked_model"]))
+        if rec.get("model"):
+            models.add(str(rec["model"]))
+        if rec.get("asked_model") and rec.get("asked_model") != rec.get("model"):
+            asked.add(str(rec["asked_model"]))
         if rec.get("reasoning"):
             reasoning.add(str(rec["reasoning"]))
     if not n:
         return None
-    return {"agent_tag": agent_tag, "requests": n,
-            "models": sorted(models),
-            "reasoning": sorted(reasoning) or ["未设置（各智能体默认）"]}
+    out = {"agent_tag": agent_tag, "requests": n,
+           "models": sorted(models),
+           "reasoning": sorted(reasoning) or ["未设置（各智能体默认）"]}
+    if asked:
+        out["asked_models"] = sorted(asked)
+    return out
 
 
 def create_gateway_app(upstream: str, api_key: str, model: str,
@@ -236,9 +282,10 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             pace_state["t"] = max(pace_state["t"], time.monotonic() + delay)
 
     def _record(tag: str, asked: str, usage: dict | None, ms: float, status: int,
-                retries: int = 0, reasoning: str | None = None) -> None:
+                retries: int = 0, reasoning: str | None = None,
+                used: str | None = None) -> None:
         rec = {"ts": datetime.now(UTC).isoformat(),
-               "agent": tag, "model": model, "asked_model": asked,
+               "agent": tag, "model": used or model, "asked_model": asked,
                "status": status, "ms": round(ms)}
         if retries:
             rec["retries"] = retries   # 上游瞬态被退避重试吸收的次数（可观测）
@@ -278,7 +325,10 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
                                            "type": "gateway_bad_request"}}, status_code=400)
         asked = str(payload.get("model", ""))
         reasoning = _reasoning_desc(payload)
-        payload["model"] = model  # 核心保证：模型一律网关说了算
+        # 核心保证：模型一律网关说了算——默认 GATEWAY_MODEL，按 tag 的逐 run
+        # 改写（二元组对照）优先；记账记实际生效的模型，账单永远说真话
+        eff_model = str(model_overrides().get(tag) or model)
+        payload["model"] = eff_model
         stream = bool(payload.get("stream"))
         if stream:
             # 注入 include_usage，让上游在流尾补 usage 块（记账数据源）
@@ -331,7 +381,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             break
         if up is None:
             _record(tag, asked, None, (time.monotonic() - t0) * 1000, 599,
-                    retries=n_retry, reasoning=reasoning)
+                    retries=n_retry, reasoning=reasoning, used=eff_model)
             return JSONResponse({"error": {"message": f"上游不可达: {last_err}",
                                            "type": "gateway_upstream_unreachable"}},
                                 status_code=502)
@@ -339,7 +389,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             text = (await up.aread()).decode("utf-8", "replace")[:500]
             await up.aclose()
             _record(tag, asked, None, (time.monotonic() - t0) * 1000, up.status_code,
-                    retries=n_retry, reasoning=reasoning)
+                    retries=n_retry, reasoning=reasoning, used=eff_model)
             log.warning("网关转发失败 %d: %s", up.status_code, text[:200])
             return JSONResponse({"error": {
                 "message": f"上游 {up.status_code}: {text}",
@@ -349,7 +399,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             data = up.json()
             await up.aclose()
             _record(tag, asked, data.get("usage"), (time.monotonic() - t0) * 1000, 200,
-                    retries=n_retry, reasoning=reasoning)
+                    retries=n_retry, reasoning=reasoning, used=eff_model)
             return JSONResponse(data)
 
         async def relay():
@@ -361,7 +411,7 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
             finally:
                 usage = _usage_from_sse(bytes(buf))
                 _record(tag, asked, usage, (time.monotonic() - t0) * 1000, 200,
-                        retries=n_retry, reasoning=reasoning)
+                        retries=n_retry, reasoning=reasoning, used=eff_model)
                 with contextlib.suppress(Exception):
                     await up.aclose()
 
@@ -382,7 +432,28 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
     for path in ("/v1/chat/completions", "/chat/completions"):
         app.post(path)(_proxy)
 
-    async def _models() -> JSONResponse:
+    async def _models(request: Request) -> JSONResponse:
+        """上游模型菜单透传（跑页「模型（网关改写）」下拉的数据源）。
+        上游腿失败/返回不合法 → 回落只列默认模型（菜单是锦上添花，不给选
+        也不能挡转发车道）。鉴权对齐 /usage：回环免 token、外部须合法凭据
+        ——菜单不算机密，但 0.0.0.0 网关没必要向 LAN 广播上游家底。"""
+        if not _loopback(request) and not _req_inbound_ok(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        try:
+            resp = await client.get("/models", headers={
+                "Authorization": f"Bearer {api_key}"})
+            data = resp.json().get("data")
+            if resp.status_code == 200 and isinstance(data, list):
+                ids = [str(m.get("id")) for m in data
+                       if isinstance(m, dict) and m.get("id")]
+                if model not in ids:
+                    ids.insert(0, model)   # 默认模型保证在菜单里
+                return JSONResponse({"object": "list",
+                                     "data": [{"id": i, "object": "model",
+                                               "owned_by": "memhall-gateway"}
+                                              for i in ids]})
+        except Exception:  # noqa: BLE001 菜单腿任何失败都回落静态单模型
+            pass
         return JSONResponse({"object": "list",
                              "data": [{"id": model, "object": "model",
                                        "owned_by": "memhall-gateway"}]})
@@ -493,15 +564,20 @@ def gateway_settings(agent: str, vm_lane: bool = False) -> dict | None:
     }
 
 
-def model_backend() -> dict:
+def model_backend(override: str | None = None) -> dict:
     """manifest 复现元数据：本轮评测各适配器实际挂在哪个模型上。
 
-    统一模式记网关（网关改写保证 manifest 与流量一致）；直连模式记录
-    AGENT_LLM_*/CLAUDE_LLM_* 两条已知车道，供 compare 侧一致性对账。"""
+    统一模式记网关（网关改写保证 manifest 与流量一致）；override 记逐 run
+    模型改写（二元组对照口径，compare 侧据此把"不同模型"与"不同智能体"
+    的归因分开）；直连模式记录 AGENT_LLM_*/CLAUDE_LLM_* 两条已知车道，
+    供 compare 侧一致性对账。"""
     gw = os.environ.get("GATEWAY_URL", "").strip()
     if gw:
-        return {"mode": "gateway", "url": gw,
-                "model": os.environ.get("GATEWAY_MODEL", "")}
+        out = {"mode": "gateway", "url": gw,
+               "model": os.environ.get("GATEWAY_MODEL", "")}
+        if override:
+            out["model_override"] = override
+        return out
     lanes = {}
     for lane, prefix in (("openai", "AGENT_LLM"), ("anthropic", "CLAUDE_LLM")):
         url = os.environ.get(f"{prefix}_BASE_URL", "").strip()

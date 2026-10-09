@@ -130,3 +130,28 @@ def test_pyinstaller_specs_collect_lazy_adapters():
         text = (REPO / spec).read_text(encoding="utf-8")
         assert 'collect_submodules("memhall.adapters")' in text, spec
         assert '"memhall.vm"' in text, spec
+
+
+def test_ui_models_endpoint_and_model_lane_guard(tmp_path, monkeypatch):
+    """「模型（网关改写）」下拉数据源 + 发车道闸：直连模式 available=False
+    （前端藏下拉）；非网关车道带 model 发车 400 拒发、不留残骸；网关模式
+    正常拉菜单（httpx 替身，不起真网关）。"""
+    import httpx
+    app = create_app()
+    monkeypatch.setattr(uiapp, "_runs_root", lambda: tmp_path)
+    for k in ("GATEWAY_URL", "GATEWAY_VM_URL"):
+        monkeypatch.delenv(k, raising=False)
+    c = TestClient(app)
+    assert c.get("/api/models").json()["available"] is False
+    r = c.post("/api/start",
+               json={"adapter": "mock", "model": "deepseek-v4-pro"})
+    assert r.status_code == 400
+    assert list(tmp_path.glob("**/*")) == []
+
+    monkeypatch.setenv("GATEWAY_URL", "http://127.0.0.1:8311/v1")
+    monkeypatch.setenv("GATEWAY_MODEL", "qwen3.7-plus")
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: httpx.Response(
+        200, json={"data": [{"id": "qwen3.7-plus"}, {"id": "kimi-k2.7-code"}]}))
+    d = c.get("/api/models").json()
+    assert d["available"] and d["default"] == "qwen3.7-plus"
+    assert d["models"] == ["qwen3.7-plus", "kimi-k2.7-code"]

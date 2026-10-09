@@ -146,7 +146,10 @@ def _upstream_preflight(adapter: str) -> str | None:
         if not url:
             continue
         p = urlparse(url)
-        host, port = p.hostname, p.port or (443 if p.scheme == "https" else 80)
+        host = p.hostname or ""
+        port = p.port or (443 if p.scheme == "https" else 80)
+        if not host:
+            return f"{desc}地址解析不出主机（{var}）"
         if (host, port) in seen:      # GATEWAY_URL 与 VM_URL 同址只探一次
             continue
         seen.add((host, port))
@@ -174,6 +177,19 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(str(e), file=sys.stderr)
         return 1
 
+    # 逐 run 模型改写（二元组对照）：只对网关车道有意义——mock 无上游、
+    # claude-local 是豁免直连（anthropic 面进不了 openai 网关）
+    model_override = (args.model or "").strip() or None
+    if model_override:
+        from memhall.gateway import gateway_settings
+        if args.adapter in ("mock", "claude-local") or \
+                not gateway_settings(args.adapter):
+            print(f"--model 只对网关车道有效（{args.adapter} 不经统一网关，"
+                  "无从改写）", file=sys.stderr)
+            return 2
+        print(f"模型改写: {model_override}（网关强制，智能体侧配置无效）",
+              flush=True)
+
     up_err = _upstream_preflight(args.adapter)
     if up_err is not None:
         print(up_err, file=sys.stderr)
@@ -191,11 +207,10 @@ def cmd_run(args: argparse.Namespace) -> int:
               f"（按 {est['basis_runs']} 轮历史均摊，判卷流量另计）", flush=True)
 
     run_id, stores = run_suite(adapter, cases, Path(args.out), args.adapter,
-                               case_source=args.cases)
+                               case_source=args.cases,
+                               model_override=model_override)
     run_dir = Path(args.out) / run_id
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    from memhall.gateway import model_backend
-    manifest["model_backend"] = model_backend()
 
     verdicts = []
     for case, store in pair_stores(cases, stores):
@@ -594,6 +609,9 @@ def main() -> None:
     p_run.add_argument("-a", "--adapter", default="mock", help="适配器名（默认 mock）")
     p_run.add_argument("-c", "--cases", default="cases/full", help="用例目录")
     p_run.add_argument("-o", "--out", default="runs", help="输出根目录")
+    p_run.add_argument("--model", default="",
+                       help="网关车道逐 run 模型改写（(agent, model) 二元组对照；"
+                            "仅统一网关模式有效）")
     p_run.add_argument("--judge", choices=["scripted", "dual"], default="scripted",
                        help="判卷方式（dual=LLM 判卷[单判或双判，按 JUDGE_B 是否配置]）")
     p_run.set_defaults(func=cmd_run)

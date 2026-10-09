@@ -182,6 +182,7 @@ class LocalChannel:
 
     def _exec(self, cmd: str, timeout: int,
               stdin_data: str | None) -> tuple[int, str, str]:
+        assert self.bash, "构造时已校验 bash 存在"
         t0 = time.monotonic()
         try:
             r = subprocess.run([self.bash, "-c", cmd], input=stdin_data,
