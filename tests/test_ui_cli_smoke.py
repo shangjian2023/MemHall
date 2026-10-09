@@ -34,6 +34,19 @@ def test_ui_app_core_endpoints(tmp_path, monkeypatch):
     assert r3.status_code == 200 and "麟阁" in r3.text
 
 
+def test_ui_start_blocked_when_gateway_down(tmp_path, monkeypatch):
+    """UI 发车必须过网关预检（10-09 实锤：_gateway_preflight 只接在 CLI，
+    VM 上从 UI 发车直接冲进死网关，2 用例纯超时假忙才被发现）。"""
+    app = create_app()
+    monkeypatch.setattr(uiapp, "_runs_root", lambda: tmp_path)
+    monkeypatch.setattr("memhall.cli._gateway_preflight",
+                        lambda a: "网关不可达 192.168.61.1:8311 —— 测试桩")
+    c = TestClient(app)
+    r = c.post("/api/start", json={"adapter": "hermes"})
+    assert r.status_code == 503 and "网关不可达" in r.json()["detail"]
+    assert list(tmp_path.glob("**/*")) == []  # 未起跑、不留残骸
+
+
 def test_cli_subcommand_help_smoke():
     """每个子命令 --help 必须退出 0（argparse 树完整、入口未坏）。"""
     for cmd in SUBCOMMANDS:
