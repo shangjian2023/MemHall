@@ -101,6 +101,7 @@ def test_openclaw_dump_missing_db_returns_empty(tmp_path):
     2026-10-11 全量跑实录：R31 把导出失败改 fail fast 后，openclaw 两场
     45 case 全灭于 verify_reset（sqlite ro 打不开尚不存在的 DB）。"""
     import json
+    import os
     import subprocess
     import sys
 
@@ -108,13 +109,15 @@ def test_openclaw_dump_missing_db_returns_empty(tmp_path):
 
     src = oc._DUMP_SRC.replace(oc.AGENT_DB, (tmp_path / "no-such.sqlite").as_posix())
     r = subprocess.run([sys.executable, "-c", src], capture_output=True,
-                       text=True, timeout=10)
+                       text=True, encoding="utf-8", timeout=10,
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout) == []
 
 
 def test_openclaw_dump_reads_real_db(tmp_path):
     import json
+    import os
     import sqlite3
     import subprocess
     import sys
@@ -132,7 +135,8 @@ def test_openclaw_dump_reads_real_db(tmp_path):
 
     src = oc._DUMP_SRC.replace(oc.AGENT_DB, db.as_posix())
     r = subprocess.run([sys.executable, "-c", src], capture_output=True,
-                       text=True, timeout=10)
+                       text=True, encoding="utf-8", timeout=10,
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     assert r.returncode == 0, r.stderr
     rows = json.loads(r.stdout)
     assert rows == [["mem/1.md", "session", 1, "壁纸在 ~/图片"]]
