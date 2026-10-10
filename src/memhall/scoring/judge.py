@@ -324,18 +324,28 @@ class OpenAICompatJudge:
         budget = float(os.environ.get("JUDGE_TOTAL_BUDGET", "300"))
         t0 = time.monotonic()
         last_err: Exception | None = None
-        if self._client is None:
-            self._client = httpx.Client(
-                base_url=self.base_url.rstrip("/"),
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=httpx.Timeout(connect=15, read=120, write=15, pool=15),
-            )
         for attempt in range(6):
+            if self._client is None:
+                # MEMHALL_TLS_MAX 钉版本（VM NAT 坏窗口绕行）——判卷直连
+                # 上游这段与网关转发段共用开关
+                from memhall.gateway import tls_verify
+                verify = tls_verify()
+                kw: dict = ({"verify": verify} if verify is not None else {})
+                self._client = httpx.Client(
+                    base_url=self.base_url.rstrip("/"),
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    timeout=httpx.Timeout(connect=15, read=120, write=15, pool=15),
+                    **kw,
+                )
             try:
                 r = self._client.post("/chat/completions", json=payload)
                 if r.status_code != 200:
-                    # 429/5xx 退避重试；弃连保下轮干净握手
+                    # 429/5xx 退避重试；弃连保下轮干净握手。
+                    # close 后必须置 None 且懒建在循环内：httpx client
+                    # 关闭不自知，留着会让重试拿尸体（或 None）连环
+                    # "Cannot send a request, as the client has been closed"
                     self._client.close()
+                    self._client = None
                     raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]!r}")
                 return r.json()["choices"][0]["message"]["content"]
             except Exception as e:   # noqa: BLE001 TLS 断流/429/5xx 一律退避重试

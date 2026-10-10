@@ -86,6 +86,39 @@ def test_judge_post_retries_then_succeeds(monkeypatch):
     assert fake.n_posts == 3
 
 
+def test_judge_post_rebuilds_client_after_502(monkeypatch):
+    """非 200 弃连后必须重建 client——close 不置 None 会让后续判卷全灭于
+    "Cannot send a request, as the client has been closed"（2026-10-10
+    VM 全量跑实测：一次 429 之后 87 探测点连环 6 连败）。"""
+    j = jm.OpenAICompatJudge("t", "https://gw.example/v1", "m", "k")
+    monkeypatch.setattr(jm, "_MIN_INTERVAL", 0.0)
+    monkeypatch.setenv("JUDGE_TOTAL_BUDGET", "10")
+
+    built: list[_FakeClient] = []
+
+    class _CloseAware(_FakeClient):
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    def factory(**kw):
+        c = _CloseAware(lambda n: _Resp())
+        built.append(c)
+        return c
+
+    monkeypatch.setattr(httpx, "Client", factory)
+
+    first = _CloseAware(lambda n: _Resp(502))  # 预填只会 502 的旧连接
+    built.append(first)
+    j._client = first
+    assert j._post({}) == "ok"                 # 弃连→重建→重试一把过
+
+    assert first.closed                         # 旧 client 确被弃
+    assert len(built) == 2                      # 重建了一个新 client
+    assert j._client is built[1] and built[1].n_posts == 1
+
+
 # ---------- T08 顺带修复的并列护栏（ScriptedJudge） ----------
 
 def test_scripted_judge_defers_on_juxtaposition():

@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import random
+import ssl
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -230,6 +231,13 @@ def create_gateway_app(upstream: str, api_key: str, model: str,
     def _new_client() -> httpx.AsyncClient:
         if client_factory is not None:
             return client_factory()
+        # MEMHALL_TLS_MAX 钉版本（VM NAT 坏窗口绕行，见 tls_verify docstring）
+        verify = tls_verify()
+        if verify is not None:
+            return httpx.AsyncClient(
+                base_url=upstream.rstrip("/"),
+                timeout=httpx.Timeout(connect=15, read=300, write=30, pool=15),
+                verify=verify)
         return httpx.AsyncClient(
             base_url=upstream.rstrip("/"),
             timeout=httpx.Timeout(connect=15, read=300, write=30, pool=15))
@@ -544,6 +552,27 @@ def aggregate_usage(log_path: Path) -> dict:
 
 
 # ---------- 客户端侧：适配器读统一配置 ----------
+
+def tls_verify() -> ssl.SSLContext | None:
+    """MEMHALL_TLS_MAX（"1.2"/"1.3"）→ 限上限的 SSLContext（httpx verify= 用）。
+
+    动机：VMware NAT 下 TLS1.3 会话票据/记录层间歇 bad record mac——
+    2026-10-10 全量跑实测 VM 直连上游 3 发 1 中掐断，hermes 三连败把
+    大半场 run 打成 INVALID_RUN；钉 1.2 走十年老路径绕开中间盒怪癖。
+    默认不设 = 不限制（返回 None，调用方不传 verify）。
+    网关转发与判卷直连两段 TLS 共用本开关（统一网关模式下仅此两段
+    出 VM：被测智能体→网关是本机明文）。"""
+    v = os.environ.get("MEMHALL_TLS_MAX", "").strip()
+    if not v:
+        return None
+    ver = {"1.2": ssl.TLSVersion.TLSv1_2,
+           "1.3": ssl.TLSVersion.TLSv1_3}.get(v)
+    if ver is None:
+        raise ValueError(f"MEMHALL_TLS_MAX 不支持: {v!r}（可选 1.2/1.3）")
+    ctx = ssl.create_default_context()
+    ctx.maximum_version = ver
+    return ctx
+
 
 def gateway_settings(agent: str, vm_lane: bool = False) -> dict | None:
     """GATEWAY_URL 已设 → 统一模型模式：返回适配器应使用的 {base_url, key, model}。
