@@ -14,6 +14,8 @@
 | 冒烟集 | **6 道**（cases/quick/），六能力各 1 道代表题，适配器接入验收口径（取自合并后 full，与 full 一致） |
 | 防背题池（B 本地备用） | 72 道（cases/pool/，seed=42 可复现，B 的 generators/generate_cases.py），与 gen 功能重叠，未并入 PR，可作防背题/扩量素材 |
 
+运行入口默认读取 `cases/` 下的 `full`、`gen` 和 `chains`，并按 `case_id` 去重；`quick` 是其中 6 道的冒烟副本，重复内容不会被重复计入。指定 `--seed N --count K` 时，轮换器按能力和难度平衡抽取 K 道，并把 `case_ids`、筛选条件和 seed 写入本轮 `manifest.json`。同一输出目录的后续运行会读取历史 manifest，优先选择从未测过的题，题库全部覆盖后从最久未测的题开始循环。
+
 ## 2. 覆盖矩阵（cases/full/ 实测，lint 自动统计，43 道）
 
 ```

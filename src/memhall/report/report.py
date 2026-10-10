@@ -13,6 +13,7 @@ VERDICT_ZH = {
     "correct": "✅ 正确", "omission": "遗漏", "confusion": "混淆",
     "fabrication": "记错(编造)", "over_persist": "错误持久化",
     "wrong_reuse": "错误复用", "invalid_run": "⚠️ 运行无效",
+    "needs_review": "待人工复核",
 }
 
 
@@ -27,7 +28,9 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
                  f"{len(manifest.get('cases', []))}　探测点：{metrics['n_probes_total']}")
     lines.append(f"- 总体正确率：**{metrics['overall_score']:.1%}**"
                  f"（有效 {metrics['n_valid']}/{metrics['n_probes_total']}，"
-                 f"规则判卷率 {metrics['rule_scoring_rate']:.0%}）")
+                 f"规则判卷率 {metrics['rule_scoring_rate']:.0%}，"
+                 f"人工复核 {metrics['n_needs_review']} 项 / {metrics['manual_review_rate']:.1%}，"
+                 f"运行无效 {metrics['n_invalid_run']} 项）")
     lines.append("")
     lines.append("![六维雷达图](radar.png)")
     lines.append("")
@@ -36,7 +39,7 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
     lines.append("| 能力 | 得分 | 正确/有效 | 错误分解 |")
     lines.append("|---|---|---|---|")
     for cap in CAP_ORDER:
-        d = metrics["capability_detail"][cap]
+        d = metrics["capability_detail"][cap.value]
         errs = "、".join(f"{VERDICT_ZH.get(k, k)}×{n}"
                          for k, n in d["error_breakdown"].items()) or "—"
         lines.append(f"| {CAP_LABELS_ZH[cap]} | {d['score']:.0%} | "

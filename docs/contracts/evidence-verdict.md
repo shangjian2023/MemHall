@@ -91,7 +91,7 @@
   "run_id": "r-20260927-kylinbot-8f3a",
   "verdict": "correct",                // 枚举见 §3.1
   "confidence": 1.0,                   // 规则判定恒 1.0；judge 判定为 judge 自报 0–1
-  "decided_by": "rule",                // rule | judge_a | judge_b | arbitration | human_review
+  "decided_by": "rule",                // rule | scripted | judge_a | judge_b | arbitration | human_review
   "evidence_refs": ["ev-000120", "ev-000123"],   // 判定依据的证据 ID 列表——报告下钻入口
   "explanation": "回复精确匹配新路径 ~/dev/src",   // 人话解释（rule：模板生成；judge：原判定理由）
   "judge_meta": {                      // decided_by ∈ judge/arbitration 时必填
@@ -103,7 +103,7 @@
 }
 ```
 
-### 3.1 verdict 枚举（六态 + 流程态，对齐 design.md §6.2 与评审细则）
+### 3.1 verdict 枚举（六态 + 两种流程态，对齐 design.md §6.2 与评审细则）
 
 | 值 | 含义 | 典型触发 |
 |---|---|---|
@@ -114,6 +114,7 @@
 | `over_persist` | 不该记的记下了 | canary 串出现在记忆 dump 里 |
 | `wrong_reuse` | 用错了 | 任务链张冠李戴地复用历史信息 |
 | `invalid_run` | 运行无效（不计分） | 超时/崩溃/探测未完成——单列统计，不进能力分 |
+| `needs_review` | 待人工复核（不计分） | 证据存在但规则、脚本和 judge 都无法可靠判定；单列人工复核率 |
 
 ### 3.2 判定优先级（谁说了算，C 实现）
 
@@ -125,6 +126,10 @@ judge 判定（rubric + anchors + verdict_map，双判）
   ├─ A、B 不一致 → 规则仲裁（能用规则裁的用规则，decided_by=arbitration）
   │                 └─ 裁不了 → human_review 队列（人工复核率指标的分母来源，目标 <5%）
 ```
+
+离线脚本判卷使用 `decided_by=scripted`；脚本判卷无法可靠给出类别时使用
+`verdict=needs_review`、`decided_by=human_review`。适配器超时、崩溃或未完成探测才使用
+`invalid_run`，避免把运行故障和判卷不确定混在一起。
 
 ## 4. 指标汇聚约定（report 层的输入，C 定义）
 

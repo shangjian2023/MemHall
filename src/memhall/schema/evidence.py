@@ -35,6 +35,7 @@ class VerdictValue(str, Enum):
     OVER_PERSIST = "over_persist"    # 不该记的记下了
     WRONG_REUSE = "wrong_reuse"      # 用错了
     INVALID_RUN = "invalid_run"      # 运行无效（不计分，单列）
+    NEEDS_REVIEW = "needs_review"    # 证据不足以自动判卷，进入人工复核
 
 
 class DecidedBy(str, Enum):
@@ -45,6 +46,7 @@ class DecidedBy(str, Enum):
     JUDGE_B = "judge_b"
     ARBITRATION = "arbitration"
     HUMAN_REVIEW = "human_review"
+    SCRIPTED = "scripted"
 
 
 # ---------- 对话（契约 03 §2.1 Reply）----------

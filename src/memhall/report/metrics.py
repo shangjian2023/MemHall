@@ -33,7 +33,9 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
     detail: dict[str, dict] = {}
     for cap in CAP_ORDER:
         vs = by_cap.get(cap, [])
-        valid = [v for v in vs if v.verdict != VerdictValue.INVALID_RUN]
+        valid = [v for v in vs if v.verdict not in {
+            VerdictValue.INVALID_RUN, VerdictValue.NEEDS_REVIEW,
+        }]
         correct = sum(1 for v in valid if v.verdict == VerdictValue.CORRECT)
         score = correct / len(valid) if valid else 0.0
         capability_scores[cap.value] = round(score, 4)
@@ -45,14 +47,22 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
             "n_correct": correct,
             "score": round(score, 4),
             "error_breakdown": dict(errors),
-            "n_invalid_run": len(vs) - len(valid),
+            "n_invalid_run": sum(1 for v in vs if v.verdict == VerdictValue.INVALID_RUN),
+            "n_needs_review": sum(1 for v in vs if v.verdict == VerdictValue.NEEDS_REVIEW),
         }
 
-    valid_all = [v for v in verdicts if v.verdict != VerdictValue.INVALID_RUN]
+    valid_all = [v for v in verdicts if v.verdict not in {
+        VerdictValue.INVALID_RUN, VerdictValue.NEEDS_REVIEW,
+    }]
     decided = Counter(v.decided_by.value for v in verdicts)
+    n_needs_review = sum(1 for v in verdicts if v.verdict == VerdictValue.NEEDS_REVIEW)
+    n_invalid_run = sum(1 for v in verdicts if v.verdict == VerdictValue.INVALID_RUN)
     return {
         "n_probes_total": len(verdicts),
         "n_valid": len(valid_all),
+        "n_needs_review": n_needs_review,
+        "n_invalid_run": n_invalid_run,
+        "manual_review_rate": round(n_needs_review / len(verdicts), 4) if verdicts else 0.0,
         "overall_score": round(
             sum(1 for v in valid_all if v.verdict == VerdictValue.CORRECT) / len(valid_all), 4
         ) if valid_all else 0.0,

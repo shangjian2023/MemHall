@@ -149,10 +149,16 @@ def _git_hash() -> str:
 
 
 def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
-              adapter_name: str) -> tuple[str, list[EvidenceStore]]:
+              adapter_name: str, selection_meta: dict | None = None
+              ) -> tuple[str, list[EvidenceStore]]:
     """跑整套用例，落盘 manifest，返回 (run_id, 每 case 的证据视图)。"""
     run_id = _utc().strftime("%Y%m%d-%H%M%S") + f"-{adapter_name}"
     run_dir = out_dir / run_id
+    suffix = 2
+    while run_dir.exists():
+        run_id = _utc().strftime("%Y%m%d-%H%M%S") + f"-{adapter_name}-{suffix}"
+        run_dir = out_dir / run_id
+        suffix += 1
     stores: list[EvidenceStore] = []
     for case in cases:
         runner = CaseRunner(adapter, case, run_id, run_dir / "cases" / case.case_id)
@@ -168,6 +174,8 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
         "cases": [c.case_id for c in cases],
         "n_probes_total": sum(len(c.probes) for c in cases),
     }
+    if selection_meta is not None:
+        manifest["case_selection"] = selection_meta
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

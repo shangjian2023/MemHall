@@ -70,30 +70,22 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
         try:
             outcome = dual_judge(probe, answer, *judges)
             decided_by = DecidedBy.ARBITRATION if outcome.arbitrated else DecidedBy.JUDGE_A
-            meta = JudgeMeta(
-                judge_a=JudgeMetaItem(model=outcome.judge_a or "",
-                                      verdict=_raw_verdict(outcome.judge_a_raw, probe),
-                                      agreed=(outcome.judge_a_raw == outcome.judge_b_raw)),
-                judge_b=JudgeMetaItem(model=outcome.judge_b or "",
-                                      verdict=_raw_verdict(outcome.judge_b_raw, probe),
-                                      agreed=(outcome.judge_a_raw == outcome.judge_b_raw)),
-                prompt_version="judge-prompt-v1",
-                arbiter="judge_a-arbiter" if outcome.arbitrated else None,
-            )
+            meta = _judge_meta(outcome, probe)
         except RuntimeError as e:
             # judge 端点彻底不可用：降级脚本判卷，评测不因 judge 挂而报废
             outcome = _scripted.judge(probe, answer)
-            decided_by = DecidedBy.HUMAN_REVIEW
+            decided_by = DecidedBy.SCRIPTED
             meta = None
             reason = f"[judge 降级] {e}: {outcome.reason}"
             outcome = JudgeOutcome(outcome.key, 0.0, outcome.evidence_refs, reason)
     else:
         outcome = _scripted.judge(probe, answer)
-        decided_by = DecidedBy.JUDGE_A
+        decided_by = DecidedBy.SCRIPTED
         meta = None
 
     if outcome.key is None:
-        value, confidence = VerdictValue.INVALID_RUN, 0.0
+        value, confidence = VerdictValue.NEEDS_REVIEW, 0.0
+        decided_by = DecidedBy.HUMAN_REVIEW
     else:
         value = VerdictValue(probe.verdict_map.get(outcome.key, "invalid_run"))
         confidence = outcome.confidence
@@ -109,6 +101,32 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
         evidence_refs=outcome.evidence_refs,
         explanation=outcome.reason,
         judge_meta=meta,
+    )
+
+
+def _judge_meta(outcome: JudgeOutcome, probe: JudgeProbe) -> JudgeMeta:
+    """只写入实际存在的评委，避免单评委伪造一个空的 B 评委。"""
+
+    agreed = outcome.judge_a_raw is not None and outcome.judge_a_raw == outcome.judge_b_raw
+    item_a = None
+    item_b = None
+    if outcome.judge_a is not None:
+        item_a = JudgeMetaItem(
+            model=outcome.judge_a,
+            verdict=_raw_verdict(outcome.judge_a_raw, probe),
+            agreed=agreed,
+        )
+    if outcome.judge_b is not None:
+        item_b = JudgeMetaItem(
+            model=outcome.judge_b,
+            verdict=_raw_verdict(outcome.judge_b_raw, probe),
+            agreed=agreed,
+        )
+    return JudgeMeta(
+        judge_a=item_a,
+        judge_b=item_b,
+        prompt_version="judge-prompt-v1",
+        arbiter="judge_a-arbiter" if outcome.arbitrated else None,
     )
 
 

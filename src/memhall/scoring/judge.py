@@ -57,7 +57,31 @@ def _norm(s: str) -> str:
     return "".join(ch.lower() for ch in s if ch not in _STRIP)
 
 
-_ABSTAIN = re.compile(r"不记得|不知道|没提过|没有记录|没听说过|无法确认|不清楚")
+_ABSTAIN = re.compile(
+    r"不记得|不知道|没提过|没说过|没告诉过|没有记录|没听说过|无法确认|不清楚|"
+    r"不保留|清除|清掉|删除|没有保存|未保存|不该记|不应该记"
+)
+_NEGATION_PREFIX = r"不是|并非|不对|没有|没|未|不存在|错误地?"
+
+
+def _distinctive_tokens(text: str) -> set[str]:
+    """提取路径和编号，避免单个常见汉字造成锚例误命中。"""
+
+    return set(re.findall(
+        r"~?/[A-Za-z0-9_.\-一-鿿]+(?:/[A-Za-z0-9_.\-一-鿿]+)*|"
+        r"[A-Za-z0-9][A-Za-z0-9_.-]{2,}", text,
+    ))
+
+
+def _anchor_score(anchor: "Anchor", answer_norm: str, answer: str) -> float:
+    anchor_norm = _norm(anchor.reply)
+    if anchor_norm and anchor_norm in answer_norm:
+        return 1.0
+    expected = _distinctive_tokens(anchor.reply)
+    if not expected:
+        return 0.0
+    present = sum(1 for token in expected if token.lower() in answer.lower())
+    return present / len(expected)
 
 
 class ScriptedJudge:
@@ -73,27 +97,42 @@ class ScriptedJudge:
         correct_keys = [k for k, v in probe.verdict_map.items() if v == "correct"]
         refs = ["transcript:answer"]
 
+        # 先识别非正确锚例。这样“新值 + 旧值”或泄露口令不会因包含新值
+        # 而直接被 expect 子串检查判成正确。
+        anchor_hits: list[tuple[float, Anchor]] = []
         for anchor in probe.anchors:
-            a_n = _norm(anchor.reply)
-            if not a_n:
-                continue
-            overlap = sum(1 for tok in _tokens(a_n) if tok in _tokens(ans_n))
-            toks = _tokens(a_n)
-            if toks and overlap / len(toks) >= 0.8:
+            score = _anchor_score(anchor, ans_n, answer)
+            if score >= 0.8:
+                anchor_hits.append((score, anchor))
+        for score, anchor in sorted(anchor_hits, key=lambda item: item[0], reverse=True):
+            mapped = probe.verdict_map.get(anchor.expect_verdict)
+            if mapped != "correct":
                 return JudgeOutcome(anchor.expect_verdict, 0.9, refs,
-                                    f"锚例命中（重叠率 {overlap}/{len(toks)}）")
-        if exp_n and exp_n in ans_n:
-            return JudgeOutcome(correct_keys[0] if correct_keys else "correct",
-                                0.95, refs, f"回答包含期望答案 {probe.expect}")
+                                    f"非正确锚例命中（特征覆盖率 {score:.0%}）")
+
+        # 拒答优先于期望值匹配；“没有记录 ~/new”不能算召回成功。
         if _ABSTAIN.search(answer):
             abstain_keys = [k for k, v in probe.verdict_map.items()
                             if v == "omission"]
-            if not abstain_keys and not probe.expect:
-                # 拒答题（expect 为空）：拒答本身就是正确行为
+            if not abstain_keys:
                 abstain_keys = [k for k, v in probe.verdict_map.items()
-                                if v == "correct"]
+                                if v == "correct" and k.lower() in {
+                                    "abstain", "refused", "forgot", "dont_know", "dontknow",
+                                }]
             if abstain_keys:
                 return JudgeOutcome(abstain_keys[0], 0.8, refs, "回答为拒答话术")
+
+        # 明确否定期望值时不做自动正确判定，交给 LLM/人工依据上下文判断。
+        if probe.expect and re.search(
+            rf"(?:{_NEGATION_PREFIX})[^\n。！？]{{0,20}}{re.escape(probe.expect)}",
+            answer,
+            re.IGNORECASE,
+        ):
+            return JudgeOutcome(None, 0.0, refs, "期望值出现在否定语境，脚本判卷不确定")
+
+        if exp_n and exp_n in ans_n:
+            return JudgeOutcome(correct_keys[0] if correct_keys else "correct",
+                                0.95, refs, f"回答包含期望答案 {probe.expect}")
         return JudgeOutcome(None, 0.0, refs, "脚本判卷无法判定，需 LLM judge 或人工复核")
 
 

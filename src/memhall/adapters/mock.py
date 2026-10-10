@@ -37,6 +37,7 @@ class MockAdapter(AgentAdapter):
 
     def __init__(self) -> None:
         self._memory: dict[str, str] = {}        # key -> value（模拟记忆库）
+        self._statements: list[str] = []         # 自然语言事实，供模糊召回
         self._created_at: dict[str, datetime] = {}
         self._actions: list[Action] = []
         self._action_seq = 0
@@ -46,6 +47,7 @@ class MockAdapter(AgentAdapter):
 
     def reset(self) -> None:
         self._memory.clear()
+        self._statements.clear()
         self._created_at.clear()
         self._actions.clear()
         self._action_seq = 0
@@ -78,6 +80,15 @@ class MockAdapter(AgentAdapter):
             )
             for i, (k, v) in enumerate(sorted(self._memory.items()))
         ]
+        entries.extend(
+            MemoryEntry(
+                entry_id=f"s-{i:03d}",
+                content=statement,
+                created_at=None,
+                source_turn=None,
+            )
+            for i, statement in enumerate(self._statements)
+        )
         return MemorySnapshot(
             format="json",
             dumped_at=utc(),
@@ -97,34 +108,71 @@ class MockAdapter(AgentAdapter):
 
         # 写入："我的代码目录是 ~/dev/src" / "记一下：编辑器用 vim"
         if not is_question:
-            m = re.match(r"(?:我的|我的)?(.+?)(?:是|放在|用)\s*([~/\w.-]+)", msg)
+            m = re.match(
+                r"^(?:我的)?(?P<key>[^，,：:。；;]+?)(?:是|放在|在)\s*"
+                r"(?P<value>[^，,。；;]+)$", msg,
+            )
+            if not m:
+                m = re.match(
+                    r"^(?:我的)?(?P<key>.+?)用\s*(?P<value>[A-Za-z0-9_.-]+)$", msg
+                )
             if m and not msg.endswith("?"):
-                key, value = m.group(1).strip(), m.group(2).strip()
+                key = self._clean_key(m.group("key"))
+                value = m.group("value").strip()
                 if "临时" in msg or "一次性" in msg or re.search(r"canary-\w+", msg):
                     # 模拟边界失效：明说了不该记，还是存了（over_persist 样本）
                     self._remember(key, value)
                     return f"好的。"
                 self._remember(key, value)
+                self._remember_statement(msg)
                 return f"好的，我记住了：{key} = {value}。"
 
+            # 题库中的自然表达不一定是“我的 X 是 Y”。测试适配器保留
+            # 一份原句，召回时按主题词匹配；这只用于离线确定性演示。
+            if self._looks_like_fact(msg):
+                self._remember_statement(msg)
+                return "好的，我记住了。"
+
         # 更新："改到 ~/dev 了" / "以后以这个为准"（句中改口也算）
-        m = re.search(r"(?:改到|换成|改为)\s*([~/\w.-]+)", msg)
+        m = re.search(r"(?:改到|换成|改为|改成)\s*([^，。；,。!?！？\s]+)", msg)
         if m:
             new_value = m.group(1).strip()
+            if self._statements:
+                old = self._statements[-1]
+                self._statements[-1] = f"{old}；更新后：{msg}"
+                self._action_seq += 1
+                self._actions.append(Action(
+                    action_id=f"a-{self._action_seq:03d}", ts=utc(),
+                    tool="memory.update", args={"statement": msg},
+                    result="ok", source=ActionSource.AGENT_LOG,
+                ))
+                if not self._memory:
+                    return "好的，已更新。"
             if self._memory:
                 key = next(iter(self._memory))   # 简化：更新最近一个 key
                 self._remember(key, new_value)
                 return f"好的，已更新：{key} = {new_value}。"
+            if self._statements:
+                self._remember_statement(msg, replace_related=True)
+                return "好的，已更新。"
             return "好的。"
 
         # 检索："我的 X 在哪" / "我用什么编辑器" / "你记的我的 X 是哪个" / "按你记的…用哪个"
         m = re.match(r"(?:按你记的，?|你记的|你之前记的)?我的?(.+?)(?:现在|目前)?"
                      r"(?:在哪|放在哪|是什么|是啥|是哪个|是多少|用哪个)", msg)
         if m:
-            key = m.group(1).strip()
+            key = self._clean_key(m.group(1).strip())
             if key in self._memory:
                 return f"{key}是 {self._memory[key]}。"
+            fuzzy = self._find_statement(key)
+            if fuzzy:
+                return fuzzy
             return "这个我不记得了。"   # 模拟忘了
+
+        if is_question:
+            fuzzy = self._find_statement(msg)
+            if fuzzy:
+                return fuzzy
 
         if "记住了吗" in msg or "还记得" in msg:
             if self._memory:
@@ -151,3 +199,105 @@ class MockAdapter(AgentAdapter):
                 source=ActionSource.AGENT_LOG,
             )
         )
+
+    def _remember_statement(self, statement: str, replace_related: bool = False) -> None:
+        """保存自然语言事实，避免把闲聊误当成记忆。"""
+
+        if replace_related:
+            new_tokens = self._topic_tokens(statement)
+            self._statements = [
+                existing for existing in self._statements
+                if len(new_tokens & self._topic_tokens(existing)) < 2
+            ]
+        if statement in self._statements:
+            return
+        self._statements.append(statement)
+        self._action_seq += 1
+        self._actions.append(
+            Action(
+                action_id=f"a-{self._action_seq:03d}",
+                ts=utc(),
+                tool="memory.write",
+                args={"statement": statement},
+                result="ok",
+                source=ActionSource.AGENT_LOG,
+            )
+        )
+
+    def _looks_like_fact(self, message: str) -> bool:
+        """识别题库注入句；confound 闲聊不会进入记忆。"""
+
+        if any(token in message for token in (
+            "顺便", "聊聊", "换个话题", "帮我看看", "最近", "今天", "这周",
+            "这两天", "下班", "周末", "食堂", "天气", "晚上想", "对了，UKUI",
+        )):
+            return False
+        return bool(re.search(
+            r"记住|记一下|帮我记|习惯|以后|我的|目录|模板|版本|代号|地址|端口|"
+            r"分支|状态|部署|内网|账号|模块|数据分析|浏览器主页|评审会|项目|环境",
+            message,
+        ))
+
+    def _find_statement(self, query: str) -> str | None:
+        """用主题词召回最相关的自然语言事实。"""
+
+        q_tokens = self._topic_tokens(query)
+        if not q_tokens:
+            return None
+        ranked: list[tuple[int, str]] = []
+        for statement in self._statements:
+            overlap = len(q_tokens & self._topic_tokens(statement))
+            if overlap:
+                ranked.append((overlap, statement))
+        if not ranked:
+            return None
+        ranked.sort(key=lambda item: (-item[0], self._statements.index(item[1])))
+        statement = ranked[0][1]
+        if "；更新后：" in statement:
+            original, update = statement.split("；更新后：", 1)
+            return self._render_statement(original, update, query)
+        return self._render_statement(statement, "", query)
+
+    @staticmethod
+    def _clean_key(key: str) -> str:
+        return re.sub(r"^(?:我的|我平时|我习惯把|我习惯|记一下我的|记住我的)", "", key).strip()
+
+    def _render_statement(self, statement: str, update: str, query: str) -> str:
+        """生成简洁的模拟回答，优先取更新后的事实。"""
+
+        text = update or statement
+        q = self._topic_tokens(query)
+        # 对几类自然语言主题做归一，减少题面措辞差异。
+        aliases = {
+            "会议": {"开会", "纪要", "会议"},
+            "模板": {"周报", "日报", "模板"},
+            "地址": {"收货", "地址"},
+            "端口": {"生产", "测试", "端口"},
+            "状态": {"分支", "项目", "状态"},
+            "目录": {"路径", "目录", "文件"},
+        }
+        for label, words in aliases.items():
+            if q & words:
+                q.add(label)
+        return text
+
+    @staticmethod
+    def _topic_tokens(text: str) -> set[str]:
+        # 中文使用相邻双字词，ASCII 路径、代号、时间保留为整体。
+        tokens = set(re.findall(r"[A-Za-z0-9_./:@-]{2,}", text))
+        chinese = re.findall(r"[\u4e00-\u9fff]+", text)
+        for group in chinese:
+            tokens.update(group[i:i + 2] for i in range(len(group) - 1))
+        synonyms = {
+            "会议": {"开会"}, "开会": {"会议"},
+            "周报": {"周报"}, "日报": {"日报"},
+            "地址": {"收货"}, "端口": {"端口"},
+            "路径": {"目录", "文档"}, "目录": {"路径"},
+            "状态": {"进展"}, "进展": {"状态"},
+            "命名": {"规则"}, "规则": {"命名"},
+        }
+        for token in tuple(tokens):
+            tokens.update(synonyms.get(token, set()))
+        stop = {"我的", "哪个", "什么", "现在", "之前", "按你", "记的", "是哪个",
+                "是什么", "放在哪", "一下", "一下子", "有关", "这次", "那个"}
+        return tokens - stop
