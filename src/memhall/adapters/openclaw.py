@@ -67,9 +67,14 @@ def _send_throttle() -> None:
 
 # sqlite 记忆导出（read-only 连接；列序见模块 docstring）
 # R58：导出截断如实上报——count(*) 对照 limit，超限标 truncated
+# DB 不存在 → 空 rows 合法返回：fresh 沙箱的记忆库由 openclaw 首次运行
+# 自建（reset 只铺 workspace/），无 DB = 真空 = reset 期待的清零态；
+# 与「DB 在但读失败」区分——后者才是 R31 要 fail fast 的导出失败
 _DUMP_SRC = (
-    "import json,sqlite3,os\n"
+    "import json,sqlite3,os,sys\n"
     f"db=os.path.expanduser('{AGENT_DB}')\n"
+    "if not os.path.exists(db):\n"
+    "    print(json.dumps([])); sys.exit(0)\n"
     "c=sqlite3.connect('file:'+db+'?mode=ro',uri=True)\n"
     "rows=c.execute(\"select path,source,start_line,text from memory_index_chunks "
     "order by path,start_line limit 401\").fetchall()\n"

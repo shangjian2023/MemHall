@@ -91,3 +91,48 @@ def test_local_lane_fs_paths_match_tilde_assert(cls, tmp_path):
     snap = a.fs_snapshot()
     assert snap, "快照为空"
     _assert_hit(snap, cls.__name__)
+
+
+# ---------- openclaw dump：fresh 沙箱无 DB ≠ 导出失败（R31 误伤修复） ----------
+
+def test_openclaw_dump_missing_db_returns_empty(tmp_path):
+    """fresh 沙箱的记忆库由 openclaw 首跑自建——无 DB = 真空 = 合法清零态。
+
+    2026-10-11 全量跑实录：R31 把导出失败改 fail fast 后，openclaw 两场
+    45 case 全灭于 verify_reset（sqlite ro 打不开尚不存在的 DB）。"""
+    import json
+    import subprocess
+    import sys
+
+    from memhall.adapters import openclaw as oc
+
+    src = oc._DUMP_SRC.replace(oc.AGENT_DB, (tmp_path / "no-such.sqlite").as_posix())
+    r = subprocess.run([sys.executable, "-c", src], capture_output=True,
+                       text=True, timeout=10)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == []
+
+
+def test_openclaw_dump_reads_real_db(tmp_path):
+    import json
+    import sqlite3
+    import subprocess
+    import sys
+
+    from memhall.adapters import openclaw as oc
+
+    db = tmp_path / "openclaw-agent.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("create table memory_index_chunks"
+                "(path, source, start_line, text)")
+    con.execute("insert into memory_index_chunks values"
+                "(?, ?, ?, ?)", ("mem/1.md", "session", 1, "壁纸在 ~/图片"))
+    con.commit()
+    con.close()
+
+    src = oc._DUMP_SRC.replace(oc.AGENT_DB, db.as_posix())
+    r = subprocess.run([sys.executable, "-c", src], capture_output=True,
+                       text=True, timeout=10)
+    assert r.returncode == 0, r.stderr
+    rows = json.loads(r.stdout)
+    assert rows == [["mem/1.md", "session", 1, "壁纸在 ~/图片"]]
