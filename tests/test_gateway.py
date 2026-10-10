@@ -22,6 +22,7 @@ from memhall.gateway import (
     create_gateway_app,
     gateway_settings,
     model_backend,
+    tls_verify,
 )
 
 UPSTREAM = "https://upstream.example/v1"
@@ -703,3 +704,37 @@ def test_run_suite_model_override_lifecycle(tmp_path, monkeypatch):
     m2 = json.loads((tmp_path / rid2 / "manifest.json")
                     .read_text(encoding="utf-8"))
     assert m2["model_backend"]["model_override"] == "deepseek-v4-pro"
+
+
+# ---------- MEMHALL_TLS_MAX 钉版本（VM NAT 坏窗口绕行） ----------
+
+def test_tls_verify_default_off():
+    """不设环境变量 → 不限制（调用方不传 verify，行为不变）。"""
+    monkey = pytest.MonkeyPatch()
+    monkey.delenv("MEMHALL_TLS_MAX", raising=False)
+    try:
+        assert tls_verify() is None
+    finally:
+        monkey.undo()
+
+
+def test_tls_verify_pins_1_2():
+    import ssl as _ssl
+    monkey = pytest.MonkeyPatch()
+    monkey.setenv("MEMHALL_TLS_MAX", "1.2")
+    try:
+        ctx = tls_verify()
+        assert isinstance(ctx, _ssl.SSLContext)
+        assert ctx.maximum_version is _ssl.TLSVersion.TLSv1_2
+    finally:
+        monkey.undo()
+
+
+def test_tls_verify_rejects_garbage():
+    monkey = pytest.MonkeyPatch()
+    monkey.setenv("MEMHALL_TLS_MAX", "0.9")
+    try:
+        with pytest.raises(ValueError, match="MEMHALL_TLS_MAX"):
+            tls_verify()
+    finally:
+        monkey.undo()

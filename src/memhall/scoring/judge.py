@@ -326,10 +326,16 @@ class OpenAICompatJudge:
         last_err: Exception | None = None
         for attempt in range(6):
             if self._client is None:
+                # MEMHALL_TLS_MAX 钉版本（VM NAT 坏窗口绕行）——判卷直连
+                # 上游这段与网关转发段共用开关
+                from memhall.gateway import tls_verify
+                verify = tls_verify()
+                kw: dict = ({"verify": verify} if verify is not None else {})
                 self._client = httpx.Client(
                     base_url=self.base_url.rstrip("/"),
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     timeout=httpx.Timeout(connect=15, read=120, write=15, pool=15),
+                    **kw,
                 )
             try:
                 r = self._client.post("/chat/completions", json=payload)
