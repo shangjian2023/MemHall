@@ -59,6 +59,15 @@ def sign_p(n: int, k: int) -> float:
     return min(1.0, 2 * tail)
 
 
+def f_sf(x: float, d1: int = 2, d2: int = 3) -> float:
+    """F(d1,d2) 上尾概率——区分度比值的显著性参考。本设计固定 3 家×2 轮，
+    df=(2,3)；d1=2 时正则化不完全 beta 有闭式解 (d2/(d1·x+d2))^(d2/2)
+    （对照 α=0.05 临界值 9.55、α=0.10 为 5.46）。换组数/轮数需改 beta 函数。"""
+    if d1 != 2:
+        raise NotImplementedError("闭式解仅对 d1=2 成立")
+    return (d2 / (d1 * x + d2)) ** (d2 / 2)
+
+
 def overall(vs: dict[str, str]) -> float | None:
     vals = [binary(v) for v in vs.values()]
     valid = [x for x in vals if x is not None]
@@ -120,6 +129,11 @@ def main() -> int:
                 valid = [x for x in vals if x is not None]
                 scores.append(sum(valid) / len(valid) if valid else float("nan"))
             per_agent[a] = scores
+        # 未测族如实标注：本轮 run 无该族探测点（如 full-45 轮的 chain），
+        # 空分数全 nan 会算出 inf 比值——那是"没考"，不是"无穷区分度"
+        if any(x != x for v in per_agent.values() for x in v):
+            print(f"  {CAP_ZH[cap]:<5}（{fam:<11}） 未测（本轮 run 无该族探测点）")
+            continue
         means = [sum(v) / len(v) for v in per_agent.values()]
         between = sum((m - sum(means) / len(means)) ** 2 for m in means) / (len(means) - 1)
         within = sum(sum((x - sum(v) / len(v)) ** 2 for x in v) / (len(v) - 1)
@@ -127,7 +141,7 @@ def main() -> int:
         ratio = between / within if within > 0 else float("inf")
         print(f"  {CAP_ZH[cap]:<5}（{fam:<11}） 均值 "
               + " ".join(f"{a}:{m:.0%}" for a, m in zip(per_agent, means, strict=True))
-              + f"　组间/组内 = {ratio:.1f}"
+              + f"　组间/组内 = {ratio:.1f}（F 检验 p={f_sf(ratio):.3f}）"
               + ("　⚠ 不区分" if ratio < 1 else ""))
 
     # ④ 判卷口径差 + 环境噪声

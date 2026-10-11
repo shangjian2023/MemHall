@@ -524,6 +524,10 @@ def fig6_separation(mod) -> None:
                 valid = [x for x in vals if x is not None]
                 scores.append(sum(valid) / len(valid) if valid else float("nan"))
             per_agent[a] = scores
+        # 未测族（全 nan，如 full-45 轮的 chain）不画行：nan 方差比算出 inf，
+        # 曾把一根无限长棒棒糖画出图外
+        if any(x != x for v in per_agent.values() for x in v):
+            continue
         means = [sum(v) / len(v) for v in per_agent.values()]
         between = sum((m - sum(means) / len(means)) ** 2
                       for m in means) / (len(means) - 1)
@@ -546,7 +550,10 @@ def fig6_separation(mod) -> None:
             color="#D55E00", va="bottom")
     ax.set_yticks(ys)
     ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
-    ax.set_xlim(0, 7.6)
+    # x 上限随数据走：定长 7.6 曾把 12.0 的边界识别切在图外（点与数值都
+    # 不可见，最强信号隐形）；inf 行（组内方差=0 的真无穷区分）仍画到图边
+    xmax = max((r for _, r in rows if r < 1e9), default=1.0)
+    ax.set_xlim(0, xmax * 1.15)
     ax.set_xlabel("维度区分度 = 组间方差（智能体间）/ 组内方差（同智能体轮间）")
     ax.xaxis.grid(True, color="0.9", linewidth=0.7, zorder=0)
     ax.set_axisbelow(True)
