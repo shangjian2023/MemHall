@@ -41,11 +41,14 @@ class HermesAdapter(AgentAdapter):
     def __init__(self, channel: SshChannel | None = None):
         self.ch = channel or SshChannel()
         self._log_offset = 0
+        key_b64 = b64(os.environ.get("AGENT_LLM_KEY", ""))
+        url_b64 = b64(os.environ.get("AGENT_LLM_BASE_URL", ""))
+        model_b64 = b64(os.environ.get("AGENT_LLM_MODEL", "qwen3.7-plus"))
         self._base_env = (
-            f"export DEEPSEEK_API_KEY='{os.environ.get('AGENT_LLM_KEY', '')}' "
-            f"DEEPSEEK_BASE_URL='{os.environ.get('AGENT_LLM_BASE_URL', '')}'; "
+            f"export DEEPSEEK_API_KEY=\"$(printf '%s' {key_b64} | base64 -d)\" "
+            f"DEEPSEEK_BASE_URL=\"$(printf '%s' {url_b64} | base64 -d)\"; "
         )
-        self._model = os.environ.get("AGENT_LLM_MODEL", "qwen3.7-plus")
+        self._model_expr = f'"$(printf \'%s\' {model_b64} | base64 -d)"'
 
     def reset(self) -> None:
         rc, _, err = self.ch.run(
@@ -60,7 +63,7 @@ class HermesAdapter(AgentAdapter):
     def send(self, session_id: str, message: str) -> Reply:
         cmd = (f"{self._base_env}"
                f"echo {b64(message)} | base64 -d | timeout 280 {HERMES_BIN} chat "
-               f"--query-file - --oneshot --provider deepseek --model {self._model} "
+               f"--query-file - --oneshot --provider deepseek --model {self._model_expr} "
                f"2>/dev/null")
         sent = now_utc()
         t0 = time.time()
@@ -118,6 +121,9 @@ class HermesAdapter(AgentAdapter):
         return ActionDump(actions=actions,
                           coverage="partial" if actions else "unknown")
 
+    def close(self) -> None:
+        self.ch.close()
+
     def clock_shift(self, days: int) -> None:
         """VM 拨钟（sudo date -s），记录原时刻供恢复。"""
         if days == 0:
@@ -127,8 +133,8 @@ class HermesAdapter(AgentAdapter):
             raise RuntimeError("拨钟前读取系统时间失败")
         self._clock_epoch = int(out.strip())
         rc, _, err = self.ch.run(
-            f"echo '{self.ch.password}' | sudo -S date -s '+{days} days' "
-            f">/dev/null 2>&1 && echo ok")
+            f"sudo -S date -s '+{days} days' >/dev/null 2>&1 && echo ok",
+            stdin_data=f"{self.ch.password}\n")
         if rc != 0:
             raise RuntimeError(f"拨钟失败: {err.strip()[:200]}")
 
@@ -137,15 +143,15 @@ class HermesAdapter(AgentAdapter):
         if epoch is None:
             return
         self.ch.run(
-            f"echo '{self.ch.password}' | sudo -S date -s @{epoch} "
-            f">/dev/null 2>&1 && echo ok")
+            f"sudo -S date -s @{epoch} >/dev/null 2>&1 && echo ok",
+            stdin_data=f"{self.ch.password}\n")
         self._clock_epoch = None
 
     def fs_snapshot(self) -> list[str] | None:
         """VM 用户区文件清单（~ 下 4 层，排除 hermes 自身与缓存噪音）。"""
-        cmd = ("find ~ -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
+        cmd = ("find \"$HOME\" -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
                "-o -name node_modules -o -name .local -o -name .kylinbot \\) -prune -o "
-               "-printf '%p\\n' 2>/dev/null | sed 's|^/home/okim|~|'")
+               "-printf '%p\\n' 2>/dev/null | sed \"s|^$HOME|~|\"")
         rc, out, _ = self.ch.run(cmd, timeout=60)
         return [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else None
 

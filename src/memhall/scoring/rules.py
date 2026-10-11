@@ -78,6 +78,13 @@ class EvidenceStore:
                 out.extend(Reply.model_validate(x) for x in p.get("replies", []))
         return out
 
+    def runtime_error(self) -> str | None:
+        """返回 runner 注入的运行错误；存在时整条 case 不应继续计分。"""
+        for reply in self.replies():
+            if reply.text.startswith("[RUNTIME_ERROR]"):
+                return reply.text
+        return None
+
 
 # ---------- 文件系统类 ----------
 

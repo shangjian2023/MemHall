@@ -58,12 +58,15 @@ class AgentAdapter:
           评分层自动降级为纯行为判定（五态里丢「不该记的记下了」类，报告注明）。
         """
 
-    def dump_actions(self) -> list[Action]:
+    def dump_actions(self) -> ActionDump:
         """导出智能体自上次 reset 以来的操作记录（工具调用、文件读写、命令执行）。
         - 来源优先级：MCP 调用日志⚠️ > 智能体自带日志 > auditd 兜底（D 提供 helper）。
         - 返回 Action 列表（契约 03 §2.3）；拿不到完整记录时返回能拿到的部分，
           coverage 字段标注完整程度，评分层按 coverage 决定「用错了/没用上」类判定是否可信。
         """
+
+    def close(self) -> None:
+        """释放 SSH、子进程等外部资源；run_suite 结束时调用一次。"""
 ```
 
 异常类型（`memhall.schema.errors`，随契约冻结）：

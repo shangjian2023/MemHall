@@ -42,10 +42,14 @@ class SshChannel:
             self._cli = cli
         return self._cli
 
-    def run(self, cmd: str, timeout: int = 300) -> tuple[int, str, str]:
+    def run(self, cmd: str, timeout: int = 300,
+            stdin_data: str | None = None) -> tuple[int, str, str]:
         """执行命令，返回 (exit_code, stdout, stderr)。"""
         cli = self._client()
         stdin, stdout, stderr = cli.exec_command(cmd, timeout=timeout)
+        if stdin_data is not None:
+            stdin.write(stdin_data)
+            stdin.flush()
         stdin.close()
         out = stdout.read().decode("utf-8", "replace")
         err = stderr.read().decode("utf-8", "replace")

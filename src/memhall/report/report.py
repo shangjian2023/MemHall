@@ -57,7 +57,7 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         lines.append(f"| {v.probe_id} | {cap} | {VERDICT_ZH.get(v.verdict.value, v.verdict.value)} "
                      f"| {v.decided_by.value} | {v.confidence:.2f} | {reason} |")
     lines.append("")
-    lines.append(f"> 证据下钻：`runs/{run_id}/cases/<case_id>/evidence.jsonl`"
+    lines.append(f"> 证据下钻：`cases/<case_id>/evidence.jsonl`"
                  f"（每条判定引用对应证据哈希）")
     lines.append("")
     return "\n".join(lines)

@@ -10,6 +10,7 @@ from typing import Optional
 
 from memhall.schema.evidence import (
     DecidedBy,
+    EvidencePhase,
     EvidenceType,
     JudgeMeta,
     JudgeMetaItem,
@@ -29,20 +30,19 @@ _scripted = ScriptedJudge()
 
 
 def _answer_for(store: EvidenceStore, ask: str) -> str:
-    """取 probe 段中对该问题的回复（按 message 匹配，取最后一条）。"""
+    """只取 probe 阶段与探测问题完全对应的回复。"""
     best = ""
     for ev in store.by_type(EvidenceType.DIALOGUE):
+        if ev.phase != EvidencePhase.PROBE:
+            continue
         msgs = ev.payload.get("messages", [])
         replies = ev.payload.get("replies", [])
         for msg, rep in zip(msgs, replies):
-            if _norm_pair(msg, ask):
+            if str(rep.get("text", "")).startswith("[RUNTIME_ERROR]"):
+                return str(rep["text"])
+            if msg.strip() == ask.strip():
                 best = rep.get("text", "")
     return best
-
-
-def _norm_pair(message: str, ask: str) -> bool:
-    a, b = message.strip(), ask.strip()
-    return a == b or b in a or a in b
 
 
 def _raw_verdict(key: str | None, probe: JudgeProbe) -> VerdictValue:
@@ -60,7 +60,7 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
             verdict_id=f"v-{seq:04d}", probe_id=probe.id,
             case_id=probe.id.rsplit("-", 1)[0], run_id=run_id,
             verdict=VerdictValue.INVALID_RUN, confidence=0.0,
-            decided_by=DecidedBy.RULE, evidence_refs=["transcript:answer"],
+            decided_by=DecidedBy.RUNTIME, evidence_refs=["transcript:answer"],
             explanation="运行无效：被测智能体后端不可用，不计入分母",
         )
     outcome: JudgeOutcome
@@ -107,7 +107,10 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
 def _judge_meta(outcome: JudgeOutcome, probe: JudgeProbe) -> JudgeMeta:
     """只写入实际存在的评委，避免单评委伪造一个空的 B 评委。"""
 
-    agreed = outcome.judge_a_raw is not None and outcome.judge_a_raw == outcome.judge_b_raw
+    agreed = (
+        outcome.judge_a_raw == outcome.judge_b_raw
+        if outcome.judge_b is not None else None
+    )
     item_a = None
     item_b = None
     if outcome.judge_a is not None:
@@ -150,6 +153,19 @@ def _rule_verdict(probe: RuleProbe, store: EvidenceStore, run_id: str, seq: int)
 def evaluate_case(case: MemoryCase, store: EvidenceStore, run_id: str,
                   judges: Optional[tuple[OpenAICompatJudge, ...]] = None
                   ) -> list[Verdict]:
+    runtime_error = store.runtime_error()
+    if runtime_error:
+        return [Verdict(
+            verdict_id=f"v-{i:04d}",
+            probe_id=probe.id,
+            case_id=case.case_id,
+            run_id=run_id,
+            verdict=VerdictValue.INVALID_RUN,
+            confidence=0.0,
+            decided_by=DecidedBy.RUNTIME,
+            evidence_refs=["transcript:runtime_error"],
+            explanation=f"运行无效：{runtime_error}",
+        ) for i, probe in enumerate(case.probes, start=1)]
     out: list[Verdict] = []
     for i, probe in enumerate(case.probes, start=1):
         if isinstance(probe, RuleProbe):

@@ -47,6 +47,7 @@ class DecidedBy(str, Enum):
     ARBITRATION = "arbitration"
     HUMAN_REVIEW = "human_review"
     SCRIPTED = "scripted"
+    RUNTIME = "runtime"
 
 
 # ---------- 对话（契约 03 §2.1 Reply）----------
@@ -159,7 +160,7 @@ class FsDiff(BaseModel):
 class JudgeMetaItem(BaseModel):
     model: str
     verdict: VerdictValue
-    agreed: bool
+    agreed: Optional[bool] = None
 
 
 class JudgeMeta(BaseModel):

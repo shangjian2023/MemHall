@@ -148,7 +148,7 @@ probes:
 | `default` | — | 兜底分支，then 必填 |
 
 **判定值五态枚举**（对齐 design.md §6.2 与评审细则原文，详细语义见契约 03）：
-`correct` / `omission` / `confusion` / `fabrication`（记错了·瞎编）/ `over_persist`（不该记的记下了）/ `wrong_reuse`（用错了）——plus 流程态 `invalid_run`（运行无效）。
+`correct` / `omission` / `confusion` / `fabrication`（记错了·瞎编）/ `over_persist`（不该记的记下了）/ `wrong_reuse`（用错了）——plus 流程态 `invalid_run`（运行无效）和 `needs_review`（证据不足，待人工复核）。
 
 ## 7. 出题校验（进库前自动检查，B 的工具 `memhall lint case`）
 
@@ -159,6 +159,6 @@ probes:
 
 ## 8. 用例集定义（runner 的输入口径）
 
-- `cases/quick/`：**冒烟集**——固定 5 题（六能力各挑 1 + 任务链 1 的代表题），`run --cases quick` 用；新适配器接入的验收口径（契约 01 §4）；
-- `cases/full/`：全量集，30–40 题；`compare` 默认跑这个；
-- `cases/pool/`：题目池（full 的超集，扩量后 >60 题）——每次 run 按难度分层抽样出一份 full（防背题，design.md §4.4）。抽样的 seed 记进 run manifest，可复现。
+- `cases/quick/`：**冒烟集**——固定 6 题（六能力各 1 题），`run --cases quick` 用；新适配器接入的验收口径（契约 01 §4）；
+- `cases/full/`：全量种子集，43 题；覆盖 6×6 能力/内容矩阵；
+- `cases/gen/` 与 `cases/chains/`：生成题和跨会话任务链；默认 `run -c cases` 会按 case_id 去重后纳入轮换池。指定 `--seed` + `--count` 后按能力/难度抽样，seed 与 case_id 清单写入 run manifest。

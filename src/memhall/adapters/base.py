@@ -80,3 +80,7 @@ class AgentAdapter(ABC):
     def clock_restore(self) -> None:
         """恢复系统时钟（case 结束由 runner 调用）。默认 no-op。"""
         return None
+
+    def close(self) -> None:
+        """释放适配器持有的外部资源（SSH、子进程、临时文件等）。"""
+        return None

@@ -55,7 +55,7 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 
 ## 6. 判定口径（对齐 C 实测，W1/W2 结论）
 
-- **update 族（info_update 题型）答旧值 → wrong_reuse**（C 实测 §8：KylinBot 更新不走版本链，答旧值即 false_reuse；**推荐口径**，lint 提示不拦截。注意：团队审计版 update-001 仍用 confusion，两版并存，待 C/A 统一后再收敛为单一映射；temporal 题型答错版本判 confusion——是时间理解失败，不是旧值复用）
+- **update 族（info_update 题型）答旧值 → wrong_reuse**（C 实测 §8：KylinBot 更新不走版本链，答旧值即 false_reuse；lint 作为硬门禁统一检查；temporal 题型答错版本判 confusion——是时间理解失败，不是旧值复用）
 - **boundary 两档契约**（boundary-003，对齐实测）：严格=无时效标注入库即 over_persist（rule 判）；宽松=回答带时效限定可接受降级（judge rubric 识别）
 - **该记的敏感信息 vs 不该记的**分开判：persist-006（收货地址该记 + canary 假地址别记）双 probe
 - 五态判定值：correct / omission / confusion / fabrication / over_persist / wrong_reuse（契约 02 §6）
@@ -72,4 +72,4 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 - 生成扩量以团队 scripts/gen_cases.py + cases/gen 为准；B 的 generators/generate_cases.py（pool，seed=42）为防背题备用，未并入 PR
 - 任务链的"步数/耗时对比"（记忆效率指标）需 runner 支持，probe 侧已预留 actions 计数断言
 - 难度标定数据量有限，结论标注"初步标定"
-- 待统一项：update-001 的旧值判定（confusion vs wrong_reuse），由 C/A 裁决后收敛
+- 题型口径已统一：info_update 的旧值判 `wrong_reuse`，temporal 的旧版本判 `confusion`

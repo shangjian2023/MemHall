@@ -73,14 +73,12 @@ def check_case(path: Path, errors: list[str], stats: dict, warnings: list[str] |
             # ask 与 probe 段话术一致
             if probe.ask not in probe_texts:
                 errors.append(f"{path.name}: judge 探测 {probe.id} 的 ask 与 probe 段 user 话术不一致")
-            # update 族判定口径提示：info_update 题型答旧值→wrong_reuse 为推荐口径
-            # （对齐 C 实测 §8）；temporal 题型答错版本是时间理解失败，判 confusion 即可。
-            # 注意：main 上 update-001 经团队审计仍用 confusion，此处降为警告不拦截，交由 C/A 统一。
+            # update 族统一口径：info_update 题型答旧值 = wrong_reuse；
+            # temporal 题型答错版本是时间理解失败，判 confusion 即可。
             if case.capability.value == "dynamic_update" and case.question_type.value == "info_update":
                 old_keys = [k for k in probe.verdict_map if probe.verdict_map[k] == "wrong_reuse"]
                 if not old_keys:
-                    warnings.append(f"{path.name}: update 族 info_update 探测 {probe.id} 缺少旧值→wrong_reuse 映射"
-                                    f"（推荐口径，见 C 实测 §8；团队审计版可用 confusion，需 C/A 统一）")
+                    errors.append(f"{path.name}: update 族 info_update 探测 {probe.id} 必须把旧值映射为 wrong_reuse")
         else:  # rule
             if not probe.check:
                 errors.append(f"{path.name}: rule 探测 {probe.id} check 为空")

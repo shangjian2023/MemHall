@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from memhall.adapters.base import AgentAdapter
-from memhall.adapters.base import AdapterError
 from memhall.schema.evidence import (
     ActionDump,
     Evidence,
@@ -70,15 +69,26 @@ class CaseRunner:
         self.store.add(ev)
 
     def run(self) -> EvidenceStore:
-        self.adapter.reset()
-        base_fs = self.adapter.fs_snapshot()
+        self._runtime_error: str | None = None
+        base_fs: list[str] | None = None
         session_id = "s-01"
         try:
+            try:
+                self.adapter.reset()
+                base_fs = self.adapter.fs_snapshot()
+            except Exception as e:  # adapter contract: any external failure invalidates the case
+                self._runtime_error = str(e)
             for phase in self.case.phases:
+                if self._runtime_error:
+                    break
                 se = phase.system_events
-                if se is not None and se.clock_shift_days:
-                    self.adapter.clock_shift(se.clock_shift_days)
-                    self.clock_offset += se.clock_shift_days
+                try:
+                    if se is not None and se.clock_shift_days:
+                        self.adapter.clock_shift(se.clock_shift_days)
+                        self.clock_offset += se.clock_shift_days
+                except Exception as e:
+                    self._runtime_error = str(e)
+                    break
                 messages: list[str] = []
                 replies: list[Reply] = []
                 for step in phase.steps:
@@ -87,7 +97,7 @@ class CaseRunner:
                     messages.append(text)
                     try:
                         replies.append(self.adapter.send(session_id, text))
-                    except AdapterError as e:
+                    except Exception as e:
                         # 契约 01：适配器不可用 -> 后续步骤无意义，case 标运行无效
                         replies.append(Reply(
                             session_id=session_id,
@@ -95,29 +105,68 @@ class CaseRunner:
                             sent_at=_utc(), reply_at=_utc(), latency_ms=0))
                         self._runtime_error = str(e)
                         break
-                if getattr(self, "_runtime_error", None):
-                    break
                 self._collect(phase.name, EvidenceType.DIALOGUE,
                               {"messages": messages,
                                "replies": [r.model_dump(mode="json") for r in replies]})
+                if self._runtime_error:
+                    break
                 # inject 后加采记忆快照（写入时机测试的数据源）
                 if phase.name == "inject":
-                    snap = self.adapter.dump_memory()
-                    self._collect("inject", EvidenceType.MEMORY_SNAPSHOT,
-                                  snap.model_dump(mode="json"))
+                    try:
+                        snap = self.adapter.dump_memory()
+                        self._collect("inject", EvidenceType.MEMORY_SNAPSHOT,
+                                      snap.model_dump(mode="json"))
+                    except Exception as e:
+                        self._runtime_error = str(e)
+                        break
                 if phase.end_session:
-                    self.adapter.end_session(session_id)
+                    try:
+                        self.adapter.end_session(session_id)
+                    except Exception as e:
+                        self._runtime_error = str(e)
+                        break
                     n = int(session_id.split("-")[1]) + 1
                     session_id = f"s-{n:02d}"
             # probe 结束后全量采集
-            snap = self.adapter.dump_memory()
-            self._collect("probe", EvidenceType.MEMORY_SNAPSHOT, snap.model_dump(mode="json"))
-            dump = self.adapter.dump_actions()
-            self._collect("probe", EvidenceType.ACTIONS, dump.model_dump(mode="json"))
+            if not self._runtime_error:
+                try:
+                    snap = self.adapter.dump_memory()
+                    self._collect("probe", EvidenceType.MEMORY_SNAPSHOT,
+                                  snap.model_dump(mode="json"))
+                    dump = self.adapter.dump_actions()
+                    self._collect("probe", EvidenceType.ACTIONS,
+                                  dump.model_dump(mode="json"))
+                except Exception as e:
+                    self._runtime_error = str(e)
         finally:
-            self.adapter.clock_restore()
+            try:
+                self.adapter.clock_restore()
+            except Exception:
+                self._runtime_error = self._runtime_error or "恢复系统时钟失败"
+        if self._runtime_error and not self.store.runtime_error():
+            self._collect("probe", EvidenceType.DIALOGUE, {
+                "messages": [],
+                "replies": [Reply(
+                    session_id=session_id,
+                    text=f"[RUNTIME_ERROR] {self._runtime_error}",
+                    sent_at=_utc(), reply_at=_utc(), latency_ms=0,
+                ).model_dump(mode="json")],
+            })
         # 文件系统 diff（适配器支持时）：before 快照 vs after 快照
-        after_fs = self.adapter.fs_snapshot()
+        try:
+            after_fs = self.adapter.fs_snapshot()
+        except Exception as e:
+            after_fs = None
+            self._runtime_error = self._runtime_error or str(e)
+            if not self.store.runtime_error():
+                self._collect("probe", EvidenceType.DIALOGUE, {
+                    "messages": [],
+                    "replies": [Reply(
+                        session_id=session_id,
+                        text=f"[RUNTIME_ERROR] {self._runtime_error}",
+                        sent_at=_utc(), reply_at=_utc(), latency_ms=0,
+                    ).model_dump(mode="json")],
+                })
         if base_fs is not None and after_fs is not None:
             created = sorted(set(after_fs) - set(base_fs))
             deleted = sorted(set(base_fs) - set(after_fs))
@@ -152,24 +201,32 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
               adapter_name: str, selection_meta: dict | None = None
               ) -> tuple[str, list[EvidenceStore]]:
     """跑整套用例，落盘 manifest，返回 (run_id, 每 case 的证据视图)。"""
-    run_id = _utc().strftime("%Y%m%d-%H%M%S") + f"-{adapter_name}"
+    started_at = _utc()
+    run_id = started_at.strftime("%Y%m%d-%H%M%S-%f") + f"-{adapter_name}"
     run_dir = out_dir / run_id
     suffix = 2
     while run_dir.exists():
-        run_id = _utc().strftime("%Y%m%d-%H%M%S") + f"-{adapter_name}-{suffix}"
+        run_id = _utc().strftime("%Y%m%d-%H%M%S-%f") + f"-{adapter_name}-{suffix}"
         run_dir = out_dir / run_id
         suffix += 1
     stores: list[EvidenceStore] = []
-    for case in cases:
-        runner = CaseRunner(adapter, case, run_id, run_dir / "cases" / case.case_id)
-        stores.append(runner.run())
+    try:
+        for case in cases:
+            runner = CaseRunner(adapter, case, run_id, run_dir / "cases" / case.case_id)
+            stores.append(runner.run())
+    finally:
+        try:
+            adapter.close()
+        except Exception:
+            # 评测结果已经落盘；资源释放失败不能覆盖 case 证据。
+            pass
     manifest = {
         "run_id": run_id,
         "tool": "memhall",
         "schema_version": "0.1",
         "adapter": adapter_name,
         "git_hash": _git_hash(),
-        "started_at": run_id[:15],
+        "started_at": started_at.isoformat(),
         "finished_at": _utc().isoformat(),
         "cases": [c.case_id for c in cases],
         "n_probes_total": sum(len(c.probes) for c in cases),

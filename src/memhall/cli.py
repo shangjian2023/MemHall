@@ -93,7 +93,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     run_id, stores = run_suite(
         adapter, cases, Path(args.out), args.adapter,
-        selection_meta=selection.manifest(),
+        selection_meta={**selection.manifest(), "case_dir": str(case_dir.resolve())},
     )
     run_dir = Path(args.out) / run_id
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -133,11 +133,31 @@ def _load_verdicts(run_dir: Path, manifest: dict,
     return verdicts
 
 
+def resolve_case_dir(manifest: dict, override: str | Path | None = None) -> Path:
+    """Resolve the case bank used for a run, including installed package layouts."""
+
+    if override is not None:
+        case_dir = Path(override)
+        if not case_dir.is_dir():
+            raise FileNotFoundError(f"题库目录不存在: {case_dir}")
+        return case_dir
+    recorded = manifest.get("case_selection", {}).get("case_dir")
+    candidates = [Path(recorded)] if recorded else []
+    candidates.extend([
+        Path(__file__).resolve().parents[2] / "cases",
+        Path("/usr/share/memhall/cases"),
+    ])
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    raise FileNotFoundError("无法定位原评测题库；请通过 --cases 指定题库目录")
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    repo_root = Path(__file__).resolve().parents[2]
-    cases = {c.case_id: c for c in load_cases(repo_root / "cases")}
+    case_dir = resolve_case_dir(manifest, getattr(args, "cases", None))
+    cases = {c.case_id: c for c in load_cases(case_dir)}
     judges = OpenAICompatJudge.pair_from_env() if args.judge == "dual" else None
     verdicts = _load_verdicts(run_dir, manifest, cases, judges)
     metrics = _finish_run(run_dir, manifest["run_id"], manifest, verdicts, cases)
@@ -166,6 +186,7 @@ def main() -> None:
 
     p_rep = sub.add_parser("report", help="出报告（缺 verdicts 时从证据重放评分）")
     p_rep.add_argument("run_dir", help="runs/ 下的 run 目录")
+    p_rep.add_argument("-c", "--cases", help="原评测题库目录（移动 run 后可显式指定）")
     p_rep.add_argument("--judge", choices=["scripted", "dual"], default="scripted",
                        help="重放评分时的判卷方式")
     p_rep.set_defaults(func=cmd_report)

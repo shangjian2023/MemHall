@@ -92,7 +92,7 @@ class KylinBotAdapter(AgentAdapter):
 
     def send(self, session_id: str, message: str) -> Reply:
         _send_throttle()
-        cmd = (f'timeout 280 kylin-bot agent -m "$(echo {b64(message)} | base64 -d)" '
+        cmd = (f'timeout 280 kylin-bot agent -m "$(printf %s {b64(message)} | base64 -d)" '
                f"2>/dev/null")
         sent = now_utc()
         t0 = time.time()
@@ -130,6 +130,9 @@ class KylinBotAdapter(AgentAdapter):
     def dump_actions(self) -> ActionDump:
         return ActionDump(actions=[], coverage="unknown")
 
+    def close(self) -> None:
+        self.ch.close()
+
     def clock_shift(self, days: int) -> None:
         """VM 拨钟（sudo date -s），记录原时刻供恢复。"""
         if days == 0:
@@ -139,8 +142,8 @@ class KylinBotAdapter(AgentAdapter):
             raise RuntimeError("拨钟前读取系统时间失败")
         self._clock_epoch = int(out.strip())
         rc, _, err = self.ch.run(
-            f"echo '{self.ch.password}' | sudo -S date -s '+{days} days' "
-            f">/dev/null 2>&1 && echo ok")
+            f"sudo -S date -s '+{days} days' >/dev/null 2>&1 && echo ok",
+            stdin_data=f"{self.ch.password}\n")
         if rc != 0:
             raise RuntimeError(f"拨钟失败: {err.strip()[:200]}")
 
@@ -148,14 +151,14 @@ class KylinBotAdapter(AgentAdapter):
         if self._clock_epoch is None:
             return
         self.ch.run(
-            f"echo '{self.ch.password}' | sudo -S date -s @{self._clock_epoch} "
-            f">/dev/null 2>&1 && echo ok")
+            f"sudo -S date -s @{self._clock_epoch} >/dev/null 2>&1 && echo ok",
+            stdin_data=f"{self.ch.password}\n")
         self._clock_epoch = None
 
     def fs_snapshot(self) -> list[str] | None:
-        cmd = ("find ~ -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
+        cmd = ("find \"$HOME\" -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
                "-o -name node_modules -o -name .local -o -name .kylinbot \\) -prune -o "
-               "-printf '%p\\n' 2>/dev/null | sed 's|^/home/okim|~|'")
+               "-printf '%p\\n' 2>/dev/null | sed \"s|^$HOME|~|\"")
         rc, out, _ = self.ch.run(cmd, timeout=60)
         return [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else None
 
