@@ -441,19 +441,28 @@ def fig4_verdict_mix(mod, caliber: str) -> None:
     plt.close(fig)
 
 
+# 口径对照专用 run：初版终榜（2026-10-02/03）+ 复核 r3——这些场经 R25
+# 重判留下 verdicts.scripted.jsonl 备份；现役终榜 run 一律 dual 直判，
+# 没有脚本侧对照。图 5 是判卷机制论证（不是智能体榜），用留档数据。
+SCRIPTED_RUNS = ["20261002-073342-hermes", "20261002-112443-hermes",
+                 "20261002-130127-kylinbot", "20261002-135303-kylinbot",
+                 "20261003-142742-openclaw", "20261003-154421-openclaw"]
+
+
 def fig5_dual_vs_scripted(mod) -> None:
     """图 5：同证据双判 vs 脚本判卷哑铃——"敢报分差"可视化。"""
     _setup_font()
     rows = []
-    for a in AGENTS:
-        for i, rid in enumerate(mod.AGENTS[a], start=1):
-            dual = mod.overall(mod.load_verdicts(RUNS / rid / "verdicts.jsonl"))
-            s_path = RUNS / rid / "verdicts.scripted.jsonl"
-            scripted = (mod.overall(mod.load_verdicts(s_path))
-                        if s_path.exists() else None)
-            if dual is not None and scripted is not None:
-                rows.append((f"{AGENT_LABEL[a]} r{i}", scripted * 100,
-                             dual * 100))
+    for rid in SCRIPTED_RUNS:
+        a = rid.rsplit("-", 1)[1]
+        i = SCRIPTED_RUNS.index(rid) % 2 + 1
+        dual = mod.overall(mod.load_verdicts(RUNS / rid / "verdicts.jsonl"))
+        s_path = RUNS / rid / "verdicts.scripted.jsonl"
+        scripted = (mod.overall(mod.load_verdicts(s_path))
+                    if s_path.exists() else None)
+        if dual is not None and scripted is not None:
+            rows.append((f"{AGENT_LABEL[a]} r{i}", scripted * 100,
+                         dual * 100))
 
     fig, ax = plt.subplots(figsize=(6.4, 3.2))
     ys = np.arange(len(rows))[::-1]

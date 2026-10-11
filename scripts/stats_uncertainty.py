@@ -20,9 +20,9 @@ import sys
 from pathlib import Path
 
 AGENTS = {
-    "hermes": ["20261002-073342-hermes", "20261002-112443-hermes"],
-    "kylinbot": ["20261002-130127-kylinbot", "20261002-135303-kylinbot"],
-    "openclaw": ["20261003-142742-openclaw", "20261003-154421-openclaw"],
+    "hermes": ["20261010-073953-hermes", "20261010-135112-hermes"],
+    "kylinbot": ["20261010-163950-kylinbot", "20261010-181612-kylinbot"],
+    "openclaw": ["20261010-200117-openclaw", "20261010-215351-openclaw"],
 }
 # 维度族前缀（探测点 ID 的 family 段即 capability 族）
 FAMILY_CAP = {
