@@ -185,9 +185,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     elif args.rotation_seed is not None:
         print("--seed 仅用于 --rotate-count 轮换", file=sys.stderr)
         return 2
-        if args.rotate_count <= 0 or args.rotate_count > len(cases):
-            print(f"--rotate-count 必须在 1 到 {len(cases)} 之间", file=sys.stderr)
-            return 2
 
     try:
         adapter = create_adapter(args.adapter)
