@@ -12,6 +12,9 @@ on:
 env:
   # Windows runner 控制台默认 GBK，lint 打印 ⚠ / 报告路径会 UnicodeEncodeError
   PYTHONIOENCODING: utf-8
+  # CI 走官方 PyPI：清华镜像对 GitHub runner IP 限流，uv sync 曾 403 抖动（2026-10-12）；
+  # 本地中国网络照旧走 pyproject 里的清华 index（此 env 只进 CI）
+  UV_DEFAULT_INDEX: https://pypi.org/simple
 
 jobs:
   lint:
