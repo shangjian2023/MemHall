@@ -15,33 +15,43 @@ A Memory Benchmark for Agents on the openKylin Ecosystem
 
 openKylin 生态里已经跑着 KylinBot、OpenClaw、Hermes Agent 等智能体，但没人能回答「它们的记性到底谁好、好在哪一维」。麟阁用「教 → 隔 → 考」三阶段剧本驱动任意智能体，把对话日志、记忆快照、操作记录、文件变化统一为证据，自动判卷出六维能力雷达——全自动、可复现、对证据负责。
 
-> **EN** · MemHall is an automated, reproducible benchmark for agents' long-term memory on openKylin: teach→gap→exam scripts drive any agent; dialogs, memory snapshots, actions and file changes become traceable evidence; scoring is automatic and outputs a six-dimension radar. Final board (LLM-judged, 2-round mean±std): hermes 72.9% ± 0.2 > openclaw 68.7% ± 3.6 > kylinbot 61.2% ± 0.4 (pairwise sign tests not significant at n=2 — see measurement limits).
+> **EN** · MemHall is an automated, reproducible benchmark for agents' long-term memory on openKylin: teach→gap→exam scripts drive any agent; dialogs, memory snapshots, actions and file changes become traceable evidence; scoring is automatic and outputs a six-dimension radar. Final board (LLM-judged, 4-round mean±std): hermes 74.6% ± 2.8 ≈ openclaw 72.5% ± 4.9 > kylinbot 58.5% ± 6.8 (at n=4 kylinbot is significantly below both, p ≤ 0.003; the top pair is not significant — see measurement limits).
 
 ## 终榜先看
 
-三智能体马拉松：**full 45 题 × 2 轮**，统一模型 qwen3.7-plus，LLM 判卷（2026-10-10/11 全量重跑，评测器三处修复后，见[演进注记](#终榜演进注记)；口径注：正式口径 = full + chains，本榜为 full 单独成榜，chains 4 题下轮并入——n=2 下三对检验均不显著，chains 并入对结论无实质影响）：
+三智能体马拉松：**full 45 题 × 4 轮**（2026-10-10 两轮 + 10-11/12 r3/r4 两轮），统一模型 qwen3.7-plus，LLM 判卷（评测器三处修复后全量重跑，见[演进注记](#终榜演进注记)；正式口径 = full + chains——chains 4 题 × 2 轮（r3/r4）已跑并入[附表](#chains-任务链口径)）。**n=4 下基准给出第一个统计显著的分层：kylinbot 显著低于两家，头部并列**：
 
 <p align="center">
   <img src="images/radar-final-dual.png" width="440" alt="终榜三智能体六维雷达图">
 </p>
-<p align="center"><sub>三智能体六维对比（LLM 判卷、两轮 mean；完整表与口径见<a href="#评测口径速览">下文</a>）</sub></p>
+<p align="center"><sub>三智能体六维对比（LLM 判卷、四轮 mean；完整表与口径见<a href="#评测口径速览">下文</a>）</sub></p>
 
-| 智能体 | 总体（两轮 mean±std） | 长期保持 | 记忆调用 | 动态更新 | 相近区分 | 边界识别 | 任务复用 |
+| 智能体 | 总体（四轮 mean±std） | 长期保持 | 记忆调用 | 动态更新 | 相近区分 | 边界识别 | 任务复用 |
 |---|---|---|---|---|---|---|---|
-| **hermes** | **72.9% ± 0.2**（与 openclaw 并列\*） | 88% | 65% | 53% | 88% | 75% | 57% |
-| **openclaw** | **68.7% ± 3.6**（与 hermes 并列\*） | 88% | 77% | 50% | 94% | 35% | 86% |
-| kylinbot | 61.2% ± 0.4 | 65% | 72% | 22% | 44% | 76% | 71% |
+| **hermes** | **74.6% ± 2.8**（与 openclaw 并列\*） | 87% | 65% | 49% | 88% | 83% | 68% |
+| **openclaw** | **72.5% ± 4.9**（与 hermes 并列\*） | 92% | 77% | 60% | 97% | 40% | 89% |
+| kylinbot | 58.5% ± 6.8 | 64% | 69% | 17% | 47% | 75% | 61% |
 
-\* n=2 轮下三对配对符号检验均不显著（hermes vs openclaw p=1.00、hermes vs kylinbot p=0.21、kylinbot vs openclaw p=0.22）——头部 4.2 分差距在轮间噪声内，按口径并列呈现，不硬排名次；把三家分开到统计显著需更多轮次（功效声明见[测量边界](#评测口径速览)）。
+\* n=4 轮配对符号检验：hermes vs kylinbot p<0.001、kylinbot vs openclaw p=0.003 **显著**——kylinbot 的殿后不是轮间噪声；hermes vs openclaw p=0.856 不显著，头部 2.1 分差距在噪声内（功效：分开这两家需 ≈36 轮），按口径并列呈现，不硬排名次。
+
+**chains 任务链口径**（4 题 × 2 轮，r3/r4；13 探测点中 10 个计分，只覆盖长期保持/任务复用两维）：
+
+| 智能体 | 总体（两轮 mean±std） | 长期保持 | 任务复用 |
+|---|---|---|---|
+| hermes | 40.0% ± 0.0 | 100% | 25% |
+| openclaw | 40.0% ± 0.0 | 100% | 25% |
+| kylinbot | 25.0% ± 7.1 | 75% | 12.5% |
+
+链上「记了但用不上」是三家共同短板；hermes/openclaw 两轮**逐题零翻转**（六态一致率 100%），kylinbot 84.6%。
 
 <p align="center">
   <img src="images/fig-six-dim.png" width="720" alt="六维分数分组柱状图（mean±std 与各轮实际值）">
 </p>
-<p align="center"><sub>六维分数 mean±std（n=2 轮；白色圆点=各轮实际值，误差棒=样本标准差；Okabe-Ito 色盲安全配色；<code>scripts/make_readme_figures.py</code> 零 LLM 可复现）</sub></p>
+<p align="center"><sub>六维分数 mean±std（n=4 轮；白色圆点=四轮极值 min/max，误差棒=样本标准差；Okabe-Ito 色盲安全配色；<code>scripts/make_readme_figures.py</code> 零 LLM 可复现）</sub></p>
 
-形态比总分有信息量：hermes 六维均衡但任务复用（57%）偏弱——记得住但用不上；openclaw 的记忆调用/任务复用双高（77%/86%）却是**边界识别塌方（35%）**——该忘的忘不掉（over_persist 占其错误大头）；kylinbot 长期保持（65%）与动态更新（22%）拖后腿，但边界识别 76% 是三家最稳的「记该记的、放该放的」。
+形态比总分有信息量：hermes 六维最均衡（边界识别 83% 三家最高，但 ±11 轮间波动大）；openclaw 记忆调用/任务复用双高（77%/89%）却是**边界识别塌方（40%）**——该忘的忘不掉（over_persist 两轮各 12/87，稳定缺陷签名）；kylinbot 动态更新（17%）与相近区分（47%）拖垮总分，边界识别 75%±5 反而最稳——「记该记的」做到了，「改得动、分得清」没做到。
 
-**终榜演进注记**：初版终榜（2026-10-05，openclaw 67.1 > kylinbot 52.4 > hermes 44.4）测于评测器三处缺陷修复之前——判卷客户端遇一次非 200 即全场失效（86e354d 修复）、openclaw fresh 沙箱无 DB 被误判导出失败（fcf7077 修复）、VM NAT 大出站包 TLS 损坏未治理（宿主中继恢复）。旧数据中 hermes 两轮 22.7/66.1 的离群方差、47% 的轮间一致率，混有上述仪器噪声；修复后同配置重跑（六场、执行期适配器错误 0–1 条/场），hermes 两轮 73.0/72.7、一致率 71%。两版终榜均留档可对账（旧 run 与 manifest 不删改），本榜为当前口径。
+**终榜演进注记**：初版终榜（2026-10-05，openclaw 67.1 > kylinbot 52.4 > hermes 44.4）测于评测器三处缺陷修复之前——判卷客户端遇一次非 200 即全场失效（86e354d 修复）、openclaw fresh 沙箱无 DB 被误判导出失败（fcf7077 修复）、VM NAT 大出站包 TLS 损坏未治理（宿主中继恢复）。旧数据中 hermes 两轮 22.7/66.1 的离群方差、47% 的轮间一致率，混有上述仪器噪声；修复后同配置重跑（六场、执行期适配器错误 0–1 条/场），hermes 两轮 73.0/72.7、一致率 71%。2026-10-12 r3/r4 扩轮至 n=4（含 chains 8 场；hermes-r3-full 一轮判卷遇 DNS 挂死，事后从封存证据补判，verdicts 留痕可对账），kylinbot 与两家的差距转为统计显著。历版终榜均留档（旧 run 与 manifest 不删改），本榜为当前口径。
 
 ## 特色与创新
 
@@ -50,7 +60,7 @@ openKylin 生态里已经跑着 KylinBot、OpenClaw、Hermes Agent 等智能体�
 </p>
 <p align="center"><sub>评测管线全景：剧本引擎经 SSH 车道驱动真机智能体，被测流量必经统一网关，四类证据带哈希封印，双 LLM 判卷出六维报告</sub></p>
 
-- **「教 → 隔 → 考」三阶段剧本，不是简单问答**。教学注入 → 干扰隔离 → 多时点探测（含拨钟跨天），六维能力独立出分：长期保持 / 记忆调用 / 动态更新 / 相近区分 / 边界识别 / 任务复用。题库 full 45 + gen 21 + chains 4（六会话长链对齐 LongMemEval/LoCoMo）+ heldout 21（不可见防背题池）；正式口径 = full + chains（现役终榜为 full 45 单独成榜——10-11 冻结，含入库晚的 persist-008/recall-008；chains 并入排下轮，理由见终榜口径注）。
+- **「教 → 隔 → 考」三阶段剧本，不是简单问答**。教学注入 → 干扰隔离 → 多时点探测（含拨钟跨天），六维能力独立出分：长期保持 / 记忆调用 / 动态更新 / 相近区分 / 边界识别 / 任务复用。题库 full 45 + gen 21 + chains 4（六会话长链对齐 LongMemEval/LoCoMo）+ heldout 21（不可见防背题池）；正式口径 = full + chains（终榜 v3：full 45 × 4 轮成榜 + chains 4 × 2 轮附表）。
 - **证据即真相**。对话、记忆快照、操作记录、文件变化统一为证据流，每条判定可下钻到证据哈希；canary 金丝雀教学时点判（probe 段删除洗白不了 over_persist）+ 超串干扰防线（188 个干扰项 100% 拒绝）。
 - **五态判定 + 分层判卷**。正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用——不止判对错，还判「记错的样子」；规则判不了的升级双 LLM judge 跨厂商交叉仲裁（锚例随提示词下发、仲裁评委 A/B 轮值），未决单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
 - **评测诚实优先**（design §5 明规则）。口径 v1→v3 全程留痕（R01–R60 共 60 项专项排查，见 [review-tasks](docs/review-tasks.md)）；敢报分差：同一批证据换判卷口径，六轮总体全部下移（0.8–19 分）、维度级 −45～+27 分非单向，掉分机制已抽查证实（脚本判卷把判不了的点剔出分母，幸存者偏差低估与高估并存）；数字必须带口径出行。
@@ -168,7 +178,7 @@ dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall�
 <p align="center">
   <img src="images/fig-verdict-mix.png" width="720" alt="六态判定构成堆积条形图">
 </p>
-<p align="center"><sub>判定构成（六场 run，100% 堆积）——不止判对错，还判「记错的样子」：openclaw 的 over_persist（该删没删）独大、kylinbot 遗漏主导、hermes 六态最均衡，一眼可读</sub></p>
+<p align="center"><sub>判定构成（十二场 run，100% 堆积）——不止判对错，还判「记错的样子」：openclaw 的 over_persist（该删没删）独大、kylinbot 遗漏主导、hermes 六态最均衡，一眼可读</sub></p>
 - **评分口径 v3**（2026-10-05，R01–R60 整改留痕见 [review-tasks](docs/review-tasks.md)）：探测点 score / diagnostic 分层——存储态断言（memory.*）与 actions 断言只进故障定位表（没存 / 存了没用上 / 存了但内容错 / 该删没删），不进六维分母；canary 教学时点判；无有效探测的维输出「未测」不画轴；报告附「未决按错计」保守下界与按用例等权总分。旧 run 可 `memhall report runs/<id>` 按新口径重渲染。
 - **正式口径 = full + chains**；heldout 为不可见防背题池（`gen_cases.py --seed 4210` 评测时现场生成，题目文本不入库、seed 公布保复现）；全量跑 ≥2 轮报 mean±std + bootstrap 95% CI（`memhall aggregate`）。
 - **LLM 重判 vs 脚本判卷**：六轮总体分全部更低（0.8–19 分，方向一致），掉分集中在记忆调用维（六轮 −16～−39 分）；但口径差不是单向的——边界识别/任务复用维 dual 反而更高（最高 +12/+27 分），机制是脚本把判不了的探测点剔出分母，幸存者偏差低估与高估并存（模式匹配把语义答错的回答计对也已抽查证实）。脚本判卷数字仅存档对账（`verdicts.scripted.jsonl`），不用于排名。（口径对照数据来自初版终榜 run 的 R25 留档；现役终榜 run 一律 dual 直判，无脚本侧对照。）
@@ -177,7 +187,7 @@ dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall�
   <img src="images/fig-dual-vs-scripted.png" width="560" alt="双判 vs 脚本判卷哑铃图">
 </p>
 <p align="center"><sub>同一批证据、两种判卷口径（空心=脚本判卷，实心=双 LLM 判卷；初版终榜 run 留档数据）——六轮全部下移不是判官严，是脚本判卷的分母幸存者偏差被摘除</sub></p>
-- **测量边界**（`uv run python scripts/stats_uncertainty.py` 可复现，零 LLM）：①系统内稳定性（同探测点两轮六态一致率）kylinbot 80.5% = openclaw 80.5% > hermes 71.3%——被测系统自身的随机性是测量结果；②排名主张过配对符号检验：n=2 轮下三对均不显著（p=1.00/0.21/0.22），头部并列呈现；③功效声明：hermes vs kylinbot 7.8 分差距轮级 σ 2.5%/0.5%，约 1 轮即可分开，hermes vs openclaw 1.3 分差距需 ≈63 轮——分差与轮数的取舍摆在明面；④invalid 率 4–8/89（工具侧错误不计分母，不冒充答错）。详见 [dataset-card §9](docs/dataset-card.md)。
+- **测量边界**（`uv run python scripts/stats_uncertainty.py` 可复现，零 LLM）：①系统内稳定性（同探测点轮间两两六态一致率，n=4 共 6 对）openclaw 87.5% > hermes 75.3% ≈ kylinbot 73.8%（对错翻转 9%/22%/22%）——被测系统自身的随机性是测量结果；②排名主张过配对符号检验：n=4 下 hermes vs kylinbot（p<0.001）与 kylinbot vs openclaw（p=0.003）两对显著，hermes vs openclaw p=0.856 头部并列呈现；③功效声明：对 kylinbot 的 24–27 分差距 ≈1 轮即可分开，头部 2.5 分差距需 ≈36 轮——分差与轮数的取舍摆在明面；④invalid 率 4–8/87（工具侧错误不计分母，不冒充答错）。详见 [dataset-card §9](docs/dataset-card.md)。
 
 <p align="center">
   <img src="images/fig-uncertainty.png" width="720" alt="测量可信度面板：两轮一致率与配对符号检验">
@@ -187,7 +197,7 @@ dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall�
 <p align="center">
   <img src="images/fig-separation.png" width="560" alt="维度区分度棒棒糖图">
 </p>
-<p align="center"><sub>维度区分度（组间/组内方差比，n=2/组）：六个主维的组间方差全部盖过轮间噪声（比值 1.2–12.0）但分层明显——边界识别 12.0 是 n=2 下唯一过 F 检验的维（p≈0.04），任务复用 5.2、长期保持 3.6 次之，其余 1.2–2.1 为弱信号；唯一不区分的是拨钟题（temporal，0.8）。这是我们如实标注的测量边界，不是藏起来的缺点</sub></p>
+<p align="center"><sub>维度区分度（组间/组内方差比，n=4/组，F(2,9)）：边界识别 9.9 是唯一过 α=0.05 的维（p=0.005）——三家在该维的分化（83/75/40）真实且稳定；长期保持 3.5、动态更新 3.3、相近区分 3.3 落在 α=0.10 边缘；记忆调用 0.7、任务复用 0.6、拨钟题 temporal 0.4 在 n=4 下仍不区分。这是我们如实标注的测量边界，不是藏起来的缺点</sub></p>
 
 ## 文档
 

@@ -72,13 +72,13 @@ def build_caliber(mod) -> tuple[str, str]:
                f"（2026-{date_str}）")
     return ver_str, caliber
 
-# stats_uncertainty.py 2026-10-08 输出（同源可复算）
-AGREE = {"hermes": 47.2, "kylinbot": 73.0, "openclaw": 85.4}   # 六态一致率 %
-FLIP = {"hermes": 44, "kylinbot": 23, "openclaw": 13}          # 对错翻转 %
+# stats_uncertainty.py 2026-10-12 n=4 输出（同源可复算）
+AGREE = {"hermes": 75.3, "kylinbot": 73.8, "openclaw": 87.5}   # 六态一致率均值 %
+FLIP = {"hermes": 22, "kylinbot": 22, "openclaw": 9}           # 对错翻转均值 %
 PAIRS = [  # (对比, p, 显著?)
-    ("Hermes  vs  KylinBot", 0.002, True),
-    ("Hermes  vs  OpenClaw", 0.027, True),
-    ("KylinBot  vs  OpenClaw", 1.000, False),
+    ("Hermes  vs  KylinBot", 0.000, True),
+    ("Hermes  vs  OpenClaw", 0.856, False),
+    ("KylinBot  vs  OpenClaw", 0.003, True),
 ]
 
 
@@ -130,7 +130,7 @@ VERDICT_COLOR = {
 def load_caps() -> dict[str, dict[str, dict]]:
     out: dict[str, dict[str, dict]] = {}
     for a in AGENTS:
-        d = json.loads((RUNS / f"_agg-{a}-dual" / "aggregate.json")
+        d = json.loads((RUNS / f"_agg-{a}-n4" / "aggregate.json")
                        .read_text(encoding="utf-8"))
         out[a] = {c: d["capabilities"][c] for c in CAP_ORDER if c in d["capabilities"]}
     return out
@@ -138,7 +138,7 @@ def load_caps() -> dict[str, dict[str, dict]]:
 
 def fig1_six_dim_bars(caps: dict[str, dict[str, dict]], ver_str: str,
                       caliber: str) -> None:
-    """六维 mean±std 分组柱 + 各轮散点（n=2，散点=两轮实际值）。"""
+    """六维 mean±std 分组柱 + 各轮散点（n=4，白圈=四轮极值 min/max）。"""
     _setup_font()
     fig, ax = plt.subplots(figsize=(9.6, 4.0))
     dims = CAP_ORDER
@@ -157,7 +157,7 @@ def fig1_six_dim_bars(caps: dict[str, dict[str, dict]], ver_str: str,
                label=f"{ver_parts[a]}（{AGENT_LABEL[a]}）", zorder=2)
         ax.errorbar(pos, means, yerr=stds, fmt="none",
                     ecolor="#333333", elinewidth=1.1, capsize=2.5, zorder=4)
-        # 各轮实际值散点（n=2：min 与 max 即两轮）
+        # 各轮实际值散点（n=4：min/max 为四轮极值，均值棒 ±std）
         ax.scatter(pos, los, s=11, color="white", edgecolor=COLOR[a],
                    linewidth=0.9, zorder=5)
         ax.scatter(pos, his, s=11, color="white", edgecolor=COLOR[a],
@@ -199,7 +199,7 @@ def fig2_uncertainty() -> None:
     ax1.set_xlabel("同探测点两轮六态一致率（%）")
     ax1.xaxis.grid(True, color="0.88", linewidth=0.7, zorder=0)
     ax1.set_axisbelow(True)
-    ax1.set_title("(a) 系统内稳定性（n=89 探测点 × 2 轮）",
+    ax1.set_title("(a) 系统内稳定性（n=87 探测点 × 4 轮两两）",
                   fontsize=10.5, loc="left", pad=8)
     _publication(ax1)
     ax1.spines["left"].set_visible(False)
@@ -396,7 +396,7 @@ def fig3_pipeline_svg() -> None:
 
 
 def fig4_verdict_mix(mod, caliber: str) -> None:
-    """图 4：六态判定构成（六场 run 100% 堆积条）——"记错的样子"可视化。"""
+    """图 4：六态判定构成（十二场 run 100% 堆积条）——"记错的样子"可视化。"""
     from collections import Counter
 
     _setup_font()
@@ -407,7 +407,7 @@ def fig4_verdict_mix(mod, caliber: str) -> None:
             rows.append((f"{AGENT_LABEL[a]} r{i}", Counter(vs.values())))
     states = [k for k in VERDICT_ZH if any(c.get(k) for _, c in rows)]
 
-    fig, ax = plt.subplots(figsize=(9.6, 3.4))
+    fig, ax = plt.subplots(figsize=(9.6, 4.8))
     ys = np.arange(len(rows))[::-1]
     totals = np.array([sum(c.values()) for _, c in rows], dtype=float)
     left = np.zeros(len(rows))
@@ -505,9 +505,9 @@ def fig5_dual_vs_scripted(mod) -> None:
 
 
 def fig6_separation(mod) -> None:
-    """图 6：维度区分度棒棒糖（组间/组内方差比，n=2/组）。
+    """图 6：维度区分度棒棒糖（组间/组内方差比，n=4/组）。
 
-    比值 <1 = 两轮轮间方差盖过智能体间差异，该维在 n=2 下不构成区分；
+    比值 <1 = 轮间方差盖过智能体间差异，该维不构成区分；
     ≥1 才是"这个维真的在分开不同系统"。
     """
     _setup_font()
@@ -546,7 +546,7 @@ def fig6_separation(mod) -> None:
                 va="center", color=color)
     ax.axvline(1.0, color="#D55E00", linewidth=0.9, linestyle=(0, (4, 3)),
                alpha=0.8)
-    ax.text(1.0, len(rows) - 0.28, " n=2 可区分阈值", fontsize=8,
+    ax.text(1.0, len(rows) - 0.28, " n=4 可区分阈值", fontsize=8,
             color="#D55E00", va="bottom")
     ax.set_yticks(ys)
     ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
@@ -557,7 +557,7 @@ def fig6_separation(mod) -> None:
     ax.set_xlabel("维度区分度 = 组间方差（智能体间）/ 组内方差（同智能体轮间）")
     ax.xaxis.grid(True, color="0.9", linewidth=0.7, zorder=0)
     ax.set_axisbelow(True)
-    ax.set_title("哪些维在 n=2 下真的分开了系统（灰=尚不区分）",
+    ax.set_title("哪些维在 n=4 下真的分开了系统（灰=尚不区分）",
                  fontsize=10.5, loc="left", pad=8)
     _publication(ax)
     ax.spines["left"].set_visible(False)
@@ -574,7 +574,7 @@ def fig0_final_radar(ver_str: str, caliber: str) -> None:
 
     scores: dict[str, dict[str, float]] = {}
     for a in AGENTS:
-        d = json.loads((RUNS / f"_agg-{a}-dual" / "aggregate.json")
+        d = json.loads((RUNS / f"_agg-{a}-n4" / "aggregate.json")
                        .read_text(encoding="utf-8"))
         ver_parts = dict(zip(AGENTS, [v.strip() for v in ver_str.split("/")],
                               strict=True))
@@ -597,9 +597,9 @@ def main() -> int:
     fig4_verdict_mix(mod, caliber)
     fig5_dual_vs_scripted(mod)
     fig6_separation(mod)
-    for name in ["fig-six-dim.png", "fig-uncertainty.png", "pipeline-dark.svg",
-                 "fig-verdict-mix.png", "fig-dual-vs-scripted.png",
-                 "fig-separation.png"]:
+    for name in ["radar-final-dual.png", "fig-six-dim.png", "fig-uncertainty.png",
+                 "pipeline-dark.svg", "fig-verdict-mix.png",
+                 "fig-dual-vs-scripted.png", "fig-separation.png"]:
         p = OUT / name
         print(f"{name}: {p.stat().st_size // 1024} KB")
     return 0
