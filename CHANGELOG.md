@@ -4,8 +4,13 @@
 口径遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 精简版；
 评测数字随口径变更的，一律注明口径而非只报数字。
 
-## [未发布]
+## [1.3.2] - 2026-10-12
 
+- **用例轮换 --rotate-count/--seed（PR#6，weilai-040303）**：按历史运行频次 +
+  能力/难度平衡的可复现轮换抽题（同 seed、同历史记录选出同一题单）——长跑
+  马拉松不必每轮全量；选题在全局 run lock 内完成（顺带修同秒 run_id 分配
+  竞态），manifest 增 case_rotation 键留痕。纯 opt-in：不指定即全量，
+  不动冻结口径；合并后清理轮换校验分支 3 行不可达残留
 - **终榜 v3：扩轮至 n=4 + chains 并入口径（2026-10-12）**：r3/r4 马拉松 12 场
   （三家 × r3/r4 × full+chains，与 10-10 六场同栈；hermes-r3-full 一轮判卷遇 DNS
   挂死，事后从封存证据补判，全程留痕）。**full 45 × 4 轮**：hermes 74.6%±2.8 ≈
