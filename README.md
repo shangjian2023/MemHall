@@ -103,6 +103,11 @@ uv run memhall stability runs/A runs/B  # 重跑稳定性：一致率 / pass^k /
 uv run memhall vm status              # openKylin VM 生命周期（快照/回滚/健康检查）
 uv run memhall aggregate runs/A runs/A  # N 轮聚合：六维 mean±std + bootstrap 95% CI
 
+# 可复现的题目轮换（实验抽样用途；正式排名仍使用 full + chains）
+uv run memhall run -a mock -c cases/full -o runs --rotate-count 12 --seed 20261011
+# 轮换会读取 runs/*/manifest.json，在跨进程锁内优先选择历史频次较低的题，
+# 并把 seed、case_id、能力/难度分布写入本轮 manifest。
+
 uv run memhall systest -a hermes      # 系统级测试：重启/拨钟/多用户/断网（真机真做）
 
 uv run pytest tests/ -q               # 测试（含端到端冒烟）

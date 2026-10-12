@@ -323,7 +323,9 @@ class _GlobalRunLock:
 def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
               adapter_name: str, case_source: str = "",
               on_case_done=None, on_event=None,
-              model_override: str | None = None) -> tuple[str, list[EvidenceStore]]:
+              model_override: str | None = None,
+              rotate_count: int | None = None,
+              rotation_seed: int | None = None) -> tuple[str, list[EvidenceStore]]:
     """跑整套用例，落盘 manifest，返回 (run_id, 每 case 的证据视图)。
 
     on_case_done(case_id, i, n)：每用例跑完后回调（UI 进度流用）；
@@ -335,19 +337,18 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
         直连/mock 车道忽略（不经网关无从改写），manifest 记 model_override
         供 compare 侧与官方口径区分。
     """
-    run_id = _utc().strftime("%Y%m%d-%H%M%S") + f"-{adapter_name}"
-    # 快机同秒跑两轮（mock 单轮 2 秒级）会互相覆盖，冲突时加序号后缀
-    base_dir = out_dir / run_id
-    run_dir, k = base_dir, 2
-    while run_dir.exists():
-        run_dir = out_dir / f"{run_id}-{k}"
-        k += 1
-    run_id = run_dir.name
-    log.info("评测开始: %s × %d 用例 × %d 探测点 → %s", adapter_name, len(cases),
-             sum(len(c.probes) for c in cases), run_dir)
+    if rotate_count is not None:
+        if rotation_seed is None:
+            raise ValueError("题目轮换必须提供 rotation_seed")
+        if rotate_count <= 0 or rotate_count > len(cases):
+            raise ValueError(f"rotate_count 必须在 1 到 {len(cases)} 之间")
+        if len({case.case_id for case in cases}) != len(cases):
+            raise ValueError("轮换题库包含重复 case_id")
+
     stores: list[EvidenceStore] = []
     failed: list[str] = []
     clock_restore_failed: list[str] = []
+    rotation_meta: dict | None = None
     usage_before = usage_snapshot()
     # 网关车道逐 run 模型改写：只在网关模式落表（直连模式写了也没人读，
     # 还污染共享家目录）；tag 推导与 gateway_settings 同源
@@ -360,7 +361,25 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
             set_model_override(gw_tag, model_override)
             log.info("模型改写: %s → %s（网关）", gw_tag, model_override)
     with _GlobalRunLock():   # R57：CLI/UI 跨进程互斥
+        # Allocate the run ID under the same lock as rotation history selection.
+        # Otherwise two fast runs waiting on the lock can choose the same directory.
+        run_id = _utc().strftime("%Y%m%d-%H%M%S") + f"-{adapter_name}"
+        base_dir = out_dir / run_id
+        run_dir, k = base_dir, 2
+        while run_dir.exists():
+            run_dir = out_dir / f"{run_id}-{k}"
+            k += 1
+        run_id = run_dir.name
         try:
+            if rotate_count is not None:
+                from memhall.runner.case_rotation import rotate_cases
+                assert rotation_seed is not None
+                rotation = rotate_cases(
+                    cases, count=rotate_count, seed=rotation_seed, out_dir=out_dir)
+                cases = rotation.cases
+                rotation_meta = rotation.manifest()
+            log.info("评测开始: %s × %d 用例 × %d 探测点 → %s", adapter_name, len(cases),
+                     sum(len(c.probes) for c in cases), run_dir)
             for i, case in enumerate(cases):
                 log.info("[%d/%d] %s 开跑", i + 1, len(cases), case.case_id)
                 t0 = time.monotonic()
@@ -390,7 +409,8 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
                 _write_manifest(run_dir, run_id, adapter_name, case_source,
                                 cases, failed, usage_before, adapter,
                                 clock_restore_failed=clock_restore_failed,
-                                model_override=model_override)
+                                model_override=model_override,
+                                case_rotation=rotation_meta)
             finally:
                 if gw_tag:   # 改写表必清——残留会把下一场 run 偷偷挂到旧模型上
                     from memhall.gateway import set_model_override
@@ -419,7 +439,8 @@ def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
                     case_source: str, cases: list[MemoryCase], failed: list[str],
                     usage_before, adapter: AgentAdapter,
                     clock_restore_failed: list[str] | None = None,
-                    model_override: str | None = None) -> None:
+                    model_override: str | None = None,
+                    case_rotation: dict | None = None) -> None:
     manifest = {
         "run_id": run_id,
         "tool": "memhall",
@@ -436,6 +457,8 @@ def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
     }
     if failed:
         manifest["failed_cases"] = failed
+    if case_rotation is not None:
+        manifest["case_rotation"] = case_rotation
     # 复现元数据：本轮实际挂在哪个模型（网关/直连两模式 + 逐 run 改写口径）。
     # 此前只在 CLI cmd_run 补写——UI 发车的 run 一直缺这格（compare 对账盲区）
     from memhall.gateway import model_backend

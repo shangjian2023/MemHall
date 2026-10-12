@@ -171,6 +171,24 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"未找到用例: {args.cases}", file=sys.stderr)
         return 1
 
+    if args.rotate_count is not None:
+        if args.rotation_seed is None:
+            print("--rotate-count 必须同时指定 --seed，保证题目选择可复现", file=sys.stderr)
+            return 2
+        if args.rotate_count <= 0 or args.rotate_count > len(cases):
+            print(f"--rotate-count 必须在 1 到 {len(cases)} 之间", file=sys.stderr)
+            return 2
+        case_ids = [case.case_id for case in cases]
+        if len(case_ids) != len(set(case_ids)):
+            print("轮换题库包含重复 case_id", file=sys.stderr)
+            return 2
+    elif args.rotation_seed is not None:
+        print("--seed 仅用于 --rotate-count 轮换", file=sys.stderr)
+        return 2
+        if args.rotate_count <= 0 or args.rotate_count > len(cases):
+            print(f"--rotate-count 必须在 1 到 {len(cases)} 之间", file=sys.stderr)
+            return 2
+
     try:
         adapter = create_adapter(args.adapter)
     except ValueError as e:
@@ -200,7 +218,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("缺少 JUDGE_A_ 环境变量，回退脚本判卷", file=sys.stderr)
 
     from memhall.cost import estimate, fmt_tokens
-    est = estimate(args.adapter, len(cases), Path(args.out))
+    est = estimate(args.adapter, args.rotate_count or len(cases), Path(args.out))
     if est:
         req = f"、约 {est['requests']} 次请求" if est.get("requests") else ""
         print(f"⏳ 预计消耗 ≈ {fmt_tokens(est['total_tokens'])} tokens{req}"
@@ -208,7 +226,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     run_id, stores = run_suite(adapter, cases, Path(args.out), args.adapter,
                                case_source=args.cases,
-                               model_override=model_override)
+                               model_override=model_override,
+                               rotate_count=args.rotate_count,
+                               rotation_seed=args.rotation_seed)
     run_dir = Path(args.out) / run_id
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
 
@@ -614,6 +634,10 @@ def main() -> None:
                             "仅统一网关模式有效）")
     p_run.add_argument("--judge", choices=["scripted", "dual"], default="scripted",
                        help="判卷方式（dual=LLM 判卷[单判或双判，按 JUDGE_B 是否配置]）")
+    p_run.add_argument("--rotate-count", type=int,
+                       help="按历史运行轮换抽取题目数（需同时指定 --seed）")
+    p_run.add_argument("--seed", dest="rotation_seed", type=int,
+                       help="题目轮换 seed；同 seed、同历史记录会选择同一题单")
     p_run.set_defaults(func=cmd_run)
 
     p_rep = sub.add_parser("report", help="出报告（缺 verdicts 时从证据重放评分）",
