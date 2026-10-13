@@ -74,7 +74,10 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
         # 网关改写 model、真凭据只在网关侧
         from memhall.gateway import gateway_settings
 
-        gw = gateway_settings("hermes", vm_lane=True) or {}
+        # 网关身份按实例 self.name 取（2026-10-14 评审修复）：kylin-agent
+        # 子类继承本 __init__，固定 "hermes" 会把它的请求记到 memhall-hermes
+        # 账上；Hermes 自身 name="hermes"，行为不变
+        gw = gateway_settings(self.name, vm_lane=True) or {}
         self._key = gw.get("key") or os.environ.get("AGENT_LLM_KEY", "")
         self._url = gw.get("base_url") or os.environ.get("AGENT_LLM_BASE_URL", "")
         self._model = gw.get("model") or os.environ.get("AGENT_LLM_MODEL", "qwen3.7-plus")

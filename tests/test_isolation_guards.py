@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -44,21 +45,36 @@ def test_global_run_lock_mutex_and_release():
 
 
 class _ClockChannel:
-    """假 VM 通道：date +%s 喂指定 epoch，sudo 全记录。"""
+    """假 VM 时钟通道：wall 可被 date -s 拨动，monotonic 独立推进。
 
-    def __init__(self, epoch: int, sudo_rc: int = 0):
-        self.epoch = epoch
+    mono 由测试显式拨（ch.mono += 600 模拟用例真实耗时），不挂真实时间，
+    恢复目标可断言到秒。"""
+
+    def __init__(self, epoch: int, mono: float = 1000.0, sudo_rc: int = 0):
+        self.wall = float(epoch)
+        self.mono = mono
         self.sudo_rc = sudo_rc
         self.sudos: list[str] = []
 
     def run(self, cmd, timeout=300, stdin_data=None):
-        if cmd == "date +%s":
-            return 0, f"{self.epoch}\n", ""
+        if "date +%s" in cmd and "/proc/uptime" in cmd:
+            return 0, f"{int(self.wall)} {self.mono:.2f}\n", ""
         return 0, "", ""
+
+    def _apply(self, cmd):
+        m = re.match(r"date -s @(\d+)", cmd)
+        if m:
+            self.wall = int(m.group(1))
+        else:
+            m = re.match(r"date -s '\+(\d+) days'", cmd)
+            self.wall += int(m.group(1)) * 86400
 
     def sudo(self, cmd, timeout=120):
         self.sudos.append(cmd)
-        return self.sudo_rc, "", ("boom" if self.sudo_rc else "")
+        if self.sudo_rc:
+            return self.sudo_rc, "", "boom"
+        self._apply(cmd)
+        return 0, "ok", ""
 
 
 class _VmLane(VmAdapterMixin):
@@ -75,15 +91,20 @@ def test_clock_shift_zero_days_is_noop():
 
 
 def test_clock_shift_and_restore_roundtrip():
+    """恢复必须包含真实耗时：起点 1700000000、用例走 600s → 恢复到
+    1700000600（评审复现：旧实现回拨 1700000000，每 case 白吃一段耗时，
+    攒过 ±300s 漂移闸门后下一场被拒跑）。"""
     ch = _ClockChannel(1700000000)
     a = _VmLane(ch)
     a.clock_shift(30)
     assert "date -s '+30 days'" in ch.sudos[0]
-    assert a._clock_epoch == 1700000000
+    assert ch.wall == 1700000000 + 30 * 86400  # 拨钟在 VM 侧生效
+    ch.mono += 600  # 用例真实耗时（单调钟，date -s 拨不动）
     a.clock_restore()
-    assert "date -s @1700000000" in ch.sudos[1]
-    assert a._clock_epoch is None
-    a.clock_restore()  # 无残留 epoch：幂等无操作
+    assert "date -s @1700000600" in ch.sudos[1]  # 原 epoch + 耗时，非原 epoch
+    assert ch.wall == 1700000600
+    assert a._clock_state is None
+    a.clock_restore()  # 无挂起基准：幂等无操作
     assert len(ch.sudos) == 2
 
 
@@ -96,6 +117,7 @@ def test_clock_shift_and_restore_failures_raise_adapter_error():
     a.ch.sudo_rc = 1
     with pytest.raises(AdapterError, match="时钟恢复失败"):
         a.clock_restore()
+    assert a._clock_state is not None  # 失败不清状态：下一 case finally 重试
 
 
 # ---------- A1 错钟残留检测 ----------
