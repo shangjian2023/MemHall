@@ -170,32 +170,68 @@ def _reasoning_desc(payload: dict) -> str | None:
     return None
 
 
+def _parse_ts(ts: str) -> datetime | None:
+    """账单/窗口时间戳 → aware datetime。尾缀 Z/z 视作 UTC；无 offset 的
+    按 UTC（账单自始 UTC 写入）；解析不了返回 None（调用方明确失败处理，
+    不猜）。时刻比较一律用本函数解析后的值——同一时刻的不同 offset 写法
+    （+08:00 vs Z）曾靠字符串前缀比较而比不出相等。"""
+    s = ts.strip()
+    if not s:
+        return None
+    if s[-1] in "Zz":
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 def summarize_reasoning(start_iso: str, end_iso: str, agent_tag: str,
                         log_file: Path | None = None) -> dict | None:
-    """按时间窗归并某智能体在网关账单里的模型与思考参数（run 收尾进 manifest）。
+    """按时间窗归并某智能体在网关账单里的模型与思考参数（离线分析用）。
 
     只认 tag == agent_tag 的行——判卷流量（memhall-judge*）与其他车道不掺。
-    返回 None = 窗口内无该 tag 流量（直连模式/网关没跑），不落键。
+    窗口边界与账单 ts 都解析成 aware datetime 再比（任意 offset 归一），
+    不再做字符串截断比较。窗口解析不了或账单读不到 → None；返回 None
+    也包括窗口内无该 tag 流量（直连模式/网关没跑），不落键。
     """
+    start, end = _parse_ts(start_iso), _parse_ts(end_iso)
     path = log_file or default_log_path()
-    if not path.is_file() or not start_iso or not end_iso:
+    if start is None or end is None or not path.is_file():
         return None
+    rows: list[dict] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(rec, dict):
+                continue
+            ts = _parse_ts(str(rec.get("ts", "")))
+            if ts is not None and start <= ts <= end:
+                rows.append(rec)
+    except OSError:
+        return None
+    return _merge_reasoning_rows(rows, agent_tag)
+
+
+def summarize_reasoning_records(records: list[dict], agent_tag: str) -> dict | None:
+    """账单记录段（调用方按追加行号切出的本轮流量）→ 模型/思考强度归并。
+
+    runner 收尾进 manifest 的数据源：归因靠账单行号不靠时间窗——前一场
+    同名 tag 的请求天然在段外。归并口径与 summarize_reasoning 一致。
+    """
+    return _merge_reasoning_rows([r for r in records if isinstance(r, dict)], agent_tag)
+
+
+def _merge_reasoning_rows(rows: list[dict], agent_tag: str) -> dict | None:
     models: set[str] = set()
     asked: set[str] = set()   # 智能体侧配置漂移（被网关改写前的请求 model 字段）
     reasoning: set[str] = set()
     n = 0
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return None
-    for line in lines:
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        ts = str(rec.get("ts", ""))
-        if not (start_iso[:19] <= ts[:19] <= end_iso[:19]):
-            continue
+    for rec in rows:
         if rec.get("agent") != agent_tag or rec.get("status") != 200:
             continue
         n += 1
