@@ -6,8 +6,8 @@ vm_lane=True) → key=memhall-hermes，网关把 kylin-agent 的请求记到 her
 头上，run 的模型覆盖也指向另一个 tag。
 
 分工：父类按 self.name 取身份由 B 修（03-vm-adapters.md，hermes.py 归 B）；
-本网只立契约锚点，不竞改 hermes.py、不在子类复制构造逻辑绕过。带
-@xfail(strict=True) 的两条在 B 合入前红着（XPASS 即整网失败，提示摘标记），
+本网只立契约锚点，不竞改 hermes.py、不在子类复制构造逻辑绕过。
+原 xfail(strict=True) 两条已在 B 合入后摘标记转常绿守护（2026-10-14 整合）：
 其余各条现在就绿、B 合入后仍须绿：
 - Hermes 车道仍用 memhall-hermes（B 的修复不得矫枉过正）
 - GATEWAY_AGENT_KEY 自定义覆写对两家一视同仁（gateway.py 既有约定）
@@ -21,8 +21,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -50,13 +48,10 @@ def _scrub(monkeypatch):
         monkeypatch.delenv(k, raising=False)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "P1 待 B：HermesAdapter.__init__ 改按 self.name 取身份（hermes.py 归 B）；"
-    "合入后本条 XPASS 失败，摘掉此标记即恢复守护"))
 def test_kylin_agent_gets_own_gateway_tag(monkeypatch):
     """P1 主断言：统一网关模式下 kylin-agent 的 dummy key 必须是
     memhall-kylin-agent（网关按 Bearer 归因记账、模型覆盖按 tag 生效）。
-    现状复现红着（实际拿到 memhall-hermes），B 修复父类后转绿。"""
+    （B 已修父类按 self.name 取身份，摘 xfail(strict) 转常绿守护。）"""
     _scrub(monkeypatch)
     monkeypatch.setenv("GATEWAY_VM_URL", "http://192.168.61.1:8311/v1")
     a = KylinAgentAdapter(channel=_Chan())  # type: ignore[arg-type]
@@ -134,12 +129,10 @@ def test_send_pins_kylin_home_not_hermes(monkeypatch):
     assert ".hermes" not in lines.replace("memhall-hermes", "")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "P1 待 B：同上，父类 __init__ 按 self.name 传身份后摘标记"))
 def test_gateway_settings_receives_adapter_name(monkeypatch):
     """构造期把 self.name 传给 gateway_settings（B 修父类后的调用契约）。
-    记录器按名回派生 tag，kylin-agent 侧收到的必须是 "kylin-agent"；
-    现状实际传 "hermes"，红着等 B。"""
+    记录器按名回派生 tag，kylin-agent 侧收到的必须是 "kylin-agent"。
+    （B 已修，摘 xfail(strict) 转常绿守护。）"""
     import memhall.gateway as gw_mod
 
     calls: list[str] = []

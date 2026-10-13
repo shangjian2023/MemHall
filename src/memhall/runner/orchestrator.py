@@ -1108,6 +1108,28 @@ def _write_manifest(
     from memhall.gateway import model_backend
 
     manifest["model_backend"] = model_backend(model_override)
+    # 口径接线（C 交接项）：environment 指纹进 manifest——sandbox 开关必落
+    # （check_compatibility 读 manifest.environment.sandbox，缺键=整场 unknown
+    # 降级）。VM/local 车道有通道时附完整 remote_environment 指纹（OS/内核/
+    # Python/主机密钥），无通道车道（mock 等）记 kind=local 最小指纹；探测
+    # 失败只记 sandbox 不阻塞评测——环境指纹是元数据，不是判分证据。
+    try:
+        from memhall.adapters.sandbox import sandbox_enabled
+
+        ch = getattr(adapter, "ch", None)
+        if ch is not None and hasattr(ch, "run_json"):
+            from memhall.adapters.remote import remote_environment
+
+            manifest["environment"] = remote_environment(ch, adapter_name)
+        else:
+            manifest["environment"] = {
+                "kind": "local", "sandbox": "on" if sandbox_enabled() else "off"}
+    except Exception as e:  # noqa: BLE001 元数据探测不阻塞评测
+        log.warning("environment 指纹采集失败（只落 sandbox）: %s", e)
+        manifest["environment"] = {
+            "kind": "local",
+            "sandbox": os.environ.get("MEMHALL_SANDBOX", "off"),
+            "probe_error": str(e)[:200]}
     if clock_restore_failed:
         # R33：时钟残留警报——这些 case 之后系统时间可能仍 +N 天，
         # 后续 run 的时间语义（temporal 族）需对照本字段核查
