@@ -62,8 +62,10 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
 
     def _agent_cmd(self) -> str:
         """send 脚本里被测 CLI 的调用行（$m = 消息临时文件路径）。"""
-        return (f'timeout {SEND_TIMEOUT_S} {self.bin} chat --query-file "$m" '
-                '--oneshot --provider deepseek --model "$DEEPSEEK_MODEL"')
+        return (
+            f'timeout {SEND_TIMEOUT_S} {self.bin} chat --query-file "$m" '
+            '--oneshot --provider deepseek --model "$DEEPSEEK_MODEL"'
+        )
 
     def __init__(self, channel: SshChannel | LocalChannel | None = None):
         self.ch = channel or default_channel()
@@ -71,6 +73,7 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
         # 统一模型模式（GATEWAY_VM_URL，VM 走宿主网关的明文 http 腿）优先：
         # 网关改写 model、真凭据只在网关侧
         from memhall.gateway import gateway_settings
+
         gw = gateway_settings("hermes", vm_lane=True) or {}
         self._key = gw.get("key") or os.environ.get("AGENT_LLM_KEY", "")
         self._url = gw.get("base_url") or os.environ.get("AGENT_LLM_BASE_URL", "")
@@ -82,11 +85,15 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
         必须 export——`. file` source 裸赋值只设 shell 局部变量，hermes 子进程
         看不到（2026-10-02 VM 实跑逮到的坑）。值加单引号防空白/特殊字符劈碎。
         """
+
         def _q(v: str) -> str:
             return "'" + v.replace("'", "'\\''") + "'"
-        return (f"export DEEPSEEK_API_KEY={_q(self._key)}\n"
-                f"export DEEPSEEK_BASE_URL={_q(self._url)}\n"
-                f"export DEEPSEEK_MODEL={_q(self._model)}\n")
+
+        return (
+            f"export DEEPSEEK_API_KEY={_q(self._key)}\n"
+            f"export DEEPSEEK_BASE_URL={_q(self._url)}\n"
+            f"export DEEPSEEK_MODEL={_q(self._model)}\n"
+        )
 
     def version_info(self) -> str | None:
         """被测版本自动识别（manifest.agent_version）——口径展示的锚点之一。"""
@@ -99,7 +106,8 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
         rc, _, err = self.ch.run(
             f"rm -f {self.mem_dir}/MEMORY.md {self.mem_dir}/USER.md "
             f"{self.mem_dir}/*.lock && "
-            f"rm -rf {' '.join(EVAL_WORKDIRS)} && echo ok")
+            f"rm -rf {' '.join(EVAL_WORKDIRS)} && echo ok"
+        )
         if rc != 0:
             # R33：失败抛 AdapterError（RuntimeError 会被当程序错误打崩整轮）
             raise AdapterError(f"{self.name} 记忆清零失败: {err.strip()[:300]}")
@@ -114,8 +122,7 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
         """memories 目录必须整目录空——dump 只读两个 md，残留即污染（R02）。"""
         rc, out, _ = self.ch.run(f"ls -A {self.mem_dir} 2>/dev/null | head -3")
         if rc == 0 and out.strip():
-            raise AdapterError(
-                f"{self.name} reset 后 {self.mem_dir} 仍有残留：{out.strip()[:120]}")
+            raise AdapterError(f"{self.name} reset 后 {self.mem_dir} 仍有残留：{out.strip()[:120]}")
 
     def send(self, session_id: str, message: str) -> Reply:
         # 凭据与消息都走 stdin（base64），命令行零明文：VM 内 ps/history
@@ -129,32 +136,40 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
             '&& chmod 600 "$e" && . "$e" && rm -f "$e" && '
             'm=$(mktemp -t mh-msg.XXXXXX) && tail -n +2 "$d" | base64 -d > "$m" '
             '&& rm -f "$d" && '
-            f'{self._agent_cmd()} 2>/dev/null; '
-            'rm -f "$m"')
+            f"{self._agent_cmd()} 2>/dev/null; "
+            'rm -f "$m"'
+        )
         script = self._sandboxed(script)
         sent = now_utc()
         t0 = time.time()
-        rc, out, _ = self.ch.run(script, timeout=CHANNEL_TIMEOUT_S,
-                                 stdin_data=b64(self._llm_env_lines()) + "\n"
-                                            + b64(message))
+        rc, out, _ = self.ch.run(
+            script, timeout=CHANNEL_TIMEOUT_S, stdin_data=b64(self._llm_env_lines()) + "\n" + b64(message)
+        )
         text = _strip_tui(out)
         # R32：timeout 杀进程 rc=124 时输出是残句——残句不是答案，不得
         # 当 Reply 计分（虚高）；超时一律 AgentUnavailable → invalid_run
         if rc == 124:
-            raise AgentUnavailable(
-                f"{self.name} 超时({SEND_TIMEOUT_S}s)，残句不计分: {text[:120]}")
+            raise AgentUnavailable(f"{self.name} 超时({SEND_TIMEOUT_S}s)，残句不计分: {text[:120]}")
         if rc != 0 and not text:
             raise AgentUnavailable(f"{self.name} 调用失败({rc})")
         # hermes 后端故障文案（已实测三种）：不让错误文本混进答案被当行为评分
         # （"Interrupted during API call"：网关/上游断流重试耗尽，2026-10-14
         # VM 沙箱冒烟实录，TLS 坏窗口所致——infra 故障该 invalid_run 不计分）
-        if ("API failed after" in text or "Final error" in text
-                or "Interrupted during API call" in text
-                or "server error" in text.lower()):
+        if (
+            "API failed after" in text
+            or "Final error" in text
+            or "Interrupted during API call" in text
+            or "server error" in text.lower()
+        ):
             raise AgentUnavailable(f"{self.name} 后端不可用: {text[:200]}")
-        return Reply(session_id=session_id, text=text,
-                     sent_at=sent, reply_at=now_utc(),
-                     latency_ms=elapsed_ms(t0), token_usage=None)
+        return Reply(
+            session_id=session_id,
+            text=text,
+            sent_at=sent,
+            reply_at=now_utc(),
+            latency_ms=elapsed_ms(t0),
+            token_usage=None,
+        )
 
     def end_session(self, session_id: str) -> None:
         pass  # oneshot 每次独立进程，会话隔离天然成立
@@ -164,15 +179,22 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
         # 合法缺席（boundary 题智能体本就不写）会把"文件不存在"误报成
         # "导出失败"→25 例假 invalid_run（2026-10-08 r3 实锤）；真实传输
         # 故障走 run() 的异常路径，不会被这里吞掉
-        cmd = (f"for f in {self.mem_dir}/MEMORY.md {self.mem_dir}/USER.md; do "
-               f"[ -f $f ] && echo \"=== $f\" && cat $f; done; true")
+        cmd = (
+            f"for f in {self.mem_dir}/MEMORY.md {self.mem_dir}/USER.md; do "
+            f'[ -f $f ] && echo "=== $f" && cat $f; done; true'
+        )
         rc, out, _ = self.ch.run(cmd)
         # R31：导出失败如实标注（dump_ok=False → 规则层判运行无效），
         # 不再与"空记忆"混淆——canary 泄漏洗白面就此关死
         if rc != 0:
-            return MemorySnapshot(format="files", dumped_at=now_utc(),
-                                  entries=[], raw=None, dump_ok=False,
-                                  error=f"SSH cat 失败 rc={rc}")
+            return MemorySnapshot(
+                format="files",
+                dumped_at=now_utc(),
+                entries=[],
+                raw=None,
+                dump_ok=False,
+                error=f"SSH cat 失败 rc={rc}",
+            )
         entries: list[MemoryEntry] = []
         current = ""
         for line in out.splitlines():
@@ -183,11 +205,15 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
             # 连 "-3°C 是最低温" 这类正文首字符一起剥掉
             s = re.sub(r"^[-*]\s+", "", line.strip()).strip()
             if s:
-                entries.append(MemoryEntry(entry_id=f"m-{len(entries):04d}",
-                                           content=s, created_at=None,
-                                           source_turn=current or "unknown"))
-        return MemorySnapshot(format="files", dumped_at=now_utc(),
-                              entries=entries, raw=None)
+                entries.append(
+                    MemoryEntry(
+                        entry_id=f"m-{len(entries):04d}",
+                        content=s,
+                        created_at=None,
+                        source_turn=current or "unknown",
+                    )
+                )
+        return MemorySnapshot(format="files", dumped_at=now_utc(), entries=entries, raw=None)
 
     def dump_actions(self) -> ActionDump:
         """解析 agent.log 本 case 增量里的工具调用（agent.tool_executor 行）。
@@ -197,18 +223,24 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
         from datetime import datetime
 
         from memhall.schema.evidence import Action, ActionSource
-        cmd = (f"tail -c +{self._log_offset + 1} {self.agent_log} 2>/dev/null | "
-               f"grep 'tool_executor: tool '")
+
+        cmd = f"tail -c +{self._log_offset + 1} {self.agent_log} 2>/dev/null | grep 'tool_executor: tool '"
         rc, out, _ = self.ch.run(cmd, timeout=30)
         actions: list[Action] = []
         if rc == 0:
             for i, line in enumerate(out.splitlines(), 1):
-                m = re.match(r"(\d{4}-\d{2}-\d{2}[T ][0-9:.]+Z?)\s*"
-                             r".*?tool_executor: tool ([a-z_0-9-]+) "
-                             r"(completed|returned)", line)
+                m = re.match(
+                    r"(\d{4}-\d{2}-\d{2}[T ][0-9:.]+Z?)\s*"
+                    r".*?tool_executor: tool ([a-z_0-9-]+) "
+                    r"(completed|returned)",
+                    line,
+                )
                 if not m:
-                    m2 = re.search(r"tool_executor: tool ([a-z_0-9-]+) "
-                                   r"(completed|returned)", line)
+                    m2 = re.search(
+                        r"tool_executor: tool ([a-z_0-9-]+) "
+                        r"(completed|returned)",
+                        line,
+                    )
                     if not m2:
                         continue
                     ts, tool, status = now_utc(), m2.group(1), m2.group(2)
@@ -221,19 +253,26 @@ class HermesAdapter(VmAdapterMixin, AgentAdapter):
                     except ValueError:
                         ts = now_utc()
                     tool, status = m.group(2), m.group(3)
-                actions.append(Action(
-                    action_id=f"a-{i:03d}", ts=ts, tool=tool, args={},
-                    result=status, source=ActionSource.AGENT_LOG))
-        return ActionDump(actions=actions,
-                          coverage="partial" if actions else "unknown")
+                actions.append(
+                    Action(
+                        action_id=f"a-{i:03d}",
+                        ts=ts,
+                        tool=tool,
+                        args={},
+                        result=status,
+                        source=ActionSource.AGENT_LOG,
+                    )
+                )
+        return ActionDump(actions=actions, coverage="partial" if actions else "unknown")
 
     def fs_snapshot(self) -> list[str] | None:
         """VM 用户区文件清单（~ 下 4 层，排除 hermes 自身与缓存噪音）。
         归一化用远端 $HOME 展开（不硬编码 /home/<用户名>——第三方 VM
         用户名不同时硬编码会让全部 fs 断言静默失配）。"""
         prunes = " -o ".join(f"-name {d}" for d in self.fs_prune)
-        cmd = (f"find ~ -maxdepth 4 \\( {prunes} \\) -prune -o "
-               '-printf \'%p\\n\' 2>/dev/null | sed "s|^$HOME|~|"')
+        cmd = (
+            f"find ~ -maxdepth 4 \\( {prunes} \\) -prune -o -printf '%p\\n' 2>/dev/null | sed \"s|^$HOME|~|\""
+        )
         rc, out, _ = self.ch.run(cmd, timeout=60)
         return [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else None
 
@@ -260,11 +299,26 @@ def _strip_tui(out: str) -> str:
     # 无框退化路径：滤 TUI 状态行（API 重试/加载提示）与噪声头。
     # R58：词形噪声锚定行首——原"子串任意位置命中"会误伤正文里
     # 引用这些词的回答行；符号类（emoji/制表框）不受影响
-    noise_start = ("Query:", "Initializing", "Session:", "Resume", "Duration",
-                   "Title:", "Messages:", "API failed", "Retrying", "Transient",
-                   "Provider said", "rebuilt client")
-    keep = [ln.rstrip() for ln in lines
-            if ln.strip() and not any(n in ln for n in ("⚠", "⏳", "❌", "🔁", "💀"))
-            and not any(ln.strip().startswith(n) for n in noise_start)
-            and not set(ln.strip()) & set("╭╮╰╯│┌┐└┘─")]
+    noise_start = (
+        "Query:",
+        "Initializing",
+        "Session:",
+        "Resume",
+        "Duration",
+        "Title:",
+        "Messages:",
+        "API failed",
+        "Retrying",
+        "Transient",
+        "Provider said",
+        "rebuilt client",
+    )
+    keep = [
+        ln.rstrip()
+        for ln in lines
+        if ln.strip()
+        and not any(n in ln for n in ("⚠", "⏳", "❌", "🔁", "💀"))
+        and not any(ln.strip().startswith(n) for n in noise_start)
+        and not set(ln.strip()) & set("╭╮╰╯│┌┐└┘─")
+    ]
     return "\n".join(keep).strip()

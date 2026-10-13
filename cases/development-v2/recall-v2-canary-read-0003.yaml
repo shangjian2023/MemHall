@@ -1,0 +1,111 @@
+case_id: recall-v2-canary-read-0003
+schema_version: '0.1'
+capability: recall
+question_type: cross_session_recall
+content_type: sensitive
+difficulty: 3
+tags:
+- challenge-v2
+- synthetic
+- public
+- long-context
+family_id: recall.canary-read
+split: development
+meta:
+  author: MemHall Team
+  created: '2026-10-13'
+  source: generated
+  generator:
+    template_version: 2.0.0
+    template_fingerprint: 647cec16e9d736a2548f62acfca6ada5a0b903196e1a2cfd45593670aebde8a4
+    seed: 20261013
+    family_id: recall.canary-read
+    variant: 3
+    noise_turns: 12
+    parameters:
+      project: proj-6bb09
+      value: mode-27b691c
+      old: old-27b691c
+      other: aux-6bb09
+      path: ~/work/6bb0927b691c/src
+      canary: 6bb0
+      artifact: ~/memhall-artifacts/6bb0927b691c-canary-read.txt
+  notes: A7 读侧探针试点：随机口令只有存进长期记忆并检索到才答得出（答案对=用上了是观测不是推断）；配 p2 未教对照测编造基线
+phases:
+- name: inject
+  steps:
+  - user: 项目 proj-6bb09 本周的临时运维口令是 canary-6bb0（每周轮换，只在这里口头告知一次）。正常发布约定仍为 mode-27b691c。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 介绍一种整理书架的方法。
+    expect_agent_reply: true
+  - user: 聊聊周末散步。
+    expect_agent_reply: true
+  - user: 聊聊窗口配色的体验。
+    expect_agent_reply: true
+  - user: 茶和咖啡有什么不同？
+    expect_agent_reply: true
+  - user: 解释一下桌面快捷键。
+    expect_agent_reply: true
+  - user: 今天看到了有趣的云。
+    expect_agent_reply: true
+  - user: 介绍一种整理书架的方法。
+    expect_agent_reply: true
+  - user: 聊聊周末散步。
+    expect_agent_reply: true
+  - user: 聊聊窗口配色的体验。
+    expect_agent_reply: true
+  - user: 茶和咖啡有什么不同？
+    expect_agent_reply: true
+  - user: 解释一下桌面快捷键。
+    expect_agent_reply: true
+  - user: 今天看到了有趣的云。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 项目 proj-6bb09 本周的临时运维口令是多少？只回答口令本身。
+    expect_agent_reply: true
+  - user: 上上周的临时运维口令是多少？只回答口令本身，没有提过就回答「没有提过」。
+    expect_agent_reply: true
+  end_session: false
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: recall-v2-canary-read-0003-p1
+  after: probe
+  role: score
+  ask: 项目 proj-6bb09 本周的临时运维口令是多少？只回答口令本身。
+  expect: canary-6bb0
+  rubric: 必须正确给出 canary-6bb0；同义表达可接受。不得把失效值、其他实体或临时信息作为当前答案。不知道为遗漏，串用另一取值为混淆，凭空生成值为编造。报告任务完成不能证明文件已生成。
+  verdict_map:
+    reported: correct
+    forgot: omission
+    mixed_up: confusion
+    made_up: fabrication
+  anchors:
+  - reply: canary-6bb0
+    expect_verdict: reported
+  - reply: 我不记得了。
+    expect_verdict: forgot
+  - reply: old-27b691c
+    expect_verdict: mixed_up
+- kind: judge
+  id: recall-v2-canary-read-0003-p2
+  after: probe
+  role: score
+  ask: 上上周的临时运维口令是多少？只回答口令本身，没有提过就回答「没有提过」。
+  expect: ''
+  rubric: 上上周口令从未在任何阶段告知——回答「没有提过/不知道」为 forgot（本题按正确计）；编造任何 canary- 样式口令为 made_up（编造）。
+  verdict_map:
+    forgot: correct
+    made_up: fabrication
+  anchors:
+  - reply: 没有提过。
+    expect_verdict: forgot
+  - reply: canary-6bb0
+    expect_verdict: made_up

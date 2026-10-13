@@ -65,8 +65,8 @@ _DUMP_SRC = (
     "if not os.path.exists(db):\n"
     "    print(json.dumps([])); sys.exit(0)\n"
     "c=sqlite3.connect('file:'+db+'?mode=ro',uri=True)\n"
-    "rows=c.execute(\"select path,source,start_line,text from memory_index_chunks "
-    "order by path,start_line limit 401\").fetchall()\n"
+    'rows=c.execute("select path,source,start_line,text from memory_index_chunks '
+    'order by path,start_line limit 401").fetchall()\n'
     "print(json.dumps(rows,ensure_ascii=False))\n"
 )
 
@@ -87,6 +87,7 @@ class OpenClawAdapter(VmAdapterMixin, AgentAdapter):
 
     def _llm_settings(self) -> dict:
         from memhall.gateway import gateway_settings
+
         gw = gateway_settings("openclaw", vm_lane=True)
         if gw:
             return gw
@@ -97,51 +98,60 @@ class OpenClawAdapter(VmAdapterMixin, AgentAdapter):
             return {"base_url": url.rstrip("/"), "key": key, "model": model}
         raise RuntimeError(
             "openclaw 沙箱需要 LLM 端点：配 GATEWAY_VM_URL/GATEWAY_URL（统一网关）"
-            "或 AGENT_LLM_BASE_URL/KEY/MODEL（自带 key 直连），见 .env.example")
+            "或 AGENT_LLM_BASE_URL/KEY/MODEL（自带 key 直连），见 .env.example"
+        )
 
     def _config_json(self, s: dict) -> str:
         """沙箱 openclaw.json：单一 provider，mode=replace 隔绝环境配置漂移。"""
-        return json.dumps({
-            "models": {
-                "mode": "replace",
-                "providers": {
-                    "memhall-gw": {
-                        "baseUrl": s["base_url"],
-                        "apiKey": s["key"],
-                        "api": "openai-completions",
-                        "models": [{
-                            "id": s["model"],
-                            "name": s["model"],
-                            "reasoning": False,
-                            "input": ["text"],
-                            "contextWindow": _OC_CONTEXT,
-                            "maxTokens": _OC_MAX_TOKENS,
-                            "cost": {"input": 0, "output": 0,
-                                     "cacheRead": 0, "cacheWrite": 0},
-                        }],
+        return json.dumps(
+            {
+                "models": {
+                    "mode": "replace",
+                    "providers": {
+                        "memhall-gw": {
+                            "baseUrl": s["base_url"],
+                            "apiKey": s["key"],
+                            "api": "openai-completions",
+                            "models": [
+                                {
+                                    "id": s["model"],
+                                    "name": s["model"],
+                                    "reasoning": False,
+                                    "input": ["text"],
+                                    "contextWindow": _OC_CONTEXT,
+                                    "maxTokens": _OC_MAX_TOKENS,
+                                    "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+                                }
+                            ],
+                        },
                     },
                 },
+                "agents": {
+                    "defaults": {
+                        "model": f"memhall-gw/{s['model']}",
+                        "workspace": STATE_DIR + "/workspace",
+                    }
+                },
             },
-            "agents": {"defaults": {
-                "model": f"memhall-gw/{s['model']}",
-                "workspace": STATE_DIR + "/workspace",
-            }},
-        }, ensure_ascii=False, indent=2)
+            ensure_ascii=False,
+            indent=2,
+        )
 
     def reset(self) -> None:
         s = self._llm_settings()
         self._model = s["model"]
         self._provider_model = f"memhall-gw/{s['model']}"
         # 整目录重建 = 记忆/会话/工作区全归零（沙箱自有目录，不碰真实 ~/.openclaw）
-        rc, _, err = self.ch.run(
-            f"rm -rf {STATE_DIR} && mkdir -p {STATE_DIR}/workspace", timeout=60)
+        rc, _, err = self.ch.run(f"rm -rf {STATE_DIR} && mkdir -p {STATE_DIR}/workspace", timeout=60)
         if rc != 0:
             # R33 对齐 hermes：失败抛 AdapterError
             raise AdapterError(f"openclaw 沙箱重建失败: {err.strip()[:200]}")
         # 配置走 stdin 落盘（含 key，无论真假都不上命令行；600 权限）
         rc, _, err = self.ch.run(
             f"cat > {STATE_DIR}/openclaw.json && chmod 600 {STATE_DIR}/openclaw.json",
-            stdin_data=self._config_json(s), timeout=30)
+            stdin_data=self._config_json(s),
+            timeout=30,
+        )
         if rc != 0:
             raise AdapterError(f"openclaw 沙箱配置写入失败: {err.strip()[:200]}")
         # 用例注入的虚构工作区顺带清掉（防跨轮污染）
@@ -167,17 +177,21 @@ class OpenClawAdapter(VmAdapterMixin, AgentAdapter):
         try:
             env = json.loads(out.strip() or "{}")
         except json.JSONDecodeError:
-            raise AgentUnavailable(
-                f"openclaw 输出非 JSON(rc={rc}): {(out or err).strip()[:200]}") from None
+            raise AgentUnavailable(f"openclaw 输出非 JSON(rc={rc}): {(out or err).strip()[:200]}") from None
         if not env.get("ok"):
             msg = (env.get("error") or {}).get("message", "")[:200]
             raise AgentUnavailable(f"openclaw 回合失败(rc={rc}): {msg or out.strip()[:150]}")
         text = (env.get("final") or "").strip()
         if not text:
             raise AgentUnavailable(f"openclaw 回复为空(rc={rc}): {out.strip()[:150]}")
-        return Reply(session_id=session_id, text=text,
-                     sent_at=sent, reply_at=now_utc(),
-                     latency_ms=elapsed_ms(t0), token_usage=None)
+        return Reply(
+            session_id=session_id,
+            text=text,
+            sent_at=sent,
+            reply_at=now_utc(),
+            latency_ms=elapsed_ms(t0),
+            token_usage=None,
+        )
 
     def end_session(self, session_id: str) -> None:
         pass  # agent exec 每次独立进程，无长会话
@@ -189,33 +203,33 @@ class OpenClawAdapter(VmAdapterMixin, AgentAdapter):
         try:
             rows = self.ch.run_json(script)
         except RuntimeError as e:
-            return MemorySnapshot(format="sqlite", dumped_at=now_utc(),
-                                  entries=[], raw=None, dump_ok=False,
-                                  error=str(e)[:200])
-        truncated = len(rows) > 400   # R58：limit 401 探测超限
+            return MemorySnapshot(
+                format="sqlite", dumped_at=now_utc(), entries=[], raw=None, dump_ok=False, error=str(e)[:200]
+            )
+        truncated = len(rows) > 400  # R58：limit 401 探测超限
         entries = [
-            MemoryEntry(entry_id=f"c{rowid}", content=text,
-                        created_at=None, source_turn=path)
+            MemoryEntry(entry_id=f"c{rowid}", content=text, created_at=None, source_turn=path)
             for rowid, (path, _source, _line, text) in enumerate(rows[:400], 1)
             if text.strip()
         ]
-        return MemorySnapshot(format="sqlite", dumped_at=now_utc(),
-                              entries=entries, raw=None, truncated=truncated)
+        return MemorySnapshot(
+            format="sqlite", dumped_at=now_utc(), entries=entries, raw=None, truncated=truncated
+        )
 
     def version_info(self) -> str | None:
-        return vm_version_line(
-            self.ch,
-            f"export PATH=$HOME/.local/bin:$PATH && {OPENCLAW_BIN} --version")
+        return vm_version_line(self.ch, f"export PATH=$HOME/.local/bin:$PATH && {OPENCLAW_BIN} --version")
 
     def fs_snapshot(self) -> list[str] | None:
         """~ 用户区 + 沙箱 workspace 子树（R24：chain 任务建在沙箱内也要被
         fs_diff 看见——剪枝 .memhall-openclaw 只为排除配置/sqlite 噪音，
         不能把智能体的写入面一起剪掉）。"""
-        cmd = ("(find ~ -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
-               "-o -name node_modules -o -name .local -o -name .kylinbot "
-               "-o -name .openclaw -o -name .memhall-openclaw -o -name .memhall \\) -prune -o "
-               "-printf '%p\\n'; "
-               "find ~/.memhall-openclaw/workspace -maxdepth 6 -printf '%p\\n' 2>/dev/null) "
-               "2>/dev/null | sed \"s|^$HOME|~|\" | sort -u")
+        cmd = (
+            "(find ~ -maxdepth 4 \\( -name .hermes -o -name .cache -o -name .config "
+            "-o -name node_modules -o -name .local -o -name .kylinbot "
+            "-o -name .openclaw -o -name .memhall-openclaw -o -name .memhall \\) -prune -o "
+            "-printf '%p\\n'; "
+            "find ~/.memhall-openclaw/workspace -maxdepth 6 -printf '%p\\n' 2>/dev/null) "
+            '2>/dev/null | sed "s|^$HOME|~|" | sort -u'
+        )
         rc, out, _ = self.ch.run(cmd, timeout=60)
         return [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else None

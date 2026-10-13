@@ -17,7 +17,7 @@ meta:
   source: generated
   generator:
     template_version: 2.0.0
-    template_fingerprint: cd110b12ef530e5ddeeae8e11acc595a5d0f6659ca7dd656d48b9082ff884092
+    template_fingerprint: 647cec16e9d736a2548f62acfca6ada5a0b903196e1a2cfd45593670aebde8a4
     seed: 20261013
     family_id: boundary.private-code
     variant: 2

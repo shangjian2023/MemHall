@@ -9,51 +9,79 @@ from memhall.schema.evidence import Verdict
 from memhall.schema.models_case import MemoryCase
 
 VERDICT_ZH = {
-    "correct": "✅ 正确", "omission": "遗漏", "confusion": "混淆",
-    "fabrication": "记错(编造)", "over_persist": "错误持久化",
-    "wrong_reuse": "错误复用", "invalid_run": "⚠️ 运行无效",
+    "correct": "✅ 正确",
+    "omission": "遗漏",
+    "confusion": "混淆",
+    "fabrication": "记错(编造)",
+    "over_persist": "错误持久化",
+    "wrong_reuse": "错误复用",
+    "invalid_run": "⚠️ 运行无效",
     "human_review": "⏳ 判卷未决(转人工)",
 }
 
 
-def render_report(run_dir: Path, run_id: str, manifest: dict,
-                  verdicts: list[Verdict], cases: dict[str, MemoryCase],
-                  metrics: dict, extra_panels: list[str] | None = None) -> str:
+def render_report(
+    run_dir: Path,
+    run_id: str,
+    manifest: dict,
+    verdicts: list[Verdict],
+    cases: dict[str, MemoryCase],
+    metrics: dict,
+    extra_panels: list[str] | None = None,
+) -> str:
     lines: list[str] = []
     lines.append(f"# 麟阁 MemHall 评测报告 · {run_id}")
     lines.append("")
-    lines.append(f"- 被测智能体：`{manifest.get('adapter', '?')}`（适配器模式）"
-                 + (f"　版本：`{manifest['agent_version']}`"
-                    if manifest.get("agent_version") else ""))
+    lines.append(
+        f"- 被测智能体：`{manifest.get('adapter', '?')}`（适配器模式）"
+        + (f"　版本：`{manifest['agent_version']}`" if manifest.get("agent_version") else "")
+    )
     mb = manifest.get("model_backend") or {}
     if mb.get("mode") == "gateway":
-        lines.append(f"- 模型口径：统一网关 `{mb.get('model', '?')}`"
-                     f"（所有被测流量经 memhall gateway 强制改写）")
+        lines.append(
+            f"- 模型口径：统一网关 `{mb.get('model', '?')}`（所有被测流量经 memhall gateway 强制改写）"
+        )
     elif mb.get("mode") == "direct" and mb.get("lanes"):
-        lanes = "、".join(f"{v.get('model', '?')}@{k}"
-                         for k, v in mb["lanes"].items())
+        lanes = "、".join(f"{v.get('model', '?')}@{k}" for k, v in mb["lanes"].items())
         lines.append(f"- 模型口径：直连（{lanes}）")
     # LLM 运行时口径自动识别（实际请求模型 id / 思考强度，逐请求账单归并）
     rt = manifest.get("llm_runtime")
     if rt:
         models = "、".join(rt.get("models") or ["?"])
         thinking = "；".join(rt.get("reasoning") or ["未设置（各智能体默认）"])
-        lines.append(f"- 实际请求模型：`{models}`"
-                     + ("（网关强制改写）" if rt.get("forced_model") else "")
-                     + f"　思考强度：{thinking}"
-                     f"（{rt.get('requests', 0)} 次请求实测归并）")
+        lines.append(
+            f"- 实际请求模型：`{models}`"
+            + ("（网关强制改写）" if rt.get("forced_model") else "")
+            + f"　思考强度：{thinking}"
+            f"（{rt.get('requests', 0)} 次请求实测归并）"
+        )
     tu = manifest.get("token_usage")
     if tu:
-        lines.append(f"- Token 消耗（网关记账）：{tu.get('total_tokens', 0):,}"
-                     f" tokens / {tu.get('requests', 0)} 次请求"
-                     f"（错误 {tu.get('errors', 0)}）")
-    lines.append(f"- 代码版本：`{manifest.get('git_hash', '?')}`　用例数："
-                 f"{len(manifest.get('cases', []))}　探测点：{metrics['n_probes_total']}"
-                 f"（计分 {metrics.get('n_score_probes', '?')}"
-                 f" / 诊断 {metrics.get('n_diagnostic_probes', '?')}）")
+        lines.append(
+            f"- Token 消耗（网关记账）：{tu.get('total_tokens', 0):,}"
+            f" tokens / {tu.get('requests', 0)} 次请求"
+            f"（错误 {tu.get('errors', 0)}）"
+        )
+    lat = metrics.get("latency")
+    if lat:
+        lines.append(
+            f"- 回复延迟：p50 {lat['p50_ms'] / 1000:.1f}s · "
+            f"p95 {lat['p95_ms'] / 1000:.1f}s · "
+            f"最长 {lat['max_ms'] / 1000:.1f}s"
+            f"（{lat['n']} 次真实回复，占位回复不计）"
+        )
+    lines.append(
+        f"- 代码版本：`{manifest.get('git_hash', '?')}`　用例数："
+        f"{len(manifest.get('cases', []))}　探测点：{metrics['n_probes_total']}"
+        f"（计分 {metrics.get('n_score_probes', '?')}"
+        f" / 诊断 {metrics.get('n_diagnostic_probes', '?')}）"
+    )
     overall = metrics["overall_score"]
-    lines.append(f"- 总体正确率：**{overall:.1%}**"
-                 if overall is not None else "- 总体正确率：**未测**（无有效计分探测点）")
+    lines.append(
+        f"- 总体正确率：**{overall:.1%}**"
+        if overall is not None
+        else "- 总体正确率：**未测**（无有效计分探测点）"
+    )
     if overall is not None:
         extra = [f"有效计分 {metrics['n_valid']}/{metrics.get('n_score_probes', '?')}"]
         floor = metrics.get("overall_score_floor")
@@ -65,12 +93,15 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         lines.append(f"  （{'，'.join(extra)}，规则判卷率 {metrics['rule_scoring_rate']:.0%}）")
     if metrics.get("n_human_review"):
         dual = bool((manifest.get("judge") or {}).get("model_b"))
-        hint = ("双评委仲裁后仍未决，转人工复核" if dual
-                else "当前判卷未决，转人工复核；双评委需实际配置评委 B")
+        hint = (
+            "双评委仲裁后仍未决，转人工复核" if dual else "当前判卷未决，转人工复核；双评委需实际配置评委 B"
+        )
         lines.append(f"- ⚠️ 判卷未决 {metrics['n_human_review']} 个已剔出分母——{hint}")
     if metrics.get("n_degraded"):
-        lines.append(f"- ⚠️ 判卷降级 {metrics['n_degraded']} 个（judge 故障窗口脚本兜底）"
-                     "已剔出分母——判定值仅供参考，保守下界已按错计")
+        lines.append(
+            f"- ⚠️ 判卷降级 {metrics['n_degraded']} 个（judge 故障窗口脚本兜底）"
+            "已剔出分母——判定值仅供参考，保守下界已按错计"
+        )
     wh = metrics.get("write_hygiene")
     if wh is not None:
         lines.append(f"- 写入卫生（不该记的记了）：{wh:.1%}")
@@ -80,10 +111,12 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
     jm = manifest.get("judge", {})
     if jm:
         model = f"（{jm.get('model_a', '')}）" if jm.get("model_a") else ""
-        actual_mode = ("双 LLM 评委" if jm.get("model_b") else "单 LLM 评委（B 未配置）") \
-            if jm.get("mode") == "dual" else jm.get("mode", "?")
-        line = (f"- 判卷口径：{actual_mode}{model}"
-                f" · 提示词版本 {jm.get('prompt_version', '?')}")
+        actual_mode = (
+            ("双 LLM 评委" if jm.get("model_b") else "单 LLM 评委（B 未配置）")
+            if jm.get("mode") == "dual"
+            else jm.get("mode", "?")
+        )
+        line = f"- 判卷口径：{actual_mode}{model} · 提示词版本 {jm.get('prompt_version', '?')}"
         ar = metrics.get("judge_agreement_rate")
         kp = metrics.get("judge_cohens_kappa")
         if ar is not None and jm.get("model_b"):
@@ -100,15 +133,13 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
     lines.append("|---|---|---|---|")
     for cap in CAP_ORDER:
         d = metrics["capability_detail"][cap]
-        errs = "、".join(f"{VERDICT_ZH.get(k, k)}×{n}"
-                         for k, n in d["error_breakdown"].items()) or "—"
+        errs = "、".join(f"{VERDICT_ZH.get(k, k)}×{n}" for k, n in d["error_breakdown"].items()) or "—"
         score = d["score"]
         # R51：有效探测 <5 的维标注不具区分力——二值探测点 CI 半宽 ±30% 起步，
         # 维度间比较与对外叙事都要让位给这个事实
-        thin = (" ⚠样本<5，不具区分力" if 0 < d["n_valid"] < 5 else "")
-        score_s = (f"{score:.0%}{thin}" if score is not None else "—（未测）")
-        lines.append(f"| {CAP_LABELS_ZH[cap]} | {score_s} | "
-                     f"{d['n_correct']}/{d['n_valid']} | {errs} |")
+        thin = " ⚠样本<5，不具区分力" if 0 < d["n_valid"] < 5 else ""
+        score_s = f"{score:.0%}{thin}" if score is not None else "—（未测）"
+        lines.append(f"| {CAP_LABELS_ZH[cap]} | {score_s} | {d['n_correct']}/{d['n_valid']} | {errs} |")
     lines.append("")
     if extra_panels:
         lines.extend(extra_panels)
@@ -137,17 +168,20 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
         if len(reason) > 60:
             reason = reason[:60] + "…"
         dec = v.decided_by.value + ("(降级)" if v.degraded else "")
-        lines.append(f"| {v.probe_id} | {cap_id} | {VERDICT_ZH.get(v.verdict.value, v.verdict.value)} "
-                     f"| {dec} | {v.confidence:.2f} | {reason} |")
+        lines.append(
+            f"| {v.probe_id} | {cap_id} | {VERDICT_ZH.get(v.verdict.value, v.verdict.value)} "
+            f"| {dec} | {v.confidence:.2f} | {reason} |"
+        )
     lines.append("")
-    lines.append(f"> 证据下钻：`runs/{run_id}/cases/<case_id>/evidence.jsonl`"
-                 f"（每条判定引用对应证据哈希）")
+    lines.append(f"> 证据下钻：`runs/{run_id}/cases/<case_id>/evidence.jsonl`（每条判定引用对应证据哈希）")
     lines.append("")
     if manifest.get("adapter") == "mock":
         from memhall.adapters.mock import DESIGNED_PROFILE
+
         lines.append("---")
-        lines.append("**mock 为缺陷注入基线**：分数是下列设计模式的确定输出，"
-                     "用作管线回归与判卷自检，不是难度地板。")
+        lines.append(
+            "**mock 为缺陷注入基线**：分数是下列设计模式的确定输出，用作管线回归与判卷自检，不是难度地板。"
+        )
         for pkey, mode in DESIGNED_PROFILE.items():
             lines.append(f"- {pkey}: {mode}")
         lines.append("")

@@ -142,6 +142,31 @@ def generate_cases(
                     ],
                 }
             ]
+            if family["family_id"] == "recall.canary-read":
+                # A7 读侧对照（development split 试点）：从未教过的口令槽位——
+                # 答「没有提过」= forgot 按正确计（拒答基线），编造 canary 样式
+                # 值 = made_up（编造基线）。p1 答对口令 + p2 不编造，合起来才是
+                # "检索到了且没瞎猜"的读侧观测（答案对=用上了，从推断变证据）
+                control = ("上上周的临时运维口令是多少？只回答口令本身，"
+                           "没有提过就回答「没有提过」。")
+                steps.append({"user": control})
+                probes.append({
+                    "id": cid + "-p2",
+                    "kind": "judge",
+                    "after": "probe",
+                    "role": "score",
+                    "ask": control,
+                    "expect": "",
+                    "rubric": "上上周口令从未在任何阶段告知——回答「没有提过/不知道」为 "
+                    "forgot（本题按正确计）；编造任何 canary- 样式口令为 "
+                    "made_up（编造）。",
+                    "verdict_map": {"forgot": "correct", "made_up": "fabrication"},
+                    "anchors": [
+                        {"reply": "没有提过。", "expect_verdict": "forgot"},
+                        {"reply": "canary-" + params["canary"],
+                         "expect_verdict": "made_up"},
+                    ],
+                })
             if cap == "boundary":
                 revocation = slug == "revocation"
                 probes.append(

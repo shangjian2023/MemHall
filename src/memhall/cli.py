@@ -74,45 +74,62 @@ def _seal_outputs(run_dir: Path, manifest: dict) -> None:
     manifest["output_hashes"] = hashes
 
 
-def _finish_run(run_dir: Path, run_id: str, manifest: dict,
-                verdicts: list[Verdict], cases: dict[str, MemoryCase],
-                judge_mode: str = "scripted") -> dict:
+def _finish_run(
+    run_dir: Path,
+    run_id: str,
+    manifest: dict,
+    verdicts: list[Verdict],
+    cases: dict[str, MemoryCase],
+    judge_mode: str = "scripted",
+) -> dict:
     from memhall.scoring.judge import JUDGE_PROMPT_VERSION
+
     # R27：scripted run 不写 model_a/model_b——写了第三方审计会把脚本判卷
     # 误读为 LLM 判卷（判卷方式与模型口径是两回事，decided_by 同步区分）
     judge_info: dict = {"mode": judge_mode, "prompt_version": JUDGE_PROMPT_VERSION}
     if judge_mode == "dual":
         # model_b 为 null = JUDGE_B 未配（单判降级，A/B 轮值仲裁不触发）；
         # 网关限额放开后配 JUDGE_B_* 即恢复双判——null 别写 ""，审计要能区分
-        judge_info.update({
-            "model_a": os.environ.get("JUDGE_A_MODEL", ""),
-            "model_b": os.environ.get("JUDGE_B_MODEL"),
-        })
+        judge_info.update(
+            {
+                "model_a": os.environ.get("JUDGE_A_MODEL", ""),
+                "model_b": os.environ.get("JUDGE_B_MODEL"),
+            }
+        )
     manifest["judge"] = judge_info
     manifest["scoring_protocol"] = {
-        "id": SCORING_PROTOCOL, "metric_version": "2",
-        "judge": judge_info, "invalid_policy": "excluded-and-reported",
-        "diagnostic_policy": "excluded", "degraded_policy": "excluded",
+        "id": SCORING_PROTOCOL,
+        "metric_version": "2",
+        "judge": judge_info,
+        "invalid_policy": "excluded-and-reported",
+        "diagnostic_policy": "excluded",
+        "degraded_policy": "excluded",
     }
     from memhall.extensions import scoring_implementation
+
     manifest["scoring_protocol"]["implementation"] = scoring_implementation(list(cases.values()))
     metrics = compute_metrics(verdicts, cases)
-    (run_dir / "metrics.json").write_text(
-        json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    # A6：延迟一等指标（Mem0/Zep 先例）——从 run 证据目录补进 metrics.json
+    from memhall.report.metrics import latency_summary
+
+    lat = latency_summary(run_dir)
+    if lat:
+        metrics["latency"] = lat
+    (run_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     with (run_dir / "verdicts.jsonl").open("w", encoding="utf-8") as f:
         for v in verdicts:
             f.write(v.model_dump_json() + "\n")
-    render_radar({manifest.get("adapter", "agent"): metrics["capability_scores"]},
-                 str(run_dir / "radar.png"))
+    render_radar({manifest.get("adapter", "agent"): metrics["capability_scores"]}, str(run_dir / "radar.png"))
     # 最终展示物多样化：报告辅助图（判定构成/判卷口径对照），零 LLM 离线生成
     from memhall.report.panels import render_panels
+
     panels_md = render_panels(run_dir, verdicts, cases)
-    report = render_report(run_dir, run_id, manifest, verdicts, cases, metrics,
-                           extra_panels=panels_md)
+    report = render_report(run_dir, run_id, manifest, verdicts, cases, metrics, extra_panels=panels_md)
     (run_dir / "report.md").write_text(report, encoding="utf-8")
     _seal_outputs(run_dir, manifest)
     (run_dir / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return metrics
 
 
@@ -133,8 +150,7 @@ def _upstream_preflight(adapter: str) -> str | None:
     if adapter == "claude-local":
         lanes = [("CLAUDE_LLM_BASE_URL", "claude 直连上游")]
     else:
-        gw = [(v, "统一网关") for v in ("GATEWAY_URL", "GATEWAY_VM_URL")
-              if os.environ.get(v, "").strip()]
+        gw = [(v, "统一网关") for v in ("GATEWAY_URL", "GATEWAY_VM_URL") if os.environ.get(v, "").strip()]
         lanes = gw or [("AGENT_LLM_BASE_URL", "直连上游")]
     seen: set[tuple[str, int]] = set()
     for var, desc in lanes:
@@ -146,18 +162,19 @@ def _upstream_preflight(adapter: str) -> str | None:
         port = p.port or (443 if p.scheme == "https" else 80)
         if not host:
             return f"{desc}地址解析不出主机（{var}）"
-        if (host, port) in seen:      # GATEWAY_URL 与 VM_URL 同址只探一次
+        if (host, port) in seen:  # GATEWAY_URL 与 VM_URL 同址只探一次
             continue
         seen.add((host, port))
         try:
             with socket.create_connection((host, port), timeout=3):
                 pass
         except OSError as e:
-            hint = ("先运行 nohup uv run memhall gateway --host 0.0.0.0 & 再发车"
-                    if var.startswith("GATEWAY") else
-                    "检查端点可达性与本机解析（/etc/hosts 钉扎？上游挂了？）")
-            return (f"{desc}不可达 {host}:{port}（{var}，{e}）——{hint}；"
-                    "mock 车道不需要上游")
+            hint = (
+                "先运行 nohup uv run memhall gateway --host 0.0.0.0 & 再发车"
+                if var.startswith("GATEWAY")
+                else "检查端点可达性与本机解析（/etc/hosts 钉扎？上游挂了？）"
+            )
+            return f"{desc}不可达 {host}:{port}（{var}，{e}）——{hint}；mock 车道不需要上游"
     return None
 
 
@@ -165,6 +182,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
     from datetime import datetime
 
     from memhall.adapters import adapter_names
+
     try:
         frozen = load_paper(Path(args.paper))
         if not 1 <= args.repeats <= 100 or len(set(args.adapters)) != len(args.adapters):
@@ -183,19 +201,38 @@ def cmd_batch(args: argparse.Namespace) -> int:
     while path.exists():
         path = root / f"{prefix}-{suffix}.json"
         suffix += 1
-    plan = {"batch_id": path.stem, "paper_id": frozen.paper_id,
-            "adapters": args.adapters, "repeats": args.repeats,
-            "judge": args.judge, "status": "running", "runs": []}
+    plan = {
+        "batch_id": path.stem,
+        "paper_id": frozen.paper_id,
+        "adapters": args.adapters,
+        "repeats": args.repeats,
+        "judge": args.judge,
+        "status": "running",
+        "runs": [],
+    }
     with path.open("x", encoding="utf-8") as stream:
         json.dump(plan, stream, ensure_ascii=False, indent=2)
     for repeat in range(1, args.repeats + 1):
         for adapter in args.adapters:
-            child = argparse.Namespace(paper=args.paper, cases=None, adapter=adapter,
-                                       rotate_count=None, rotation_seed=None, model=args.model,
-                                       judge=args.judge, out=args.out)
+            child = argparse.Namespace(
+                paper=args.paper,
+                cases=None,
+                adapter=adapter,
+                rotate_count=None,
+                rotation_seed=None,
+                model=args.model,
+                judge=args.judge,
+                out=args.out,
+            )
             result = cmd_run(child)
-            plan["runs"].append({"adapter": adapter, "repeat": repeat, "exit_code": result,
-                                 "run_dir": getattr(child, "run_dir", None)})
+            plan["runs"].append(
+                {
+                    "adapter": adapter,
+                    "repeat": repeat,
+                    "exit_code": result,
+                    "run_dir": getattr(child, "run_dir", None),
+                }
+            )
             path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
     success = all(r["exit_code"] == 0 for r in plan["runs"])
     plan["status"] = "completed" if success else "partial_or_failed"
@@ -206,14 +243,19 @@ def cmd_batch(args: argparse.Namespace) -> int:
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
     from memhall.calibration import analyze_sheets, export_sheets
+
     try:
         if args.analyze:
             info = analyze_sheets(Path(args.analyze))
         else:
             if not args.runs or not args.out:
                 raise ValueError("导出需要运行目录和 --out")
-            info = export_sheets([Path(p) for p in args.runs], Path(args.out),
-                                 seed=args.seed, per_capability=args.per_capability)
+            info = export_sheets(
+                [Path(p) for p in args.runs],
+                Path(args.out),
+                seed=args.seed,
+                per_capability=args.per_capability,
+            )
     except (ValueError, OSError) as error:
         print(str(error), file=sys.stderr)
         return 2
@@ -223,9 +265,15 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
 
 def cmd_generate(args: argparse.Namespace) -> int:
     from memhall.generation import write_pack
+
     try:
-        info = write_pack(Path(args.out), seed=args.seed, variants=args.variants,
-                          split=args.split, noise_turns=args.noise_turns)
+        info = write_pack(
+            Path(args.out),
+            seed=args.seed,
+            variants=args.variants,
+            split=args.split,
+            noise_turns=args.noise_turns,
+        )
     except (ValueError, OSError) as error:
         print(str(error), file=sys.stderr)
         return 2
@@ -236,14 +284,25 @@ def cmd_generate(args: argparse.Namespace) -> int:
 def cmd_sample(args: argparse.Namespace) -> int:
     try:
         pack = load_pack(args.cases)
-        paper = make_paper(pack, count=args.count, seed=args.seed, split=args.split,
-                           allow_partial=args.allow_partial, max_per_family=args.max_per_family)
+        paper = make_paper(
+            pack,
+            count=args.count,
+            seed=args.seed,
+            split=args.split,
+            allow_partial=args.allow_partial,
+            max_per_family=args.max_per_family,
+        )
         paper.save(Path(args.out))
     except (ValueError, OSError) as e:
         print(str(e), file=sys.stderr)
         return 2
-    print(json.dumps({"paper_id": paper.paper_id, "suite": paper.suite,
-                      "sampling": paper.sampling, "path": args.out}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {"paper_id": paper.paper_id, "suite": paper.suite, "sampling": paper.sampling, "path": args.out},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -263,9 +322,18 @@ def cmd_paper_info(args: argparse.Namespace) -> int:
     except (ValueError, OSError) as e:
         print(str(e), file=sys.stderr)
         return 2
-    print(json.dumps({"paper_id": paper.paper_id, "suite": paper.suite,
-                      "sampling": paper.sampling, "case_ids": [c.case_id for c in paper.cases]},
-                     ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "paper_id": paper.paper_id,
+                "suite": paper.suite,
+                "sampling": paper.sampling,
+                "case_ids": [c.case_id for c in paper.cases],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -321,13 +389,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     model_override = (args.model or "").strip() or None
     if model_override:
         from memhall.gateway import gateway_settings
-        if args.adapter in ("mock", "claude-local") or \
-                not gateway_settings(args.adapter):
-            print(f"--model 只对网关车道有效（{args.adapter} 不经统一网关，"
-                  "无从改写）", file=sys.stderr)
+
+        if args.adapter in ("mock", "claude-local") or not gateway_settings(args.adapter):
+            print(f"--model 只对网关车道有效（{args.adapter} 不经统一网关，无从改写）", file=sys.stderr)
             return 2
-        print(f"模型改写: {model_override}（网关强制，智能体侧配置无效）",
-              flush=True)
+        print(f"模型改写: {model_override}（网关强制，智能体侧配置无效）", flush=True)
 
     up_err = _upstream_preflight(args.adapter)
     if up_err is not None:
@@ -339,18 +405,28 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("缺少 JUDGE_A_ 环境变量，回退脚本判卷", file=sys.stderr)
 
     from memhall.cost import estimate, fmt_tokens
+
     est = estimate(args.adapter, args.rotate_count or len(cases), Path(args.out))
     if est:
         req = f"、约 {est['requests']} 次请求" if est.get("requests") else ""
-        print(f"⏳ 预计消耗 ≈ {fmt_tokens(est['total_tokens'])} tokens{req}"
-              f"（按 {est['basis_runs']} 轮历史均摊，判卷流量另计）", flush=True)
+        print(
+            f"⏳ 预计消耗 ≈ {fmt_tokens(est['total_tokens'])} tokens{req}"
+            f"（按 {est['basis_runs']} 轮历史均摊，判卷流量另计）",
+            flush=True,
+        )
 
-    run_id, stores = run_suite(adapter, cases, Path(args.out), args.adapter,
-                               case_source=case_source,
-                               model_override=model_override,
-                               rotate_count=args.rotate_count,
-                               rotation_seed=args.rotation_seed,
-                               paper=paper, suite_identity=suite_identity)
+    run_id, stores = run_suite(
+        adapter,
+        cases,
+        Path(args.out),
+        args.adapter,
+        case_source=case_source,
+        model_override=model_override,
+        rotate_count=args.rotate_count,
+        rotation_seed=args.rotation_seed,
+        paper=paper,
+        suite_identity=suite_identity,
+    )
     run_dir = Path(args.out) / run_id
     args.run_dir = str(run_dir)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -358,24 +434,33 @@ def cmd_run(args: argparse.Namespace) -> int:
     verdicts = []
     for case, store in pair_stores(cases, stores):
         verdicts.extend(evaluate_case(case, store, run_id, judges))
-    metrics = _finish_run(run_dir, run_id, manifest, verdicts,
-                          {c.case_id: c for c in cases}, judge_mode=args.judge)
+    metrics = _finish_run(
+        run_dir, run_id, manifest, verdicts, {c.case_id: c for c in cases}, judge_mode=args.judge
+    )
 
     print(f"run_id: {run_id}")
     if metrics["overall_score"] is None:
         print("总体正确率: 未测（无有效计分探测点）")
     else:
-        print(f"总体正确率: {metrics['overall_score']:.1%}"
-              f"（有效计分 {metrics['n_valid']}/{metrics.get('n_score_probes', '?')}"
-              f"，诊断探测 {metrics.get('n_diagnostic_probes', '?')} 不进分，"
-              f"规则判卷率 {metrics['rule_scoring_rate']:.0%}）")
+        print(
+            f"总体正确率: {metrics['overall_score']:.1%}"
+            f"（有效计分 {metrics['n_valid']}/{metrics.get('n_score_probes', '?')}"
+            f"，诊断探测 {metrics.get('n_diagnostic_probes', '?')} 不进分，"
+            f"规则判卷率 {metrics['rule_scoring_rate']:.0%}）"
+        )
     for cap, score in metrics["capability_scores"].items():
         print(f"  {cap:<14} {'未测' if score is None else f'{score:.0%}'}")
     print(f"产物: {run_dir}")
     from memhall.notify import notify_run_done
-    notify_run_done(args.adapter, metrics["overall_score"],
-                    metrics["n_valid"], metrics["n_probes_total"],
-                    str(run_dir), radar=str(run_dir / "radar.png"))
+
+    notify_run_done(
+        args.adapter,
+        metrics["overall_score"],
+        metrics["n_valid"],
+        metrics["n_probes_total"],
+        str(run_dir),
+        radar=str(run_dir / "radar.png"),
+    )
     # R57：全废轮（无一 case 出证据）返回非零——马拉松脚本此前无法感知废轮
     if not stores and cases:
         print("全部用例无证据产出（全废轮），退出码 3", file=sys.stderr)
@@ -383,16 +468,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     # R01 审计：部分用例失败也要响亮——这种轮 verify 必挂（缺证据/缺封印），
     # 马拉松脚本当晚就该知道，而不是一周后审计才翻出来
     if manifest.get("failed_cases"):
-        print(f"部分用例失败: {', '.join(manifest['failed_cases'])}"
-              "（退出码 4，本轮归档过不了 verify，建议重跑该轮）",
-              file=sys.stderr)
+        print(
+            f"部分用例失败: {', '.join(manifest['failed_cases'])}"
+            "（退出码 4，本轮归档过不了 verify，建议重跑该轮）",
+            file=sys.stderr,
+        )
         return 4
     return 0
 
 
-def _load_verdicts(run_dir: Path, manifest: dict,
-                   cases: dict[str, MemoryCase], judges,
-                   rejudge: bool = False) -> tuple[list[Verdict], list[str]]:
+def _load_verdicts(
+    run_dir: Path, manifest: dict, cases: dict[str, MemoryCase], judges, rejudge: bool = False
+) -> tuple[list[Verdict], list[str]]:
     """优先读已落盘 verdicts；缺则（或 --re-judge 强制时）从证据 JSONL 重放评分。
 
     R35：failed_cases 与证据缺失的 case 跳过（对齐 pair_stores 语义），
@@ -400,11 +487,14 @@ def _load_verdicts(run_dir: Path, manifest: dict,
     不再因此崩溃，恰是最需要重放评分的 run 也能出报告。"""
     vpath = run_dir / "verdicts.jsonl"
     if vpath.exists() and not rejudge:
-        return [Verdict.model_validate(json.loads(line))
-                for line in vpath.read_text(encoding="utf-8").splitlines()], []
+        return [
+            Verdict.model_validate(json.loads(line))
+            for line in vpath.read_text(encoding="utf-8").splitlines()
+        ], []
     from memhall.schema.evidence import Evidence
     from memhall.scoring.engine import evaluate_case
     from memhall.scoring.rules import EvidenceStore
+
     verdicts: list[Verdict] = []
     skipped: list[str] = []
     failed = set(manifest.get("failed_cases", []))
@@ -417,8 +507,12 @@ def _load_verdicts(run_dir: Path, manifest: dict,
         if case is None or not ev_path.exists():
             skipped.append(cid)
             continue
-        store = EvidenceStore([Evidence.model_validate(json.loads(line))
-                               for line in ev_path.read_text(encoding="utf-8").splitlines()])
+        store = EvidenceStore(
+            [
+                Evidence.model_validate(json.loads(line))
+                for line in ev_path.read_text(encoding="utf-8").splitlines()
+            ]
+        )
         verdicts.extend(evaluate_case(case, store, manifest["run_id"], judges))
     return verdicts, skipped
 
@@ -435,17 +529,20 @@ def _resolve_run(p: str) -> Path:
 
 def cmd_compare(args: argparse.Namespace) -> int:
     from memhall.report import compare_runs
-    out = compare_runs(_resolve_run(args.run_a), _resolve_run(args.run_b),
-                       Path(args.out))
+
+    out = compare_runs(_resolve_run(args.run_a), _resolve_run(args.run_b), Path(args.out))
     print(f"{out['label_a']} vs {out['label_b']}")
-    print(f"总体: {out['overall_a']:.1%} → {out['overall_b']:.1%}"
-          f"　共同探测点 {out['n_common']}　判定翻转 {out['n_flips']}")
+    print(
+        f"总体: {out['overall_a']:.1%} → {out['overall_b']:.1%}"
+        f"　共同探测点 {out['n_common']}　判定翻转 {out['n_flips']}"
+    )
     print(f"产物: {out['radar']}  {out['report']}")
     return 0
 
 
 def cmd_aggregate(args: argparse.Namespace) -> int:
     from memhall.report.aggregate import aggregate_runs, format_table
+
     result = aggregate_runs([_resolve_run(p) for p in args.runs], Path(args.out))
     print(format_table(result))
     print(f"产物: {Path(args.out) / 'aggregate.json'}")
@@ -454,11 +551,14 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     from memhall.runner.verify import verify_run
+
     run_dir = _resolve_run(args.run_dir)
     result = verify_run(run_dir)
     print(f"run_id: {result.run_id or run_dir.name}")
-    print(f"证据完整性: {'通过' if result.ok else '失败'}"
-          f"（{result.n_cases} cases / {result.n_evidence} evidence）")
+    print(
+        f"证据完整性: {'通过' if result.ok else '失败'}"
+        f"（{result.n_cases} cases / {result.n_evidence} evidence）"
+    )
     for warning in result.warnings:
         print(f"  提示: {warning}")
     for error in result.errors:
@@ -468,13 +568,15 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 def cmd_stability(args: argparse.Namespace) -> int:
     from memhall.report.stability import analyze_stability
+
     run_dirs = [_resolve_run(item) for item in args.runs]
     result = analyze_stability(run_dirs, Path(args.out))
-    print(f"重复轮数: {result['n_repeats']}　共同探测点: "
-          f"{result['n_common_probes']}")
-    print(f"判定一致率: {result['verdict_agreement_rate']:.1%}　"
-          f"pass^{result['n_repeats']}: {result['pass_all_rate']:.1%}　"
-          f"总体分标准差: {result['overall_stddev']:.1%}")
+    print(f"重复轮数: {result['n_repeats']}　共同探测点: {result['n_common_probes']}")
+    print(
+        f"判定一致率: {result['verdict_agreement_rate']:.1%}　"
+        f"pass^{result['n_repeats']}: {result['pass_all_rate']:.1%}　"
+        f"总体分标准差: {result['overall_stddev']:.1%}"
+    )
     print(f"产物: {Path(args.out) / 'stability.md'}")
     return 0
 
@@ -484,6 +586,7 @@ def cmd_vm(args: argparse.Namespace) -> int:
     from dataclasses import asdict
 
     from memhall.vm import VmError, VmwareManager
+
     try:
         manager = VmwareManager.from_env()
         action = args.vm_action
@@ -533,22 +636,23 @@ def cmd_report(args: argparse.Namespace) -> int:
         backup = run_dir / f"verdicts.{old_mode}.jsonl"
         vpath.replace(backup)
         print(f"旧 verdicts 备份: {backup.name}")
-    verdicts, skipped = _load_verdicts(run_dir, manifest, cases, judges,
-                                       rejudge=args.rejudge)
+    verdicts, skipped = _load_verdicts(run_dir, manifest, cases, judges, rejudge=args.rejudge)
     if skipped:
         # R35：无证据 case 单列，不悄悄缩水（报告头/控制台都可见）
         manifest["n_cases_no_evidence"] = len(skipped)
-        print(f"{len(skipped)} 个 case 无证据未计分: {', '.join(skipped[:8])}"
-              f"{'…' if len(skipped) > 8 else ''}")
+        print(
+            f"{len(skipped)} 个 case 无证据未计分: {', '.join(skipped[:8])}{'…' if len(skipped) > 8 else ''}"
+        )
     # 纯重渲染（verdicts 已在、非 --rejudge）不得篡改判卷口径标签：
     # 口径跟着已有 verdicts/manifest 走，--judge 只在真判卷时生效
-    effective_mode = (args.judge if (judges is not None or args.rejudge)
-                      else manifest.get("judge", {}).get("mode", args.judge))
-    metrics = _finish_run(run_dir, manifest["run_id"], manifest, verdicts, cases,
-                          judge_mode=effective_mode)
+    effective_mode = (
+        args.judge
+        if (judges is not None or args.rejudge)
+        else manifest.get("judge", {}).get("mode", args.judge)
+    )
+    metrics = _finish_run(run_dir, manifest["run_id"], manifest, verdicts, cases, judge_mode=effective_mode)
     score = metrics["overall_score"]
-    print(f"报告已出: {run_dir / 'report.md'}"
-          f"（总体 {'未测' if score is None else f'{score:.1%}'}）")
+    print(f"报告已出: {run_dir / 'report.md'}（总体 {'未测' if score is None else f'{score:.1%}'}）")
     return 0
 
 
@@ -556,13 +660,12 @@ def _ensure_streams() -> None:
     """窗口模式 exe（console=False）双击启动时无控制台，sys.stdout/stderr
     为 None——print/logging 一碰就崩。重定向到 exe 同级 memhall.log，
     写不进（只读目录等）则退临时目录。"""
-    if not (getattr(sys, "frozen", False)
-            and (sys.stdout is None or sys.stderr is None)):
+    if not (getattr(sys, "frozen", False) and (sys.stdout is None or sys.stderr is None)):
         return
     import tempfile
     from pathlib import Path
-    for base in (Path(sys.executable).resolve().parent,
-                 Path(tempfile.gettempdir())):
+
+    for base in (Path(sys.executable).resolve().parent, Path(tempfile.gettempdir())):
         try:
             log = (base / "memhall.log").open("a", encoding="utf-8")
         except OSError:
@@ -577,15 +680,16 @@ def _ensure_streams() -> None:
 def _utf8_console() -> None:
     """Windows 控制台默认 GBK 代码页，中文输出乱码——统一改 UTF-8。"""
     import io
+
     for stream in (sys.stdout, sys.stderr):
         # 非 TextIOWrapper（重定向到文件等）时不动
-        if (isinstance(stream, io.TextIOWrapper)
-                and stream.encoding.lower() not in ("utf-8", "utf8")):
+        if isinstance(stream, io.TextIOWrapper) and stream.encoding.lower() not in ("utf-8", "utf8"):
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     from memhall.discovery import render_doctor, run_doctor
+
     rep = run_doctor(scan_remote=not args.no_vm)
     print(render_doctor(rep))
     return 0 if rep.usable_adapters() else 1
@@ -603,9 +707,15 @@ def cmd_systest(args: argparse.Namespace) -> int:
         print(f"  {'✅' if x.passed else '❌'} {x.zh}: {x.detail}")
     print(f"产物: {rep['run_dir']}")
     from memhall.notify import notify_run_done
-    notify_run_done(f"systest-{args.adapter}",
-                    rep["n_pass"] / rep["n_total"], rep["n_pass"], rep["n_total"],
-                    rep["run_dir"], radar=f"{rep['run_dir']}/systest.png")
+
+    notify_run_done(
+        f"systest-{args.adapter}",
+        rep["n_pass"] / rep["n_total"],
+        rep["n_pass"],
+        rep["n_total"],
+        rep["run_dir"],
+        radar=f"{rep['run_dir']}/systest.png",
+    )
     return 0 if rep["n_pass"] == rep["n_total"] else 1
 
 
@@ -613,6 +723,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     from pathlib import Path as _P
 
     from memhall.gateway import DEFAULT_PORT, aggregate_usage, create_gateway_app, default_log_path
+
     log_path = _P(args.log) if args.log else default_log_path()
     if args.report:
         agg = aggregate_usage(log_path)
@@ -622,28 +733,34 @@ def cmd_gateway(args: argparse.Namespace) -> int:
             return 0
         print(f"{'智能体':<18} {'请求':>6} {'错误':>4} {'入tokens':>9} {'出tokens':>9} {'合计':>9}")
         for tag, a in sorted(agg["agents"].items()):
-            print(f"{tag:<18} {a['n']:>6} {a['errors']:>4} "
-                  f"{a['prompt_tokens']:>9} {a['completion_tokens']:>9} {a['total_tokens']:>9}")
+            print(
+                f"{tag:<18} {a['n']:>6} {a['errors']:>4} "
+                f"{a['prompt_tokens']:>9} {a['completion_tokens']:>9} {a['total_tokens']:>9}"
+            )
         return 0
     upstream = args.upstream or os.environ.get("GATEWAY_UPSTREAM_URL", "")
     key = args.key or os.environ.get("GATEWAY_UPSTREAM_KEY", "")
     model = args.model or os.environ.get("GATEWAY_MODEL", "")
     if not (upstream and key and model):
-        print("缺网关配置：--upstream/--model/--key 或环境变量 "
-              "GATEWAY_UPSTREAM_URL/GATEWAY_MODEL/GATEWAY_UPSTREAM_KEY", file=sys.stderr)
+        print(
+            "缺网关配置：--upstream/--model/--key 或环境变量 "
+            "GATEWAY_UPSTREAM_URL/GATEWAY_MODEL/GATEWAY_UPSTREAM_KEY",
+            file=sys.stderr,
+        )
         return 1
     port = args.port or DEFAULT_PORT
     app = create_gateway_app(upstream, key, model, log_path)
-    print(f"统一模型网关: http://{args.host}:{port}  model={model}  "
-          f"upstream={upstream}  记账={log_path}")
+    print(f"统一模型网关: http://{args.host}:{port}  model={model}  upstream={upstream}  记账={log_path}")
     print("被测智能体侧只需 GATEWAY_URL + GATEWAY_MODEL 两个环境变量（dummy key 自动派生）")
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=port, log_level="warning")
     return 0
 
 
 def cmd_ui(args: argparse.Namespace) -> int:
     import socket
+
     url = f"http://127.0.0.1:{args.port}/"
     # 单实例：菜单重复点击时第二份进程绑不上端口会无声退出，浏览器却连回旧实例，
     # 造成"重启了但没生效"的错觉——这里识别到已有实例就直接开浏览器走人。
@@ -659,6 +776,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
     if alive:
         import json
         import urllib.request
+
         try:
             with urllib.request.urlopen(f"{url}api/meta", timeout=2) as r:
                 ours = "version" in json.load(r)
@@ -667,20 +785,24 @@ def cmd_ui(args: argparse.Namespace) -> int:
         if ours:
             if not args.no_open:
                 import webbrowser
+
                 webbrowser.open(url)
             print(f"已有麟阁实例在 {url}，直接打开（不再重复启动）")
             return 0
         print(f"端口 {args.port} 被其他程序占用", file=sys.stderr)
         return 1
     from memhall.ui.app import create_app
+
     app = create_app()
     if args.window:
         return _run_window(app)
     import threading
     import webbrowser
+
     threading.Timer(1.2, lambda: webbrowser.open(url)).start() if not args.no_open else None
     print(f"麟阁 Web UI: {url}（Ctrl+C 退出）")
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
     return 0
 
@@ -698,8 +820,7 @@ def _run_window(app) -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(
-        app, host="127.0.0.1", port=port, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     t = threading.Thread(target=server.run, daemon=True)
     t.start()
     url = f"http://127.0.0.1:{port}/"
@@ -711,8 +832,10 @@ def _run_window(app) -> int:
             time.sleep(0.2)
     try:
         import webview
-        webview.create_window("麟阁 MemHall · 智能体记忆评测", url,
-                              width=1280, height=880, min_size=(980, 640))
+
+        webview.create_window(
+            "麟阁 MemHall · 智能体记忆评测", url, width=1280, height=880, min_size=(980, 640)
+        )
         webview.start()
         return 0
     except Exception:
@@ -728,12 +851,16 @@ def _open_app_window(url: str) -> None:
     import shutil
     import webbrowser
 
-    cands = [shutil.which("msedge"), shutil.which("chrome"),
-             os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
-             os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe")]
+    cands = [
+        shutil.which("msedge"),
+        shutil.which("chrome"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+        os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+    ]
     for path in cands:
         if path and os.path.isfile(path):
             import subprocess
+
             subprocess.Popen([path, f"--app={url}"])
             return
     webbrowser.open(url)
@@ -744,15 +871,13 @@ def main() -> None:
     _utf8_console()
     from memhall.env import load_dotenv
     from memhall.logs import setup_logging
+
     if len(sys.argv) == 1 and getattr(sys, "frozen", False):
         sys.argv = ["memhall", "ui", "--window"]  # 双击 exe = 直接开窗口
-    parser = argparse.ArgumentParser(prog="memhall",
-                                     description="麟阁：智能体记忆能力评测基准")
-    parser.add_argument("--version", action="version",
-                        version=f"memhall {__version__}")
+    parser = argparse.ArgumentParser(prog="memhall", description="麟阁：智能体记忆能力评测基准")
+    parser.add_argument("--version", action="version", version=f"memhall {__version__}")
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("-v", "--verbose", action="store_true",
-                        help="调试日志（逐 case/步骤/SSH 命令）")
+    common.add_argument("-v", "--verbose", action="store_true", help="调试日志（逐 case/步骤/SSH 命令）")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser("run", help="跑一轮评测并出报告", parents=[common])
@@ -761,15 +886,21 @@ def main() -> None:
     run_input.add_argument("-c", "--cases", help="题包目录（默认 cases/full）")
     run_input.add_argument("--paper", help="封存题单 JSON；所有智能体可使用同一份")
     p_run.add_argument("-o", "--out", default="runs", help="输出根目录")
-    p_run.add_argument("--model", default="",
-                       help="网关车道逐 run 模型改写（(agent, model) 二元组对照；"
-                            "仅统一网关模式有效）")
-    p_run.add_argument("--judge", choices=["scripted", "dual"], default="scripted",
-                       help="判卷方式（dual=LLM 判卷[单判或双判，按 JUDGE_B 是否配置]）")
-    p_run.add_argument("--rotate-count", type=int,
-                       help="探索评测：按历史轮换抽题；正式对比建议 sample + --paper")
-    p_run.add_argument("--seed", dest="rotation_seed", type=int,
-                       help="题目轮换 seed；同 seed、同历史记录会选择同一题单")
+    p_run.add_argument(
+        "--model", default="", help="网关车道逐 run 模型改写（(agent, model) 二元组对照；仅统一网关模式有效）"
+    )
+    p_run.add_argument(
+        "--judge",
+        choices=["scripted", "dual"],
+        default="scripted",
+        help="判卷方式（dual=LLM 判卷[单判或双判，按 JUDGE_B 是否配置]）",
+    )
+    p_run.add_argument(
+        "--rotate-count", type=int, help="探索评测：按历史轮换抽题；正式对比建议 sample + --paper"
+    )
+    p_run.add_argument(
+        "--seed", dest="rotation_seed", type=int, help="题目轮换 seed；同 seed、同历史记录会选择同一题单"
+    )
     p_run.set_defaults(func=cmd_run)
 
     p_batch = sub.add_parser("batch", help="各智能体重复运行同一固定试卷", parents=[common])
@@ -813,79 +944,71 @@ def main() -> None:
     p_paper.add_argument("paper_path")
     p_paper.set_defaults(func=cmd_paper_info)
 
-    p_rep = sub.add_parser("report", help="出报告（缺 verdicts 时从证据重放评分）",
-                           parents=[common])
+    p_rep = sub.add_parser("report", help="出报告（缺 verdicts 时从证据重放评分）", parents=[common])
     p_rep.add_argument("run_dir", help="runs/ 下的 run 目录")
-    p_rep.add_argument("--judge", choices=["scripted", "dual"], default="scripted",
-                       help="重放评分时的判卷方式")
-    p_rep.add_argument("--rejudge", action="store_true",
-                       help="忽略已落盘 verdicts，从证据重放评分（旧 verdicts 自动备份）")
+    p_rep.add_argument(
+        "--judge", choices=["scripted", "dual"], default="scripted", help="重放评分时的判卷方式"
+    )
+    p_rep.add_argument(
+        "--rejudge", action="store_true", help="忽略已落盘 verdicts，从证据重放评分（旧 verdicts 自动备份）"
+    )
     p_rep.set_defaults(func=cmd_report)
 
-    p_cmp = sub.add_parser("compare", help="对比两次运行：对比雷达 + 判定翻转明细",
-                           parents=[common])
+    p_cmp = sub.add_parser("compare", help="对比两次运行：对比雷达 + 判定翻转明细", parents=[common])
     p_cmp.add_argument("run_a", help="运行 A（runs/<run_id> 或完整路径）")
     p_cmp.add_argument("run_b", help="运行 B")
     p_cmp.add_argument("-o", "--out", default="runs/_compare", help="输出目录")
     p_cmp.set_defaults(func=cmd_compare)
 
-    p_agg = sub.add_parser("aggregate", help="N 轮重跑聚合成 mean±std（方差口径）",
-                           parents=[common])
+    p_agg = sub.add_parser("aggregate", help="N 轮重跑聚合成 mean±std（方差口径）", parents=[common])
     p_agg.add_argument("runs", nargs="+", help="N 个运行（runs/<run_id> 或完整路径）")
     p_agg.add_argument("-o", "--out", default="runs/_aggregate", help="输出目录")
     p_agg.set_defaults(func=cmd_aggregate)
 
-    p_ver = sub.add_parser("verify", help="离线校验 run 目录证据完整性（防篡改对账）",
-                           parents=[common])
+    p_ver = sub.add_parser("verify", help="离线校验 run 目录证据完整性（防篡改对账）", parents=[common])
     p_ver.add_argument("run_dir", help="runs/<run_id> 或完整路径")
     p_ver.set_defaults(func=cmd_verify)
 
-    p_sta = sub.add_parser("stability", help="多次重跑稳定性分析（一致率/pass^k/翻转明细）",
-                           parents=[common])
+    p_sta = sub.add_parser("stability", help="多次重跑稳定性分析（一致率/pass^k/翻转明细）", parents=[common])
     p_sta.add_argument("runs", nargs="+", help="≥2 个运行（runs/<run_id> 或完整路径）")
     p_sta.add_argument("-o", "--out", default="runs/_stability", help="输出目录")
     p_sta.set_defaults(func=cmd_stability)
 
-    p_vmc = sub.add_parser("vm", help="openKylin 虚拟机生命周期（快照/回滚/健康检查）",
-                           parents=[common])
-    p_vmc.add_argument("vm_action",
-                       choices=["status", "start", "stop", "snapshot",
-                                "delete-snapshot", "revert", "prepare", "health"])
+    p_vmc = sub.add_parser("vm", help="openKylin 虚拟机生命周期（快照/回滚/健康检查）", parents=[common])
+    p_vmc.add_argument(
+        "vm_action",
+        choices=["status", "start", "stop", "snapshot", "delete-snapshot", "revert", "prepare", "health"],
+    )
     p_vmc.add_argument("--name", help="快照名（revert 缺省用 VM_SNAPSHOT）")
     p_vmc.add_argument("--mode", default="soft", choices=["soft", "hard"])
     p_vmc.add_argument("--timeout", type=int, default=300)
     p_vmc.set_defaults(func=cmd_vm)
 
-    p_sys = sub.add_parser("systest", help="系统级测试：重启/拨钟/多用户/断网（真机真做）",
-                           parents=[common])
+    p_sys = sub.add_parser("systest", help="系统级测试：重启/拨钟/多用户/断网（真机真做）", parents=[common])
     p_sys.add_argument("-a", "--adapter", default="hermes", help="VM 内适配器")
     p_sys.add_argument("-o", "--out", default="runs", help="输出根目录")
     p_sys.set_defaults(func=cmd_systest)
 
-    p_doc = sub.add_parser("doctor", help="一键发现本机/评测机智能体，体检评测环境",
-                           parents=[common])
+    p_doc = sub.add_parser("doctor", help="一键发现本机/评测机智能体，体检评测环境", parents=[common])
     p_doc.add_argument("--no-vm", action="store_true", help="跳过评测机 SSH 扫描")
     p_doc.set_defaults(func=cmd_doctor)
 
-    p_gw = sub.add_parser("gateway", help="统一模型网关（被测智能体流量必经代理）",
-                          parents=[common])
-    p_gw.add_argument("--host", default="127.0.0.1",
-                      help="监听地址（VM 智能体要用时指 0.0.0.0）")
+    p_gw = sub.add_parser("gateway", help="统一模型网关（被测智能体流量必经代理）", parents=[common])
+    p_gw.add_argument("--host", default="127.0.0.1", help="监听地址（VM 智能体要用时指 0.0.0.0）")
     p_gw.add_argument("--port", type=int, default=0, help="端口（默认 8311）")
     p_gw.add_argument("--upstream", default="", help="上游 base_url（默认 GATEWAY_UPSTREAM_URL）")
     p_gw.add_argument("--model", default="", help="统一模型名（默认 GATEWAY_MODEL）")
-    p_gw.add_argument("--key", default="",
-                      help="上游 API key（默认 GATEWAY_UPSTREAM_KEY；命令行会进 ps，优先用环境变量）")
+    p_gw.add_argument(
+        "--key", default="", help="上游 API key（默认 GATEWAY_UPSTREAM_KEY；命令行会进 ps，优先用环境变量）"
+    )
     p_gw.add_argument("--log", default="", help="记账 JSONL 路径（默认 ~/.memhall/gateway-usage.jsonl）")
     p_gw.add_argument("--report", action="store_true", help="不启服务，打印现有记账聚合")
     p_gw.set_defaults(func=cmd_gateway)
 
-    p_ui = sub.add_parser("ui", help="启动 Web UI（本地服务 + 自动开浏览器）",
-                          parents=[common])
+    p_ui = sub.add_parser("ui", help="启动 Web UI（本地服务 + 自动开浏览器）", parents=[common])
     p_ui.add_argument("--port", type=int, default=8300, help="端口（默认 8300）")
     p_ui.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
-    p_ui.add_argument("--window", action="store_true",
-                      help="原生窗口模式（pywebview，exe 双击默认）")
+    p_ui.add_argument("--window", action="store_true", help="原生窗口模式（pywebview，exe 双击默认）")
     p_ui.set_defaults(func=cmd_ui)
 
     args = parser.parse_args()

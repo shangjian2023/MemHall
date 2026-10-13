@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] — A 档小修全档（2026-10-14）
+
+依据 docs/audit/roadmap-20261014.md A1–A8（检测与披露，不动判卷口径）：
+
+- **A1 错钟残留检测**：发车前宿主-评测机对时，差超阈值（默认 ±300s，
+  `MEMHALL_CLOCK_DRIFT_MAX` 可调）拒跑——上一轮拨钟恢复失败的残留不再带着
+  错误的时间语义跑完整场；实测差值随 `manifest.clock_drift_s` 落账。
+- **A2 网关对账告警**：统一网关车道"agent 正常作答但该 tag 零记账"→
+  `manifest.gateway_reconciliation_alarm`（逐 case 归因只对未拨钟 case，
+  窗口前端放宽 30 分钟防 inject 阶段误报；宿主账单优先、VM 侧账单经通道
+  兜底，读不到=无法对账不告警）——"必经网关"从纯配置注入升级为有"该来
+  没来"的对账。
+- **A3** hermes/openclaw reset 失败 RuntimeError → AdapterError（对齐 R33）。
+- **A4** 新增 tests/test_isolation_guards.py（18 项）：全局锁互斥、拨钟/恢复
+  往返与失败路径、错钟探针与拒跑闸门、网关对账四场景、本机四家 reset
+  "清旧"断言（qwen 剥 hooks、opencode 权限面不被残留顶掉）。
+- **A5** openclaw 工具权限面走明示豁免（无经实测验证的门控项，盲写配置键
+  有打断现役车道风险）——dataset-card §8 披露该车道能力面差异。
+- **A6 延迟/成本一等指标 + pass^k**：metrics.json 增 `latency`（p50/p95/
+  max/mean，占位回复不计），报告头部出延迟行；aggregate 逐轮 p95 延迟与
+  token 列，总体与分维 pass^k（分母只算 k 轮全有判定的探测点）。
+- **A7 canary 读侧探针试点**：development-v2 新题族 `recall.canary-read`
+  ——教随机口令，probe 段一问口令本体（答出=存过且检索到的观测证据）+ 一问
+  从未教过的口令槽位（答"没有提过"=拒答基线，编造=编造基线）；题包重生成
+  39 题/13 族/54 探测，test 包 72/24/96 内容零变化（仅模板文档指纹随加族
+  滚动，逐字段 diff 已验证）。
+- **A8** README 特色节新增"把完整智能体框架当黑盒横评，业界没有现成尺子"
+  差异点条目；dataset-card §8 新增九车道接口妥协清单六条（消息进 argv/
+  节流差异/导出粒度/actions 覆盖/拨钟/协议面）。
+
 ## [Unreleased] — OS 级沙箱 B8（2026-10-14）
 
 - **bwrap 写面强制隔离（openKylin 优先，VM 实测通过）**：被测 agent 进程整根只读 +

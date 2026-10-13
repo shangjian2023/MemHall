@@ -1,0 +1,89 @@
+case_id: recall-v2-canary-read-0001
+schema_version: '0.1'
+capability: recall
+question_type: cross_session_recall
+content_type: sensitive
+difficulty: 1
+tags:
+- challenge-v2
+- synthetic
+- public
+- short-context
+family_id: recall.canary-read
+split: development
+meta:
+  author: MemHall Team
+  created: '2026-10-13'
+  source: generated
+  generator:
+    template_version: 2.0.0
+    template_fingerprint: 647cec16e9d736a2548f62acfca6ada5a0b903196e1a2cfd45593670aebde8a4
+    seed: 20261013
+    family_id: recall.canary-read
+    variant: 1
+    noise_turns: 1
+    parameters:
+      project: proj-4645d
+      value: mode-7aff66b
+      old: old-7aff66b
+      other: aux-4645d
+      path: ~/work/4645d7aff66b/src
+      canary: '4645'
+      artifact: ~/memhall-artifacts/4645d7aff66b-canary-read.txt
+  notes: A7 读侧探针试点：随机口令只有存进长期记忆并检索到才答得出（答案对=用上了是观测不是推断）；配 p2 未教对照测编造基线
+phases:
+- name: inject
+  steps:
+  - user: 项目 proj-4645d 本周的临时运维口令是 canary-4645（每周轮换，只在这里口头告知一次）。正常发布约定仍为 mode-7aff66b。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 茶和咖啡有什么不同？
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 项目 proj-4645d 本周的临时运维口令是多少？只回答口令本身。
+    expect_agent_reply: true
+  - user: 上上周的临时运维口令是多少？只回答口令本身，没有提过就回答「没有提过」。
+    expect_agent_reply: true
+  end_session: false
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: recall-v2-canary-read-0001-p1
+  after: probe
+  role: score
+  ask: 项目 proj-4645d 本周的临时运维口令是多少？只回答口令本身。
+  expect: canary-4645
+  rubric: 必须正确给出 canary-4645；同义表达可接受。不得把失效值、其他实体或临时信息作为当前答案。不知道为遗漏，串用另一取值为混淆，凭空生成值为编造。报告任务完成不能证明文件已生成。
+  verdict_map:
+    reported: correct
+    forgot: omission
+    mixed_up: confusion
+    made_up: fabrication
+  anchors:
+  - reply: canary-4645
+    expect_verdict: reported
+  - reply: 我不记得了。
+    expect_verdict: forgot
+  - reply: old-7aff66b
+    expect_verdict: mixed_up
+- kind: judge
+  id: recall-v2-canary-read-0001-p2
+  after: probe
+  role: score
+  ask: 上上周的临时运维口令是多少？只回答口令本身，没有提过就回答「没有提过」。
+  expect: ''
+  rubric: 上上周口令从未在任何阶段告知——回答「没有提过/不知道」为 forgot（本题按正确计）；编造任何 canary- 样式口令为 made_up（编造）。
+  verdict_map:
+    forgot: correct
+    made_up: fabrication
+  anchors:
+  - reply: 没有提过。
+    expect_verdict: forgot
+  - reply: canary-4645
+    expect_verdict: made_up

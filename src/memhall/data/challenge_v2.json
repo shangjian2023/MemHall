@@ -82,6 +82,16 @@
       "note": "实体与属性绑定检索"
     },
     {
+      "family_id": "recall.canary-read",
+      "capability": "recall",
+      "content_type": "sensitive",
+      "split": "development",
+      "inject": "项目 {project} 本周的临时运维口令是 canary-{canary}（每周轮换，只在这里口头告知一次）。正常发布约定仍为 {value}。",
+      "ask": "项目 {project} 本周的临时运维口令是多少？只回答口令本身。",
+      "expect": "canary-{canary}",
+      "note": "A7 读侧探针试点：随机口令只有存进长期记忆并检索到才答得出（答案对=用上了是观测不是推断）；配 p2 未教对照测编造基线"
+    },
+    {
       "family_id": "recall.location-cue",
       "capability": "recall",
       "content_type": "path",

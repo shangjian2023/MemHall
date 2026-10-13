@@ -6,7 +6,7 @@
 
 ## 2026-10-13 扩展题包说明
 
-原 v0.1 的 full/chains 核心共 49 题、100 探测（76 score），定义和历史分数保持原口径。新增 `challenge-v2`：24 个显式场景模板、72 道公开测试实例、96 探测（72 score）；`development-v2`：12 个不同模板、36 道开发实例、48 探测（36 score）。公开模板不能声称私有 heldout；难度标签尚待真实通过率校准。生成参数、split、family_id 与 suite.yaml 版本随题包保存。
+原 v0.1 的 full/chains 核心共 49 题、100 探测（76 score），定义和历史分数保持原口径。新增 `challenge-v2`：24 个显式场景模板、72 道公开测试实例、96 探测（72 score）；`development-v2`：13 个不同模板、39 道开发实例、54 探测（42 score），其中 recall.canary-read 为读侧探针试点（2026-10-14：随机口令只有存过且检索到才答得出，配"没教就问"编造基线对照）。公开模板不能声称私有 heldout；难度标签尚待真实通过率校准。生成参数、split、family_id 与 suite.yaml 版本随题包保存。
 
 24 个测试模板每个生成 42 个变体可得到 1008 实例，按 24 个模板报告和聚类，不能把它写成 1008 个独立任务族。新增文件复用题使用内容哈希及阶段变化验收。完整结构、抽样与重生成方法见 [benchmark-v2.md](benchmark-v2.md)。本卡后续旧数字描述原题库，新增题的真实智能体成绩尚未产生。
 
@@ -93,6 +93,9 @@ reuse           |     1      |  1   |    1     |  1   |       1       |    1
 - 变换保难度（一致性检查）：**赛后扩展项**（R15 同口径；当前 gen 只有池内 shuffle 取样，无换说法变换）
 
 ## 8. 已知局限（诚实边界）
+
+- **适配器能力面（R36/R37/A5）**：opencode 沙箱 bash=deny（与其他适配器对齐，2026-10-05 起）；openclaw 沙箱模型参数（contextWindow/maxTokens）可经环境变量外置，默认值为评测方设定而非被测者原生配置——适配器替被测者做的配置选择进入分数，此差异在此披露。**openclaw 工具权限面豁免（A5，2026-10-14）**：其 `agent exec` 无头通道与沙箱配置（mode=replace 覆盖 models）未提供经实测验证的 bash/webfetch 门控项，未敢盲写未验证的配置键打断现役车道——该车道命令执行类工具处于上游默认状态，与 claude（acceptEdits 不放行命令）、opencode（bash/webfetch deny）的能力面不完全对齐；跨车道比较 reuse/边界类结果时应知此差异，上游提供工具门控后即对齐
+- **适配器接口妥协清单（A8 披露，2026-10-14）**：九车道在"同一把尺"下的接口层差异一览——Zep 揪 Mem0 适配器三连的教训（适配器正确性要当审计对象）。①消息通道：hermes 走 stdin→query-file（命令行零明文）；openclaw 走 message-file；kylin-agent `-z` 参数、kylinbot `-m`、claude `-p`、qwen/opencode 裸参数**消息进 argv**（/proc 同 UID 可见、受命令行长度上限约束，kylinbot 为其中唯一实测不支持 stdin/file 的车道，R58 记录）。②发送节奏（环境参数，非题库控制，env 可覆写）：hermes/kylin-agent 不节流、openclaw 5s、kylinbot 10s、本机三家 hermes/qwen/opencode 10s、claude 2s。③记忆导出粒度：hermes/kylin-agent 两个 md、openclaw sqlite chunks 全量（含会话转录）、kylinbot 结构化库带 superseded 版本链、claude/qwen/opencode 各自 md（详见 R48 条与适配器 docstring）。④actions 覆盖：仅 hermes/kylin-agent 达 partial（agent 日志），其余 unknown（见 H1 条）。⑤拨钟：本机四家不支持（temporal 用例按运行无效剔除）。⑥协议面：claude-local 走 anthropic 协议进不了 openai 统一网关（GATEWAY_EXEMPT 明示豁免的混合形态）
 
 - **boundary 维的证据面差异（R48）**：三家记忆导出面不同构——openclaw 导出 memory_index_chunks 全量（含会话转录，说过的 canary 必然在库）、hermes 只导出两个 md、kylinbot 导出结构化库。boundary 主判据是**行为级**（probe 段问答拒答/泄露），存储级 canary 断言已降 diagnostic 分层呈现（R07/R49），跨架构比较时报告注明各家检索面差异
 - **fs 证据的阶段粒度（R50）**：fs_diff 条目已带 stage（inject/probe 两个阶段窗），但快照只有路径清单——modified 与内容哈希待适配器提供内容指纹后落地；"按习惯写"类内容级断言暂不可判

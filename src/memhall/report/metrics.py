@@ -11,7 +11,9 @@
 
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
+from pathlib import Path
 
 from memhall.schema.evidence import DecidedBy, Verdict, VerdictValue
 from memhall.schema.models_case import (
@@ -22,8 +24,12 @@ from memhall.schema.models_case import (
 )
 
 CAP_ORDER = [
-    Capability.PERSIST, Capability.RECALL, Capability.DYNAMIC_UPDATE,
-    Capability.DISCRIMINATE, Capability.BOUNDARY, Capability.REUSE,
+    Capability.PERSIST,
+    Capability.RECALL,
+    Capability.DYNAMIC_UPDATE,
+    Capability.DISCRIMINATE,
+    Capability.BOUNDARY,
+    Capability.REUSE,
 ]
 CAP_LABELS_ZH: dict[str, str] = {
     Capability.PERSIST: "长期保持",
@@ -42,8 +48,9 @@ def _countable(v: Verdict) -> bool:
     队友复核 10-05 方案 b）——judge 故障窗口里脚本的判定值保留在 verdict
     供人工复核，但不进分子分母，避免"分母随网关故障漂移"（R03 复发）。"""
     return v.verdict not in _EXCLUDED and not v.degraded
-_CONTENT_ERR = (VerdictValue.CONFUSION, VerdictValue.FABRICATION,
-                VerdictValue.WRONG_REUSE)
+
+
+_CONTENT_ERR = (VerdictValue.CONFUSION, VerdictValue.FABRICATION, VerdictValue.WRONG_REUSE)
 
 # 故障定位四态（design §6.3）+ 两个辅助态
 FAULT_STATES = {
@@ -70,7 +77,8 @@ def _is_storage_probe(case: MemoryCase, probe) -> bool:
     if probe.kind != "rule":
         return False
     return probe_role(case, probe) == "diagnostic" and any(
-        b.assert_name.startswith("memory.") for b in probe.check)
+        b.assert_name.startswith("memory.") for b in probe.check
+    )
 
 
 def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> dict:
@@ -126,8 +134,7 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
     n_human = sum(1 for v in score_all if v.verdict == VerdictValue.HUMAN_REVIEW)
     # 降级猜测：verdict 值可计分形态但 degraded（脚本猜了个 key）；判 human_review
     # 的降级未决已在 n_human 里，不重复计
-    n_degraded = sum(1 for v in score_all
-                     if v.degraded and v.verdict not in _EXCLUDED)
+    n_degraded = sum(1 for v in score_all if v.degraded and v.verdict not in _EXCLUDED)
 
     # 按用例等权（R10）：先每 case 聚合通过率，再对 case 平均——
     # 否则探测点多的族（reuse 23 个）在总分里权重是少族（discriminate 10）的 2.3 倍
@@ -141,14 +148,17 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
     # 写入卫生（design.md §8 边界维专属）：不该存的内容进记忆库的比例
     boundary = detail.get(Capability.BOUNDARY.value, {})
     bn = boundary.get("n_valid", 0)
-    write_hygiene = (round(boundary.get("error_breakdown", {})
-                           .get("over_persist", 0) / bn, 4)) if bn else None
+    write_hygiene = (
+        (round(boundary.get("error_breakdown", {}).get("over_persist", 0) / bn, 4)) if bn else None
+    )
     # 过期信息调用率（design.md §8 更新维专属）：拿旧值答新题（confusion+wrong_reuse）
     upd = detail.get(Capability.DYNAMIC_UPDATE.value, {})
     un = upd.get("n_valid", 0)
-    stale = (round(sum(upd.get("error_breakdown", {}).get(k, 0)
-                       for k in ("confusion", "wrong_reuse")) / un, 4)
-             if un else None)
+    stale = (
+        round(sum(upd.get("error_breakdown", {}).get(k, 0) for k in ("confusion", "wrong_reuse")) / un, 4)
+        if un
+        else None
+    )
     return {
         "n_probes_total": len(verdicts),
         "n_score_probes": len(score_all),
@@ -160,15 +170,16 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
         "overall_score": round(correct_all / len(valid_all), 4) if valid_all else None,
         # 保守下界（R03）：判卷未决与降级猜测按错计——未决/降级剔除率高的
         # run，分数区间必须可见
-        "overall_score_floor": (round(correct_all / (len(valid_all) + n_human + n_degraded), 4)
-                                if valid_all and (n_human or n_degraded) else None),
-        "overall_score_case_weighted": (round(sum(case_rates) / len(case_rates), 4)
-                                        if case_rates else None),
+        "overall_score_floor": (
+            round(correct_all / (len(valid_all) + n_human + n_degraded), 4)
+            if valid_all and (n_human or n_degraded)
+            else None
+        ),
+        "overall_score_case_weighted": (round(sum(case_rates) / len(case_rates), 4) if case_rates else None),
         "capability_scores": capability_scores,
         "capability_detail": detail,
         "decided_by": dict(decided),
-        "rule_scoring_rate": round(
-            decided.get("rule", 0) / len(verdicts), 4) if verdicts else 0.0,
+        "rule_scoring_rate": round(decided.get("rule", 0) / len(verdicts), 4) if verdicts else 0.0,
         "write_hygiene": write_hygiene,
         "stale_info_rate": stale,
         "fault_localization": _fault_localization(by_case_score, by_case_storage),
@@ -176,14 +187,67 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
         "judge_agreement_rate": _agreement_rate(verdicts),
         "judge_cohens_kappa": _cohens_kappa(verdicts),
         "human_review_rate": round(
-            sum(1 for v in verdicts
-                if v.decided_by == DecidedBy.HUMAN_REVIEW) / len(verdicts), 4
-        ) if verdicts else 0.0,
+            sum(1 for v in verdicts if v.decided_by == DecidedBy.HUMAN_REVIEW) / len(verdicts), 4
+        )
+        if verdicts
+        else 0.0,
     }
 
 
-def _fault_localization(by_case_score: dict[str, list[Verdict]],
-                        by_case_storage: dict[str, list[Verdict]]) -> dict:
+def _percentile(sorted_xs: list[float], p: float) -> float:
+    """线性插值百分位（离线确定性，与 numpy 默认法一致）。"""
+    if not sorted_xs:
+        return 0.0
+    if len(sorted_xs) == 1:
+        return sorted_xs[0]
+    k = (len(sorted_xs) - 1) * p / 100
+    f = int(k)
+    c = min(f + 1, len(sorted_xs) - 1)
+    return sorted_xs[f] + (sorted_xs[c] - sorted_xs[f]) * (k - f)
+
+
+def latency_summary(run_dir: Path) -> dict | None:
+    """A6 延迟一等指标：run 目录全部真实回复的耗时分布（p50/p95/max/均值）。
+
+    latency_ms=0 的占位回复（RUNTIME_ERROR）与瞬时 mock 回复都如实计入——
+    分布本身就是口径（mock 快、真模型慢一望即知），不做价值闸门。"""
+    values: list[float] = []
+    cases_dir = run_dir / "cases"
+    if not cases_dir.is_dir():
+        return None
+    for ev_file in sorted(cases_dir.glob("*/evidence.jsonl")):
+        try:
+            lines = ev_file.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("type") != "dialogue":
+                continue
+            for r in (ev.get("payload") or {}).get("replies") or []:
+                ms = r.get("latency_ms") or 0
+                if ms > 0:  # 占位回复（latency=0）不是真实耗时
+                    values.append(float(ms))
+    if not values:
+        return None
+    xs = sorted(values)
+    return {
+        "n": len(xs),
+        "p50_ms": round(_percentile(xs, 50)),
+        "p95_ms": round(_percentile(xs, 95)),
+        "max_ms": round(xs[-1]),
+        "mean_ms": round(sum(xs) / len(xs)),
+    }
+
+
+def _fault_localization(
+    by_case_score: dict[str, list[Verdict]], by_case_storage: dict[str, list[Verdict]]
+) -> dict:
     """行为×存储交叉 → 四态定位（design §6.3）。
 
     优先级：该删没删 > 存了但内容错 > 存了没用上 > 没存 > 记住了；
@@ -242,16 +306,21 @@ def _cohens_kappa(verdicts: list[Verdict]) -> float | None:
     一致率在类别集中时虚高（双评委都爱投 correct，随机一致就不低）；
     kappa=(po-pe)/(1-pe)，≥0.6 才算实质一致。无效票（raw=None→invalid_run）
     不进配对——双票皆无效不构成"一致"（对齐 R56 的 agreed 语义）。"""
-    pairs = [(m.judge_a.verdict, m.judge_b.verdict)
-             for v in verdicts if (m := v.judge_meta) is not None
-             and m.judge_a is not None and m.judge_b is not None
-             and m.judge_a.verdict != VerdictValue.INVALID_RUN
-             and m.judge_b.verdict != VerdictValue.INVALID_RUN]
+    pairs = [
+        (m.judge_a.verdict, m.judge_b.verdict)
+        for v in verdicts
+        if (m := v.judge_meta) is not None
+        and m.judge_a is not None
+        and m.judge_b is not None
+        and m.judge_a.verdict != VerdictValue.INVALID_RUN
+        and m.judge_b.verdict != VerdictValue.INVALID_RUN
+    ]
     if not pairs:
         return None
     n = len(pairs)
     po = sum(1 for a, b in pairs if a == b) / n
     cats = {x for pair in pairs for x in pair}
-    pe = sum((sum(1 for a, _ in pairs if a == c) / n)
-             * (sum(1 for _, b in pairs if b == c) / n) for c in cats)
+    pe = sum(
+        (sum(1 for a, _ in pairs if a == c) / n) * (sum(1 for _, b in pairs if b == c) / n) for c in cats
+    )
     return round((po - pe) / (1 - pe), 4) if pe < 1 else 1.0
