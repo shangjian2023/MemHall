@@ -126,6 +126,19 @@ def _js_pm_bin_dirs() -> list[str]:
     return dirs
 
 
+# kylin-agent 系统智能体后端运行时（Hermes fork）：env 覆写 > PATH 名 >
+# apt 落点 > pip --user > Gitee README 部署路径（clone agent-runtime + uv venv）。
+# 只认 kylin-agent-runtime——GUI 前端叫 kylin-agent（apt 同名包），装了它
+# 不等于装了被测后端，绝不进候选（F 专项：discovery 与适配器口径一致）。
+def _kylin_agent_candidates() -> list[str]:
+    env = os.environ.get("MEMHALL_KYLIN_AGENT_BIN", "").strip()
+    cands = ["kylin-agent-runtime", "/usr/bin/kylin-agent-runtime",
+             "/usr/local/bin/kylin-agent-runtime",
+             "~/.local/bin/kylin-agent-runtime",
+             "~/agent-runtime/.venv/bin/kylin-agent-runtime"]
+    return ([env, *cands] if env else cands)
+
+
 ADAPTER_CLI: dict[str, list[str]] = {
     "hermes": _hermes_candidates(),
     "claude": ["claude", "~/.local/bin/claude",
@@ -134,11 +147,7 @@ ADAPTER_CLI: dict[str, list[str]] = {
              *[f"{d}/qwen" for d in _js_pm_bin_dirs()]],
     # openKylin 侧智能体：绝对路径兜底（SSH/桌面起的进程 PATH 不含用户安装位）
     "kylinbot": ["kylin-bot", "/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"],
-    # kylin-agent 系统智能体后端运行时（Hermes fork）：apt 落点 + Gitee
-    # README 部署路径（clone agent-runtime + uv venv）双兜底
-    "kylin-agent": ["kylin-agent-runtime", "/usr/bin/kylin-agent-runtime",
-                    "/usr/local/bin/kylin-agent-runtime",
-                    "~/agent-runtime/.venv/bin/kylin-agent-runtime"],
+    "kylin-agent": _kylin_agent_candidates(),
     "openclaw": ["openclaw", "~/.local/bin/openclaw",
                  *[f"{d}/openclaw" for d in _js_pm_bin_dirs()]],
     "opencode": ["opencode"],   # R57：UI 下拉曾漏 opencode（适配器早已注册）
@@ -243,6 +252,7 @@ VM_AGENTS: list[tuple[str, list[str], str]] = [
     ("kylin-bot", ["/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"], "kylinbot"),
     ("kylin-agent-runtime",
      ["/usr/bin/kylin-agent-runtime", "/usr/local/bin/kylin-agent-runtime",
+      "~/.local/bin/kylin-agent-runtime",
       "~/agent-runtime/.venv/bin/kylin-agent-runtime"], "kylin-agent"),
     ("openclaw", ["~/.local/bin/openclaw"], "openclaw"),
 ]
@@ -542,6 +552,7 @@ _VM_PROBE = (
     "'kylin-bot|/usr/local/bin/kylin-bot' "
     "'kylin-agent-runtime|/usr/bin/kylin-agent-runtime' "
     "'kylin-agent-runtime|/usr/local/bin/kylin-agent-runtime' "
+    "'kylin-agent-runtime|~/.local/bin/kylin-agent-runtime' "
     "'kylin-agent-runtime|~/agent-runtime/.venv/bin/kylin-agent-runtime' "
     "'openclaw|~/.local/bin/openclaw'; do "
     "n=${spec%%|*}; p=${spec##*|}; "
