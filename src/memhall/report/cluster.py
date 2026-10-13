@@ -29,6 +29,56 @@ def countable(verdict: Verdict) -> bool:
     return verdict.verdict not in EXCLUDED and not verdict.degraded
 
 
+def _probe_status(v: Verdict) -> str:
+    """单条判定 → 状态串：pass^k 分母账本要能分开"缺一轮"与"判了但无效"。"""
+    if v.degraded:
+        return "degraded"
+    if v.verdict == VerdictValue.INVALID_RUN:
+        return "invalid"
+    if v.verdict == VerdictValue.HUMAN_REVIEW:
+        return "review"
+    return "correct" if v.verdict == VerdictValue.CORRECT else "wrong"
+
+
+STATUS_COMPLETE = ("correct", "wrong")
+STATUS_MISSING = "missing"
+
+
+def status_pool(run_dirs: list[Path]) -> dict:
+    """capability -> family -> probe -> 每轮状态（含 'missing'）。
+
+    与 load_clusters 同构，但保真记录原因：missing（该轮无此判定——题没跑
+    到/探测点缺席）、invalid（invalid_run）、review（human_review）、
+    degraded（降级猜测）。diagnostic 探测点不进池（score_index 已滤）。"""
+    pool: dict = {"__overall__": {}}
+    for round_index, directory in enumerate(run_dirs):
+        path = directory / "verdicts.jsonl"
+        index = score_index(directory)
+        if not path.is_file() or not index:
+            return {}
+        seen: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            v = Verdict.model_validate_json(line)
+            if v.probe_id in seen:
+                raise ValueError(f"重复判定: {directory.name}/{v.probe_id}")
+            if v.probe_id not in index:
+                continue
+            _cap, case_id, _family = index[v.probe_id]
+            if v.case_id != case_id:
+                raise ValueError(f"判定归属与题目快照不一致: {v.probe_id}")
+            seen[v.probe_id] = _probe_status(v)
+        for pid, (cap, _case_id, family) in index.items():
+            status = seen.get(pid, STATUS_MISSING)
+            for key in (cap, "__overall__"):
+                values = (
+                    pool.setdefault(key, {})
+                    .setdefault(family, {})
+                    .setdefault(pid, [STATUS_MISSING] * len(run_dirs))
+                )
+                values[round_index] = status
+    return pool
+
+
 def load_clusters(run_dirs: list[Path]) -> dict:
     """capability -> family -> probe -> fixed-length per-round values (None = unscored)."""
     pool: dict = {"__overall__": {}}
