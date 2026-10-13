@@ -93,6 +93,19 @@ def test_local_lane_fs_paths_match_tilde_assert(cls, tmp_path):
     _assert_hit(snap, cls.__name__)
 
 
+@pytest.mark.parametrize("cls", [LocalHermesAdapter, LocalQwenAdapter,
+                                 LocalClaudeAdapter, OpenCodeAdapter])
+def test_local_lane_fs_snapshot_dot_ancestor_root(cls, tmp_path):
+    """默认沙箱根在 ~/.memhall（点目录祖先）下：隐藏目录按 workspace 内
+    相对部分判定——修复前绝对路径部件含 .memhall 导致默认根下快照恒空，
+    本机车道的 reuse 文件断言会全体静默失配（2026-10-13 收编时逮到）。"""
+    a = cls(root=tmp_path / ".memhall" / cls.__name__)
+    f = a.workspace / "dev" / "demo.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("demo", encoding="utf-8")
+    assert a.fs_snapshot() == ["~/dev/demo.md"]
+
+
 # ---------- openclaw dump：fresh 沙箱无 DB ≠ 导出失败（R31 误伤修复） ----------
 
 def test_openclaw_dump_missing_db_returns_empty(tmp_path):

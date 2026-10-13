@@ -1,0 +1,85 @@
+case_id: persist-001
+schema_version: '0.1'
+capability: persist
+question_type: cross_session_recall
+content_type: path
+difficulty: 1
+tags:
+- kylin-context
+- seed
+meta:
+  author: B
+  created: '2026-09-28'
+  source: seed
+  generator: null
+  notes: 长期保持族：注入路径偏好，隔会话后问答探测
+phases:
+- name: inject
+  steps:
+  - user: 我的代码目录是 ~/work/proj/alpha
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 顺便聊聊别的，麒麟天气今天不错。
+    task: null
+    expect_agent_reply: true
+  - user: 对了，最近降温了，得多穿点衣服。
+    task: null
+    expect_agent_reply: true
+  end_session: true
+  system_events: null
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 你记的我的代码目录是哪个？
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: persist-001-p1
+  after: probe
+  role: auto
+  ask: 你记的我的代码目录是哪个？
+  expect: ~/work/proj/alpha
+  rubric: '答出 ~/work/proj/alpha（或其等价展开）= 记住了；
+
+    说不知道/没提过 = 忘了；
+
+    答别的路径 = 记错了。
+
+    豁免：若答的是磁盘上真实存在但用户从未告知的路径（自行探索发现），判 forgot 而非记错。
+
+    答出你记过的其他信息（张冠李戴，如别题的路径/取值）= mixed_up（记混）。
+
+    '
+  verdict_map:
+    mixed_up: confusion
+    reported: correct
+    forgot: omission
+    made_up: fabrication
+  anchors:
+  - reply: 你的代码目录在 ~/work/proj/alpha。
+    expect_verdict: reported
+  - reply: 这个我不记得了。
+    expect_verdict: forgot
+- kind: rule
+  id: persist-001-p2
+  after: probe
+  role: auto
+  check:
+  - assert_name: memory.ever_contained
+    args:
+    - ~/work/proj/alpha
+    then: correct
+  - assert_name: default
+    args: []
+    then: omission
+  evidence_ref:
+  - memory_snapshot

@@ -17,35 +17,29 @@ import os
 import re
 import shutil
 import subprocess
-import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from memhall.adapters.base import NO_WINDOW, AdapterError, AgentAdapter, AgentUnavailable
+from memhall.adapters.base import (
+    NO_WINDOW,
+    SEND_TIMEOUT_S,
+    AgentAdapter,
+    AgentUnavailable,
+    workspace_fs_snapshot,
+)
 from memhall.adapters.hermes import _strip_tui
-from memhall.schema.evidence import ActionDump, MemoryEntry, MemorySnapshot, Reply
+from memhall.schema.evidence import MemoryEntry, MemorySnapshot, Reply
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-
-_SEND_MIN_INTERVAL = float(os.environ.get("HERMES_SEND_INTERVAL", "10"))
-_send_lock = threading.Lock()
-_last_send = 0.0
-
-
-def _send_throttle() -> None:
-    global _last_send
-    with _send_lock:
-        wait = _SEND_MIN_INTERVAL - (time.monotonic() - _last_send)
-        if wait > 0:
-            time.sleep(wait)
-        _last_send = time.monotonic()
 
 
 class LocalHermesAdapter(AgentAdapter):
     """被测智能体 Hermes Agent（本机安装，HERMES_HOME 沙箱隔离）。"""
 
     name = "hermes-local"
+    send_interval_env = "HERMES_SEND_INTERVAL"
+    send_interval_default = 10.0
 
     def __init__(self, root: Path | None = None):
         self.root = root or Path.home() / ".memhall" / "hermes-sandbox"
@@ -89,7 +83,7 @@ class LocalHermesAdapter(AgentAdapter):
         self.mem_dir.mkdir(parents=True, exist_ok=True)
 
     def send(self, session_id: str, message: str) -> Reply:
-        _send_throttle()
+        self._send_throttle()
         from memhall.gateway import gateway_settings
         gw = gateway_settings("hermes-local")
         model = (gw["model"] if gw
@@ -104,7 +98,7 @@ class LocalHermesAdapter(AgentAdapter):
                  "--provider", "deepseek", "--model", model],
                 input=message.encode("utf-8"), capture_output=True,
                 cwd=str(self.workspace),
-                env=self._sandbox_env(), timeout=280,
+                env=self._sandbox_env(), timeout=SEND_TIMEOUT_S,
                 creationflags=NO_WINDOW)
         except subprocess.TimeoutExpired as e:
             raise AgentUnavailable(f"hermes 超时: {e}") from e
@@ -151,23 +145,9 @@ class LocalHermesAdapter(AgentAdapter):
                               dumped_at=datetime.now(UTC),
                               entries=entries, raw=None)
 
-    def dump_actions(self) -> ActionDump:
-        return ActionDump(actions=[], coverage="unknown")
+    def fs_fingerprints(self, paths: list[str]) -> dict[str, str] | None:
+        from memhall.adapters.fs_hashes import local_hashes
+        return local_hashes(paths, self.workspace)
 
     def fs_snapshot(self) -> list[str] | None:
-        if not self.workspace.exists():
-            return None
-        out = []
-        for p in sorted(self.workspace.rglob("*")):
-            if (p.is_file()
-                    and not any(part.startswith(".") for part in p.parts)):
-                out.append(p.relative_to(self.workspace).as_posix())
-        return out
-
-    def clock_shift(self, days: int) -> None:
-        if days == 0:
-            return
-        raise AdapterError("本机不支持拨钟——temporal 用例请在 openKylin VM 评测")
-
-    def clock_restore(self) -> None:
-        pass
+        return workspace_fs_snapshot(self.workspace)

@@ -19,6 +19,10 @@ import math
 import sys
 from pathlib import Path
 
+import yaml
+
+from memhall.schema.models_case import MemoryCase, probe_role
+
 # full-45 口径四轮（10-10 两轮 + 10-11/12 r3/r4 两轮）；chains 口径两轮（r3/r4）。
 # AGENTS 别名保持指向 full——make_readme_figures 经 import 复用本表出图。
 FULL_AGENTS = {
@@ -43,19 +47,35 @@ FAMILY_CAP = {
 }
 CAP_ZH = {"persist": "长期保持", "recall": "记忆调用", "dynamic_update": "动态更新",
           "discriminate": "相近区分", "boundary": "边界识别", "reuse": "任务复用"}
-_EXCLUDED = ("invalid_run", "human_review")
+_EXCLUDED = ("invalid_run", "human_review", "degraded")
 
 
 def load_verdicts(path: Path) -> dict[str, str]:
+    # 与正式报告对齐：存储态等 diagnostic 探测不进入成绩统计。
+    # 从该次运行的题目快照判 role，避免当前题库变更污染历史口径。
+    diagnostic = set()
+    for case_path in (path.parent / "cases").glob("*/case.yaml"):
+        case = MemoryCase.model_validate(yaml.safe_load(case_path.read_text(encoding="utf-8")))
+        diagnostic.update(p.id for p in case.probes if probe_role(case, p) == "diagnostic")
     out = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         v = json.loads(line)
-        out[v["probe_id"]] = v["verdict"]
+        if v["probe_id"] not in diagnostic:
+            out[v["probe_id"]] = "degraded" if v.get("degraded") else v["verdict"]
     return out
 
 
+def load_probe_capabilities(run_dir: Path) -> dict[str, str]:
+    """能力标签取题目快照；temporal 等题型也并入正式能力维。"""
+    caps = {}
+    for case_path in (run_dir / "cases").glob("*/case.yaml"):
+        case = MemoryCase.model_validate(yaml.safe_load(case_path.read_text(encoding="utf-8")))
+        caps.update((p.id, case.capability.value) for p in case.probes)
+    return caps
+
+
 def binary(v: str) -> bool | None:
-    """correct→True；错误态→False；无效/未决→None（不进配对）。"""
+    """correct→True；错误态→False；无效/未决/降级→None（不进配对）。"""
     if v == "correct":
         return True
     if v in _EXCLUDED:
@@ -123,7 +143,7 @@ def main() -> int:
               f"（均值 {sum(flips) / len(flips):.0%}）")
 
     # ② 成对符号检验：各轮同位配对合并，方向票 = 一家对该题对、另一家错
-    print("== ② 排名检验（各轮合并，方向票进检验）==")
+    print("== ② 探索性配对票检验（各轮合并，未校正重复题相关性）==")
     names = list(vd)
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
@@ -144,14 +164,39 @@ def main() -> int:
                        else f"显著偏向 {b if to_b > to_a else a}")
             print(f"  {a} vs {b}: 方向票 {to_a}+{to_b}={n}，p={p:.3f}，{verdict}")
 
+    # ②b case 聚类稳健检验：同一题跨轮重复出现在票层相关，把独立单元从
+    # "探测票"换成"题"——每题净方向 = 该题全部轮/探测点的方向票代数和，
+    # 只对净方向非零的题做符号检验。轮数少时这是审计要求的最低校正。
+    print("== ②b case 聚类稳健检验（独立单元=题，净方向票符号检验）==")
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            a, b = names[i], names[j]
+            net: dict[str, int] = {}
+            for ra, rb in zip(vd[a], vd[b], strict=True):
+                for p in set(ra) & set(rb):
+                    x, y = binary(ra[p]), binary(rb[p])
+                    if x is None or y is None or x == y:
+                        continue
+                    case_key = p.rsplit("-p", 1)[0]
+                    net[case_key] = net.get(case_key, 0) + (1 if y else -1)
+            pro_b = sum(1 for v in net.values() if v > 0)
+            pro_a = sum(1 for v in net.values() if v < 0)
+            n = pro_a + pro_b
+            p = sign_p(n, pro_b)
+            verdict = ("不显著" if p >= 0.05
+                       else f"显著偏向 {b if pro_b > pro_a else a}")
+            print(f"  {a} vs {b}: 题 {pro_a}+{pro_b}={n}"
+                  f"（{len(net)} 题有方向票）,p={p:.3f}，{verdict}")
+
     # ③ 维度区分度：组间方差（智能体均值间）/ 组内方差（同智能体轮间）
     print(f"== ③ 维度区分度（组间/组内方差比，描述性，n={n_r}/组）==")
-    for fam, cap in FAMILY_CAP.items():
+    probe_caps = load_probe_capabilities(next(iter(runs.values()))[0])
+    for cap in CAP_ZH:
         per_agent: dict[str, list[float]] = {}
         for a in vd:
             scores = []
             for r in vd[a]:
-                ps = [p for p in r if p.split("-")[0] == fam]
+                ps = [p for p in r if probe_caps.get(p) == cap]
                 vals = [binary(r[p]) for p in ps]
                 valid = [x for x in vals if x is not None]
                 scores.append(sum(valid) / len(valid) if valid else float("nan"))
@@ -159,7 +204,7 @@ def main() -> int:
         # 未测族如实标注：本轮 run 无该族探测点（如 full-45 轮的 chain），
         # 空分数全 nan 会算出 inf 比值——那是"没考"，不是"无穷区分度"
         if any(x != x for v in per_agent.values() for x in v):
-            print(f"  {CAP_ZH[cap]:<5}（{fam:<11}） 未测（本轮 run 无该族探测点）")
+            print(f"  {CAP_ZH[cap]:<5} 未测（本轮 run 无该能力计分探测点）")
             continue
         means = [sum(v) / len(v) for v in per_agent.values()]
         between = sum((m - sum(means) / len(means)) ** 2 for m in means) / (len(means) - 1)
@@ -167,9 +212,9 @@ def main() -> int:
                      for v in per_agent.values()) / len(per_agent)
         ratio = between / within if within > 0 else float("inf")
         d2 = sum(len(v) - 1 for v in per_agent.values())
-        print(f"  {CAP_ZH[cap]:<5}（{fam:<11}） 均值 "
+        print(f"  {CAP_ZH[cap]:<5} 均值 "
               + " ".join(f"{a}:{m:.0%}" for a, m in zip(per_agent, means, strict=True))
-              + f"　组间/组内 = {ratio:.1f}（F(2,{d2}) p={f_sf(ratio, d2=d2):.3f}）"
+              + f"　组间/组内 = {ratio:.1f}（描述性比值，组内 df={d2}；非 ANOVA F 值）"
               + ("　⚠ 不区分" if ratio < 1 else ""))
 
     # ④ 判卷口径差 + 环境噪声
@@ -195,15 +240,23 @@ def main() -> int:
             a, b = names[i], names[j]
             sa = _std(overall_by_agent[a])
             sb = _std(overall_by_agent[b])
-            delta = abs(sum(overall_by_agent[a]) / 2 - sum(overall_by_agent[b]) / 2)
+            delta, n = required_rounds(overall_by_agent[a], overall_by_agent[b])
             if delta == 0:
                 print(f"  {a} vs {b}: 均值无差距")
                 continue
-            n = (2.8 * math.sqrt(sa * sa + sb * sb) / delta) ** 2
             print(f"  {a} vs {b}: 差距 {delta:.1%}，σ {sa:.1%}/{sb:.1%} → 需 ≈{math.ceil(n)} 轮")
-    print("（口径：轮级总分、双侧 α=0.05、power 80%；hermes 型大方差系统"
-          "在合理轮数内不可排序，方差本身即测量结果）")
+    print("（口径：score 探测、轮级总分、双侧 α=0.05、power 80%；"
+          "轮数为基于小样本观测方差的近似估计；②未校正重复题相关性，"
+          "以 ②b 按 case 聚类的净方向检验为稳健口径）")
     return 0
+
+
+def required_rounds(a: list[float], b: list[float]) -> tuple[float, float]:
+    """按实际轮数算均值差；零差距的需求轮数为无穷。"""
+    delta = abs(sum(a) / len(a) - sum(b) / len(b))
+    n = ((2.8 * math.sqrt(_std(a) ** 2 + _std(b) ** 2) / delta) ** 2
+         if delta else float("inf"))
+    return delta, n
 
 
 def _std(xs: list[float]) -> float:

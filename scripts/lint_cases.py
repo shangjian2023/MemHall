@@ -37,7 +37,7 @@ _ARGS_SHAPE = {
     "fs.path_exists": ("str",), "fs.path_absent": ("str",), "fs.diff_contains": ("str",),
     "memory.contains": ("str",), "memory.not_contains": ("str",),
     "memory.ever_contained": ("str",), "reply.matches": ("str",),
-    "memory.entry_count": ("spec",), "actions.contains_action": ("spec",),
+    "fs.artifact_matches": ("spec",), "memory.entry_count": ("spec",), "actions.contains_action": ("spec",),
     "actions.count_lt": ("spec",),
 }
 _CMPS = {"eq", "lt", "gt", "le", "ge"}
@@ -62,6 +62,12 @@ def _check_args_shape(path_name: str, probe_id: str, branch, errors: list[str]) 
                       "args 应为单 dict")
         return
     spec = args[0]
+    if branch.assert_name == "fs.artifact_matches":
+        if (not isinstance(spec.get("path"), str)
+                or not re.fullmatch(r"[a-f0-9]{64}", str(spec.get("sha256", "")))):
+            errors.append(f"{path_name}: {probe_id} artifact_matches 需要 path 和 SHA-256")
+        if spec.get("stage", "probe") not in ("inject", "probe"):
+            errors.append(f"{path_name}: {probe_id} artifact_matches stage 无效")
     if branch.assert_name == "memory.entry_count":
         if spec.get("cmp", "eq") not in _CMPS:
             errors.append(f"{path_name}: rule 探测 {probe_id} 的 entry_count.cmp 非法 "
@@ -79,7 +85,7 @@ def check_case(path: Path, errors: list[str], stats: dict, warnings: list[str] |
     # ID 格式与唯一性（契约：<能力族>-<三位序号>；生成用例允许 -gNN/hNN——
     # gen_cases --prefix h 自家 help 推荐的 heldout 前缀，R41 前正则漏了 h
     # 导致 21 道 heldout 全过不了自家 lint，官方评测现场没有可用 lint 入口）
-    if not re.fullmatch(r"[a-z]+-(?:[0-9]{3}|g[0-9]{2}|h[0-9]{2})", case.case_id):
+    if not re.fullmatch(r"[a-z_]+-(?:[0-9]{3}|g[0-9]{2}|h[0-9]{2}|v2-[a-z-]+-[0-9]{4})", case.case_id):
         errors.append(f"{path.name}: case_id '{case.case_id}' 不符合 <能力族>-<三位序号> 格式")
 
     # 防污染：boundary / sensitive 必须有 canary
@@ -184,14 +190,15 @@ def main(argv: list[str]) -> int:
         targets = [Path(argv[argv.index("--case") + 1])]
         mode = "single"
     elif "--dir" in argv:
-        targets = sorted(Path(argv[argv.index("--dir") + 1]).glob("*.yaml"))
+        targets = sorted(p for p in Path(argv[argv.index("--dir") + 1]).rglob("*.yaml")
+                         if p.name != "suite.yaml")
         mode = Path(argv[argv.index("--dir") + 1]).name
     else:
         # 全库门禁：full + gen + chains（heldout 现场生成不在库内）。
         # 曾只查 full——chain-004 等新集合入库不过门禁，规则漂移无人拦。
-        subs = ["full", "gen", "chains"]
+        subs = ["full", "gen", "chains", "challenge-v2", "development-v2"]
         targets = sorted(p for s in subs
-                         for p in (REPO / "cases" / s).glob("*.yaml"))
+                         for p in (REPO / "cases" / s).glob("*.yaml") if p.name != "suite.yaml")
         mode = "+".join(subs)
 
     errors: list[str] = []

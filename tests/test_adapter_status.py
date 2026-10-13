@@ -35,7 +35,8 @@ def test_native_mode_local_view(monkeypatch):
     assert not a["hermes"]["ok"]            # 本机没检出 hermes → 不进下拉
     assert a["mock"]["ok"]                  # mock 恒可用，下拉永不空
     assert not a["claude-local"]["ok"]      # 没检出 claude 二进制
-    assert set(a) == {"mock", "claude-local", "hermes", "kylinbot", "openclaw"}
+    assert set(a) == {"mock", "claude-local", "hermes", "kylinbot",
+                      "kylin-agent", "openclaw"}
 
 
 def test_native_mode_claude_lane(monkeypatch):

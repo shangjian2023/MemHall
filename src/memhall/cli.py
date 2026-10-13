@@ -11,15 +11,18 @@ import json
 import logging
 import os
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import yaml
 
 from memhall import __version__
 from memhall.adapters import create_adapter
-from memhall.paths import QUICK_IDS, resolve_case_dir
+from memhall.datasets import SCORING_PROTOCOL, load_directory, load_pack
+from memhall.paths import resolve_case_dir
 from memhall.report import compute_metrics, render_radar, render_report
 from memhall.runner.orchestrator import pair_stores, run_suite
+from memhall.sampling import FrozenPaper, load_paper, make_paper
 from memhall.schema.evidence import Verdict
 from memhall.schema.models_case import MemoryCase
 from memhall.scoring.engine import evaluate_case
@@ -29,27 +32,13 @@ log = logging.getLogger(__name__)
 
 
 def load_cases(case_dir: Path) -> list[MemoryCase]:
-    cases = []
-    for path in sorted(case_dir.rglob("*.yaml")):
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-        cases.append(MemoryCase.model_validate(raw))
-    return cases
+    return load_directory(case_dir).cases
 
 
 def load_case_set(spec: str) -> list[MemoryCase]:
-    """按 'cases/full' / 'cases/quick' 规格载入用例集。
-
-    quick 是虚拟集：full 中六能力各 1 题，按 QUICK_IDS 引用过滤——
-    不再以独立目录复制 full 文件（副本曾漂移），找不到返回空列表。
-    """
-    if spec.rstrip("/") in ("quick", "cases/quick"):
-        full = resolve_case_dir("cases/full")
-        if full is None:
-            return []
-        by_id = {c.case_id: c for c in load_cases(full)}
-        return [by_id[i] for i in QUICK_IDS if i in by_id]
-    d = resolve_case_dir(spec)
-    return load_cases(d) if d is not None else []
+    if spec.rstrip("/") not in ("quick", "cases/quick") and resolve_case_dir(spec) is None:
+        return []
+    return load_pack(spec).cases
 
 
 def load_cases_for_run(run_dir: Path) -> dict[str, MemoryCase]:
@@ -99,7 +88,14 @@ def _finish_run(run_dir: Path, run_id: str, manifest: dict,
             "model_a": os.environ.get("JUDGE_A_MODEL", ""),
             "model_b": os.environ.get("JUDGE_B_MODEL"),
         })
-    manifest["judge"] = judge_info  # 依赖锁定：判卷口径可追溯（design.md §10）
+    manifest["judge"] = judge_info
+    manifest["scoring_protocol"] = {
+        "id": SCORING_PROTOCOL, "metric_version": "2",
+        "judge": judge_info, "invalid_policy": "excluded-and-reported",
+        "diagnostic_policy": "excluded", "degraded_policy": "excluded",
+    }
+    from memhall.extensions import scoring_implementation
+    manifest["scoring_protocol"]["implementation"] = scoring_implementation(list(cases.values()))
     metrics = compute_metrics(verdicts, cases)
     (run_dir / "metrics.json").write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -165,10 +161,138 @@ def _upstream_preflight(adapter: str) -> str | None:
     return None
 
 
+def cmd_batch(args: argparse.Namespace) -> int:
+    from datetime import datetime
+
+    from memhall.adapters import adapter_names
+    try:
+        frozen = load_paper(Path(args.paper))
+        if not 1 <= args.repeats <= 100 or len(set(args.adapters)) != len(args.adapters):
+            raise ValueError("repeats 应为 1..100，智能体名称不得重复")
+        unknown = sorted(set(args.adapters) - set(adapter_names()))
+        if unknown:
+            raise ValueError(f"未知适配器: {unknown}")
+    except (ValueError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    root = Path(args.out)
+    root.mkdir(parents=True, exist_ok=True)
+    prefix = "batch-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    path = root / f"{prefix}.json"
+    suffix = 2
+    while path.exists():
+        path = root / f"{prefix}-{suffix}.json"
+        suffix += 1
+    plan = {"batch_id": path.stem, "paper_id": frozen.paper_id,
+            "adapters": args.adapters, "repeats": args.repeats,
+            "judge": args.judge, "status": "running", "runs": []}
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(plan, stream, ensure_ascii=False, indent=2)
+    for repeat in range(1, args.repeats + 1):
+        for adapter in args.adapters:
+            child = argparse.Namespace(paper=args.paper, cases=None, adapter=adapter,
+                                       rotate_count=None, rotation_seed=None, model=args.model,
+                                       judge=args.judge, out=args.out)
+            result = cmd_run(child)
+            plan["runs"].append({"adapter": adapter, "repeat": repeat, "exit_code": result,
+                                 "run_dir": getattr(child, "run_dir", None)})
+            path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    success = all(r["exit_code"] == 0 for r in plan["runs"])
+    plan["status"] = "completed" if success else "partial_or_failed"
+    path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"批量评测记录: {path}")
+    return 0 if success else 4
+
+
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    from memhall.calibration import analyze_sheets, export_sheets
+    try:
+        if args.analyze:
+            info = analyze_sheets(Path(args.analyze))
+        else:
+            if not args.runs or not args.out:
+                raise ValueError("导出需要运行目录和 --out")
+            info = export_sheets([Path(p) for p in args.runs], Path(args.out),
+                                 seed=args.seed, per_capability=args.per_capability)
+    except (ValueError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    print(json.dumps(info, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_generate(args: argparse.Namespace) -> int:
+    from memhall.generation import write_pack
+    try:
+        info = write_pack(Path(args.out), seed=args.seed, variants=args.variants,
+                          split=args.split, noise_turns=args.noise_turns)
+    except (ValueError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    print(json.dumps(info, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_sample(args: argparse.Namespace) -> int:
+    try:
+        pack = load_pack(args.cases)
+        paper = make_paper(pack, count=args.count, seed=args.seed, split=args.split,
+                           allow_partial=args.allow_partial, max_per_family=args.max_per_family)
+        paper.save(Path(args.out))
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    print(json.dumps({"paper_id": paper.paper_id, "suite": paper.suite,
+                      "sampling": paper.sampling, "path": args.out}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_dataset_info(args: argparse.Namespace) -> int:
+    try:
+        info = load_pack(args.cases).inventory()
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    print(json.dumps(info, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_paper_info(args: argparse.Namespace) -> int:
+    try:
+        paper = load_paper(Path(args.paper_path))
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    print(json.dumps({"paper_id": paper.paper_id, "suite": paper.suite,
+                      "sampling": paper.sampling, "case_ids": [c.case_id for c in paper.cases]},
+                     ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
-    cases = load_case_set(args.cases)
+    paper: FrozenPaper | None
+    paper_path = getattr(args, "paper", None)
+    case_source = args.cases or "cases/full"
+    try:
+        if paper_path:
+            if args.rotate_count is not None or args.rotation_seed is not None:
+                raise ValueError("封存题单不能再进行历史轮换")
+            paper = load_paper(Path(paper_path))
+            cases = paper.cases
+            case_source = f"paper:{paper.paper_id}"
+            suite_identity = paper.suite
+        else:
+            pack = load_pack(case_source)
+            cases = pack.cases
+            suite_identity = pack.identity()
+            paper = None if args.rotate_count is not None else make_paper(pack)
+            if paper is not None:
+                cases = paper.cases
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 2
     if not cases:
-        print(f"未找到用例: {args.cases}", file=sys.stderr)
+        print(f"未找到用例: {case_source}", file=sys.stderr)
         return 1
 
     if args.rotate_count is not None:
@@ -222,11 +346,13 @@ def cmd_run(args: argparse.Namespace) -> int:
               f"（按 {est['basis_runs']} 轮历史均摊，判卷流量另计）", flush=True)
 
     run_id, stores = run_suite(adapter, cases, Path(args.out), args.adapter,
-                               case_source=args.cases,
+                               case_source=case_source,
                                model_override=model_override,
                                rotate_count=args.rotate_count,
-                               rotation_seed=args.rotation_seed)
+                               rotation_seed=args.rotation_seed,
+                               paper=paper, suite_identity=suite_identity)
     run_dir = Path(args.out) / run_id
+    args.run_dir = str(run_dir)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
 
     verdicts = []
@@ -254,6 +380,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not stores and cases:
         print("全部用例无证据产出（全废轮），退出码 3", file=sys.stderr)
         return 3
+    # R01 审计：部分用例失败也要响亮——这种轮 verify 必挂（缺证据/缺封印），
+    # 马拉松脚本当晚就该知道，而不是一周后审计才翻出来
+    if manifest.get("failed_cases"):
+        print(f"部分用例失败: {', '.join(manifest['failed_cases'])}"
+              "（退出码 4，本轮归档过不了 verify，建议重跑该轮）",
+              file=sys.stderr)
+        return 4
     return 0
 
 
@@ -624,7 +757,9 @@ def main() -> None:
 
     p_run = sub.add_parser("run", help="跑一轮评测并出报告", parents=[common])
     p_run.add_argument("-a", "--adapter", default="mock", help="适配器名（默认 mock）")
-    p_run.add_argument("-c", "--cases", default="cases/full", help="用例目录")
+    run_input = p_run.add_mutually_exclusive_group()
+    run_input.add_argument("-c", "--cases", help="题包目录（默认 cases/full）")
+    run_input.add_argument("--paper", help="封存题单 JSON；所有智能体可使用同一份")
     p_run.add_argument("-o", "--out", default="runs", help="输出根目录")
     p_run.add_argument("--model", default="",
                        help="网关车道逐 run 模型改写（(agent, model) 二元组对照；"
@@ -632,10 +767,51 @@ def main() -> None:
     p_run.add_argument("--judge", choices=["scripted", "dual"], default="scripted",
                        help="判卷方式（dual=LLM 判卷[单判或双判，按 JUDGE_B 是否配置]）")
     p_run.add_argument("--rotate-count", type=int,
-                       help="按历史运行轮换抽取题目数（需同时指定 --seed）")
+                       help="探索评测：按历史轮换抽题；正式对比建议 sample + --paper")
     p_run.add_argument("--seed", dest="rotation_seed", type=int,
                        help="题目轮换 seed；同 seed、同历史记录会选择同一题单")
     p_run.set_defaults(func=cmd_run)
+
+    p_batch = sub.add_parser("batch", help="各智能体重复运行同一固定试卷", parents=[common])
+    p_batch.add_argument("--paper", required=True)
+    p_batch.add_argument("-a", "--adapters", nargs="+", required=True)
+    p_batch.add_argument("--repeats", type=int, default=2)
+    p_batch.add_argument("--judge", choices=["scripted", "dual"], default="scripted")
+    p_batch.add_argument("--model")
+    p_batch.add_argument("-o", "--out", default="runs")
+    p_batch.set_defaults(func=cmd_batch)
+
+    p_cal = sub.add_parser("calibrate", help="导出盲评工作表，或分析人工标签", parents=[common])
+    p_cal.add_argument("runs", nargs="*")
+    p_cal.add_argument("-o", "--out")
+    p_cal.add_argument("--seed", type=int, default=20261013)
+    p_cal.add_argument("--per-capability", type=int, default=12)
+    p_cal.add_argument("--analyze", help="已填写工作表的目录")
+    p_cal.set_defaults(func=cmd_calibrate)
+
+    p_gen = sub.add_parser("generate", help="生成可复现的场景题包（公开模板变体）", parents=[common])
+    p_gen.add_argument("--seed", type=int, required=True)
+    p_gen.add_argument("--variants", type=int, default=3, help="每个场景模板的变体数")
+    p_gen.add_argument("--split", choices=["development", "test", "stress"], default="test")
+    p_gen.add_argument("--noise-turns", type=int, help="干扰对话轮数 0..64；默认按难度 1/4/12")
+    p_gen.add_argument("-o", "--out", required=True, help="新题包目录，拒绝覆盖")
+    p_gen.set_defaults(func=cmd_generate)
+
+    p_sample = sub.add_parser("sample", help="分层抽样并封存题单（不参考运行历史）", parents=[common])
+    p_sample.add_argument("-c", "--cases", default="cases/full", help="题池目录")
+    p_sample.add_argument("--count", type=int, required=True)
+    p_sample.add_argument("--seed", type=int, required=True)
+    p_sample.add_argument("--split", choices=["development", "test", "heldout", "stress"])
+    p_sample.add_argument("--max-per-family", type=int)
+    p_sample.add_argument("--allow-partial", action="store_true", help="允许不完整能力覆盖")
+    p_sample.add_argument("-o", "--out", required=True, help="新题单 JSON；拒绝覆盖已有文件")
+    p_sample.set_defaults(func=cmd_sample)
+    p_info = sub.add_parser("dataset-info", help="查看题包版本、覆盖和题族统计", parents=[common])
+    p_info.add_argument("-c", "--cases", default="cases/full")
+    p_info.set_defaults(func=cmd_dataset_info)
+    p_paper = sub.add_parser("paper-info", help="校验并查看封存题单", parents=[common])
+    p_paper.add_argument("paper_path")
+    p_paper.set_defaults(func=cmd_paper_info)
 
     p_rep = sub.add_parser("report", help="出报告（缺 verdicts 时从证据重放评分）",
                            parents=[common])

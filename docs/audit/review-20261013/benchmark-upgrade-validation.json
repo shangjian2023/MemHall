@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-13",
+  "branch": "codex/benchmark-sampling-and-data-quality",
+  "pytest": "275 passed, 2 warnings in 70.50s",
+  "ruff": "all checks passed",
+  "mypy": "57 source files; no issues",
+  "case_lint": "all core, generated, chains, challenge-v2, development-v2 passed",
+  "generated_pool": {
+    "instances": 1008,
+    "declared_templates": 24,
+    "seed": 20261013,
+    "variants_per_template": 42
+  },
+  "mock_run": {
+    "run_id": "20261013-154725-mock",
+    "paper_cases": 24,
+    "score_probes": 24,
+    "diagnostic_probes": 8,
+    "n_valid_score": 22,
+    "n_human_review_score": 2,
+    "n_evidence": 168,
+    "overall_score": 0.5455,
+    "verify_ok": true,
+    "warnings": "one inject memory snapshot per case; not a real-agent experiment"
+  },
+  "ui": "real browser generated a sealed paper and exposed export; API import/export and rejection tested",
+  "scope": "code and offline tests; no paid agents, VM changes, independent judge calibration, new release binaries or new ranking",
+  "unresolved": [
+    "human calibration labels",
+    "real-agent challenge-v2 runs",
+    "independent judge B",
+    "clean openKylin package installation and demonstration recording",
+    "original missing historical evidence"
+  ],
+  "judge_selftest": "4 matching, 6 human review, zero wrong offline verdicts",
+  "word_rendering": [
+    {
+      "document": "MemHall-题库与评测升级说明.docx",
+      "pages": 7,
+      "blank_pages": 0
+    },
+    {
+      "document": "MemHall-作品介绍-题库升级版.docx",
+      "pages": 29,
+      "blank_pages": 0
+    }
+  ],
+  "pre_pr_checked_on": "2026-10-14",
+  "targeted_kylin_agent": "8 passed after preserving writable binary override",
+  "official_pdf_rechecked_on": "2026-10-14",
+  "word_rendering_checked_on": "2026-10-14"
+}

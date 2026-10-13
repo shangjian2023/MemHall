@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +37,18 @@ class EvidenceMissing(Exception):
     """
 
 
+def register_assertion(name: str, fn: Callable[..., bool]) -> None:
+    """Register an evidence-only assertion without replacing an existing implementation."""
+    if name in ASSERTS:
+        raise ValueError(f"断言名冲突: {name}")
+    if not callable(fn):
+        raise TypeError("断言插件必须可调用")
+    ASSERTS[name] = fn
+
+
 def _register(name: str):
     def deco(fn: Callable[..., bool]) -> Callable[..., bool]:
-        ASSERTS[name] = fn
+        register_assertion(name, fn)
         return fn
     return deco
 
@@ -134,6 +144,24 @@ def _fs_diff_contains(args: list[Any], ev: EvidenceStore) -> bool:
     if diff is None:
         raise EvidenceMissing("fs_diff 证据缺失（适配器不支持文件系统快照）")
     return any(target in _norm_path(e.path) for e in diff.entries)
+
+
+@_register("fs.artifact_matches")
+def _fs_artifact_matches(args: list[Any], ev: EvidenceStore) -> bool:
+    """Exact artifact bytes plus evidence that this phase actually created/modified it."""
+    spec = args[0]
+    diff = ev.latest_fs_diff()
+    if diff is None or diff.after_hashes is None:
+        raise EvidenceMissing("文件内容指纹不可用，无法验收任务产物")
+    target = _norm_path(str(spec["path"]))
+    hashes = {_norm_path(k): v for k, v in diff.after_hashes.items()}
+    changes = [e for e in diff.entries if _norm_path(e.path) == target
+               and e.stage == spec.get("stage", "probe") and e.change in ("created", "modified")]
+    if not changes:
+        return False
+    if target not in hashes:
+        raise EvidenceMissing("目标文件指纹不可用（超限、链接、不可读或采样失败）")
+    return hashes[target] == spec["sha256"]
 
 
 # ---------- 记忆库类 ----------
@@ -271,6 +299,12 @@ def run_check(check: list[dict], ev: EvidenceStore) -> tuple[str, int]:
     """
     for i, branch in enumerate(check):
         name = branch["assert"]
+        if name not in ASSERTS:
+            matches = [ep for ep in entry_points(group="memhall.assertions") if ep.name == name]
+            if len(matches) > 1:
+                raise ValueError(f"多个插件提供同名断言: {name}")
+            if matches:
+                register_assertion(name, matches[0].load())
         if name not in ASSERTS:
             raise KeyError(f"未知断言: {name}（契约 02 §6 断言库之外）")
         if ASSERTS[name](branch.get("args", []), ev):

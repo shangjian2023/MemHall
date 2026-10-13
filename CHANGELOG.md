@@ -1,8 +1,52 @@
 # Changelog
 
+## [Unreleased] — OS 级沙箱 B8（2026-10-14）
+
+- **bwrap 写面强制隔离（openKylin 优先，VM 实测通过）**：被测 agent 进程整根只读 +
+  白名单可写（agent 自家 dotdir + EVAL_WORKDIRS），/tmp、~/.cache、~/.npm 用 tmpfs
+  每条消息独立（防把记忆性内容藏进快照与 reset 都看不见的缓存）。`MEMHALL_SANDBOX=1`
+  显式开启，默认关（不动冻结口径）；开启状态随 `manifest.environment.sandbox` 记录。
+  VM 实测：家目录与 /etc 写入拒绝、白名单正常、三家 CLI 沙箱内可启动、hermes 真实
+  send 全链路（回复+记忆落盘+reset 归零）通过。网络出站限定网关（需 root）与
+  Windows 车道（AppContainer/Job Object）为后续项。
+- hermes 故障文案过滤补 "Interrupted during API call"（上游断流重试耗尽时 rc=0
+  混进 Reply 的实测缺口）→ AgentUnavailable → invalid_run 不计分。
+
+## [Unreleased] - kylin-agent 适配器（2026-10-14）
+
+- 新增 `kylin-agent` 适配器（赛题点名的第 4 个 openKylin 生态智能体）：驱动系统智能体后端运行时 kylin-agent-runtime（Gitee openkylin/agent-runtime，Hermes fork），证据面与 hermes 车道同构（`~/.kylin-agent-runtime/memories/MEMORY.md` + `USER.md` + `logs/agent.log`），send 走 `-z` 官方 one-shot 模式；二进制惰性解析（env 覆写 > PATH > apt/Gitee 部署落点）。
+- hermes 适配器参数化改造（目录落点/调用行下沉为类属性与钩子，行为不变），kylin-agent 以子类复用全部证据语义与 R02/R31/R58 防线。
+- 智能体发现（本机/VM 探测、跑页下拉）纳入 kylin-agent；调研文档补 kylin-agent 记忆机制条目。
+- ⚠️ 未实测：VM 联调（CLI 行为、部署落点、首跑向导）待 VM 空闲后进行，届时更新 `adapters/kylin_agent.py` 的实测标注。
+
+## [Unreleased] - 题库与可复现评测升级（2026-10-13）
+
+- 固定试卷：分层抽样、完整题目封存、SHA-256 校验、CLI/UI 导入导出；正式对比不依赖运行历史。
+- 新增公开测试 72 题／24 场景模板、开发 36 题／12 个不同模板；生成器可复现生成 1008 实例，保留模板与参数记录。
+- 批量运行同一试卷；compare/aggregate 校验题目内容、题包版本、判卷协议和产物哈希，统计改为按题族／用例聚类。
+- 真实文件内容采样与阶段修改证据支持 `fs.artifact_matches`；新增复用题以产物字节验收。
+- 已安装适配器／断言插件入口，重名拒绝覆盖；人工盲评工作表与六态对分工具。
+- 新增题包保持独立口径，历史成绩与原始证据不改写。真实双车道新实验、人工标签与发行包验收仍需补充。
+
 本文件记账对外可见的版本变化（T23：README 状态节迁入，README 只留当前版本一行）。
 口径遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 精简版；
 评测数字随口径变更的，一律注明口径而非只报数字。
+
+## [Unreleased] — 2026-10-13 参赛审计修复
+
+- paramiko 移为运行依赖，更新锁与离线 wheels 清单；Windows 本机通道优先原生 Git bash，避免 WSL 转发器二次解释。
+- 配置接口拒绝换行/NUL/非字符串，安全保存包含引号和 ` #` 的值；UI 修正有效计分分母、adapter 和 diagnostic 用途。
+- 单评委不再显示伪双评委一致率；报告按实际 B 配置披露判卷方式。
+- 不确定度统计按运行快照的 score/capability 复算，四轮功效使用真实轮数；描述性方差比不误用 F 分布 p 值。头部近似功效需求由旧错误约 36 轮更正为约 58 轮；配对票 p 值另补按题聚类稳健口径（见下）。
+- tag 可触发 CI，发行等待 lint/test；exe/deb 排除 heldout；Debian 按构建机声明架构、Python 次版本和 pip 依赖，修正文档安装位置；构建使用项目内独立目录，避免清空用户通用 wheels/stage 目录。
+- **归档全套装印落地（审计 R01 代码侧）**：runner 落盘 cases.json 题库快照 + cases_snapshot_sha256/case_hashes/cases_version 题库指纹 + case_results 逐题证据哈希（含 case.json）+ evidence_bundle_sha256 整包哈希；无 .git 的 tgz 部署补 source_fingerprint 源码树指纹；部分用例失败的 run CLI 退出码 4（马拉松当晚即知，不再等事后审计）。verify 对全部封印强校验，残缺轮无法混进通过名单。
+- **case 聚类稳健检验（审计 R03 统计侧）**：stats_uncertainty 新增 ②b 按题聚类的净方向符号检验——n=4 下三对配对比较均回到不显著（p=0.163/0.121/0.572），证实合并票显著被同题跨轮重复撑大；README/Dataset Card 同步口径。新增 scripts/judge_audit_sample.py 人工抽检工作表（盲评生成 + 对分，零 LLM 调用），补单评委校准的人工半边。
+- Dataset Card 补六能力测量操作定义表（每条车道实际测什么、与构念的差距，审计 R04）；heldout v2 路线具体化（私有槽位池/延迟公开 seed/模板外改写，审计 R05）。
+- 新增可编辑 Word 作品介绍、公开逐轮数据、完整离线样例、真实证据片段及全面审计报告；同步 README、Dataset Card、图表和演示讲稿，补 Word 重建依赖组。
+- **适配器层收编去重**：`_send_throttle` 六连抄上收 `base._send_throttle`（类属性 `send_interval_env/_default`，环境变量覆盖与各车道默认值不变，hermes VM 仍不节流）；280s/300s 超时字面量上收 `base.SEND_TIMEOUT_S/CHANNEL_TIMEOUT_S`；VM 三家拨钟/恢复/远端指纹/close/版本探测并入新模块 `adapters/vm_common`（`VmAdapterMixin` + `EVAL_WORKDIRS` 单源）；本机四家 `fs_snapshot` 收口 `base.workspace_fs_snapshot`——出口统一 `~/` 前缀（对齐 base 契约与 R30 归一口径），并修复默认沙箱根 `~/.memhall` 点目录祖先导致快照恒空、本机车道 reuse 文件断言全体静默失配的潜伏 bug；空壳 `dump_actions`（coverage=unknown）改 base 默认实现。R58 修复补齐 claude_local/qwen_local 两处残留（`lstrip("-* ")` 误剥"-3°C"类正文首字符），新增对应回归测试与点目录祖先回归网。
+- 验证：218 项测试通过；其余门禁详见 `docs/audit/review-20261013/validation.json`。18 轮历史归档有 14 轮严格通过，4 轮缺失；本批为单 LLM A 实测。修复版 .deb/exe 尚未重建发布，不能把历史二进制作为新版本。
+
+以下正式版本记录保留历史叙述，其中旧显著性/F 检验/功效表述已由上述审计更正；当前结论以修正后的 README、统计输出与审计报告为准。
 
 ## [1.3.2] - 2026-10-12
 

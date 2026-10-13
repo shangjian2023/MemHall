@@ -15,6 +15,7 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=[],
     datas=[
+        (str(ROOT / "src" / "memhall" / "data"), "memhall/data"),
         (str(ROOT / "src" / "memhall" / "ui" / "static"), "memhall/ui/static"),
     ],
     hiddenimports=[

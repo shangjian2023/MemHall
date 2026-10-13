@@ -1,0 +1,17 @@
+{
+  "checked_on": "2026-10-14",
+  "timezone": "Asia/Shanghai",
+  "source_url": "https://apiv1.oschina.net/api/files/fhhc7e8z6no3gyt/w9qliatd2m6lgs8/ai_open_kylin_open_kylin_benchmark_XaCQyZepC8.pdf",
+  "sha256": "0f47d308d0c9ea2d11fecd6ec1b7bc230c258b4b446cbf1b672b27a398943ca0",
+  "matches_audited_copy": true,
+  "interpretation": "LLM-assisted semantic judging is compatible with the public requirements; not an organizer approval.",
+  "special_topic_weights": {
+    "automatic_scoring": "25%",
+    "stability_and_reproducibility": "15%"
+  },
+  "validation_still_required": [
+    "human semantic labels",
+    "repeated judging reliability",
+    "independent judge B"
+  ]
+}

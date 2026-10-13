@@ -177,13 +177,15 @@ class CaseMeta(BaseModel):
 
 
 class MemoryCase(BaseModel):
-    case_id: str                   # <能力族>-<三位序号>
+    case_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,127}$")
     schema_version: str = "0.1"
     capability: Capability
     question_type: QuestionType
     content_type: ContentType
     difficulty: int = Field(ge=1, le=3)
     tags: list[str] = Field(default_factory=list)
+    family_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9._-]{0,127}$")
+    split: Literal["development", "test", "heldout", "stress"] | None = None
 
     meta: CaseMeta
     phases: list[Phase]            # 至少 inject + probe；confound 可省（会话内题）

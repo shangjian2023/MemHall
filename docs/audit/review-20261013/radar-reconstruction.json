@@ -1,0 +1,9 @@
+{
+  "run_id": "20261011-073455-hermes",
+  "source_metrics_sha256": "3c197fd64ed983ee4d83c0aca43ada5d9002b6bcf931a2838fdceb638cccac1e",
+  "expected_original_radar_sha256": "f4ea406efde217da44b058bf5632097211cf5d7a9f4f900b21cc30ba1dea3055",
+  "derived_radar_sha256": "6ee7dea1312a55cf66ac8bea11dc553c0fc31c79dc835bb0a9efec0b8f6ea1c2",
+  "exact_match": false,
+  "original_manifest_modified": false,
+  "original_radar_restored": false
+}

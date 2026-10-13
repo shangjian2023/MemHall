@@ -14,12 +14,23 @@
 - 信号矩阵：可执行 + 配置目录任一命中即"发现"
 - 优雅降级：发现但无适配器的智能体照常列出，给接入指引而不是报错
 - 退出码：0 = 至少一个适配器可用；1 = 什么都不能跑
+
+2026-10-14 借鉴 stablyai/orca 探测体系（src/main/preflight/agent-detection.ts
++ src/main/startup/hydrate-shell-path.ts + src/shared/tui-agent-config.ts）：
+- 登录 shell PATH 水合：桌面/SSH 起的进程拿不到 rc 追加的用户安装位，
+  与其逐工具硬编码绝对路径，不如问一次 $SHELL（见 hydrate_shell_path）
+- 版本探测多候选走查：PATH 同名多份（版本管理器 shim 遮真身）时逐个
+  --version，钉住真正能跑的那份（orca #22975"pin to the copy that passed
+  --version"）；--version 非零退出不再被误当版本号
+- 注册表纠偏与扩容：对齐 orca 实测的各 CLI 真实安装名（kiro-cli/cn/
+  traecli/qodercli/kimi-code/dsh-tui 等）并补齐其名单
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import time
 from dataclasses import dataclass, field
@@ -63,6 +74,9 @@ class DoctorReport:
     vm: list[Finding] = field(default_factory=list)
     env: list[EnvCheck] = field(default_factory=list)
     vm_error: str = ""
+    # 登录 shell 水合补进 PATH 的段（orca addedPathSegments 同款透明度：
+    # 让用户知道"为什么新冒出一个智能体"是 PATH 补段的功劳）
+    path_added: list[str] = field(default_factory=list)
 
     def usable_adapters(self) -> list[str]:
         names = {f.adapter for f in self.local + self.vm
@@ -120,6 +134,11 @@ ADAPTER_CLI: dict[str, list[str]] = {
              *[f"{d}/qwen" for d in _js_pm_bin_dirs()]],
     # openKylin 侧智能体：绝对路径兜底（SSH/桌面起的进程 PATH 不含用户安装位）
     "kylinbot": ["kylin-bot", "/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"],
+    # kylin-agent 系统智能体后端运行时（Hermes fork）：apt 落点 + Gitee
+    # README 部署路径（clone agent-runtime + uv venv）双兜底
+    "kylin-agent": ["kylin-agent-runtime", "/usr/bin/kylin-agent-runtime",
+                    "/usr/local/bin/kylin-agent-runtime",
+                    "~/agent-runtime/.venv/bin/kylin-agent-runtime"],
     "openclaw": ["openclaw", "~/.local/bin/openclaw",
                  *[f"{d}/openclaw" for d in _js_pm_bin_dirs()]],
     "opencode": ["opencode"],   # R57：UI 下拉曾漏 opencode（适配器早已注册）
@@ -140,14 +159,22 @@ def find_cli(*candidates: str) -> str:
 # ②目录常量逐一对齐 clawd hooks/*-install.js：kimi 双代 ~/.kimi-code + ~/.kimi、
 #   workbuddy 双代、pi=~/.pi/agent、qwenwork=~/.QwenWorkCN、mimocode=~/.config/mimocode
 # ③目录存在≠装过：dsh/遗留 workbuddy 目录要求哨兵内容佐证（CFG_SENTINELS）
+# ④可执行名对齐 stablyai/orca tui-agent-config.ts 实测口径（2026-10-14）：
+#   安装器真实落名与直觉不同的都纠偏——kiro 装 kiro-cli、continue 装 cn、
+#   TRA CN 装 traecli（trae-cli 是字节开源 trae-agent，另一家）、qoder 装
+#   qodercli、kimi 别名 kimi-code、dsh 别名 dsh-tui/dst、aug 装 auggie、
+#   mistral-vibe 装 vibe、rovo-dev 无独立二进制（acli 子命令）、antigravity 装 agy。
+#   裸 cursor 是 Cursor IDE 启动器不是 agent CLI，从 cursor-agent 候选剔除
+#   （PATH 侧同类误报，与 1.3.1 的 ~/.cursor 目录误报同源教训）
 # (名字, 可执行候选, 配置目录候选, 适配器名, 类别)
 LOCAL_AGENTS: list[tuple[str, list[str], list[str], str, str]] = [
     # --- CLI 编程智能体 ---
     ("claude-code", ADAPTER_CLI["claude"], ["~/.claude"], "claude-local", "cli"),
     ("codex", ["codex"], ["~/.codex"], "", "cli"),
-    ("dsh (DeepSeek Harness)", ["dsh"], ["~/.dsh"], "", "cli"),
+    ("dsh (DeepSeek Harness)", ["dsh", "dsh-tui", "dst"], ["~/.dsh"], "", "cli"),
     ("gemini-cli", ["gemini"], ["~/.gemini"], "", "cli"),
     ("opencode", ADAPTER_CLI["opencode"], ["~/.config/opencode"], "opencode", "cli"),
+    ("opencode2", ["opencode2"], [], "", "cli"),  # orca：v2 装独立二进制（适配器驱动的是 v1 CLI，不接线）
     ("mimocode", ["mimocode"], ["~/.config/mimocode"], "", "cli"),
     ("qwen-code", ADAPTER_CLI["qwen"], ["~/.qwen"], "", "cli"),
     ("qwenpaw", ["qwenpaw"], ["~/.qwenpaw"], "", "cli"),
@@ -155,13 +182,13 @@ LOCAL_AGENTS: list[tuple[str, list[str], list[str], str, str]] = [
     ("pi", ["pi"], ["~/.pi/agent"], "", "cli"),
     ("grok-build", ["grok", "grokbuild"], ["~/.grok"], "", "cli"),
     ("workbuddy", ["workbuddy"], ["~/.workbuddy-ai", "~/.workbuddy"], "", "cli"),
-    ("kimi", ["kimi"], ["~/.kimi-code", "~/.kimi"], "", "cli"),
-    ("kiro", ["kiro"], ["~/.kiro"], "", "cli"),
-    ("cursor-agent", ["cursor-agent", "cursor"], ["~/.cursor"], "", "cli"),
+    ("kimi", ["kimi", "kimi-code"], ["~/.kimi-code", "~/.kimi"], "", "cli"),
+    ("kiro", ["kiro-cli", "kiro"], ["~/.kiro"], "", "cli"),
+    ("cursor-agent", ["cursor-agent"], ["~/.cursor"], "", "cli"),
     ("copilot-cli", ["copilot"], ["~/.copilot"], "", "cli"),
     ("codebuddy", ["codebuddy"], ["~/.codebuddy"], "", "cli"),
     ("openclaw", ADAPTER_CLI["openclaw"], ["~/.openclaw"], "openclaw", "cli"),
-    ("qoder", ["qoder"], ["~/.qoder"], "", "cli"),
+    ("qoder", ["qodercli", "qoder"], ["~/.qoder"], "", "cli"),
     ("qoderwork", ["qoderwork"], ["~/.qoderwork"], "", "cli"),
     ("qwenwork", ["qwenwork"], ["~/.QwenWorkCN"], "", "cli"),
     ("aider", ["aider"], ["~/.aider.conf.yml"], "", "cli"),
@@ -169,13 +196,26 @@ LOCAL_AGENTS: list[tuple[str, list[str], list[str], str, str]] = [
     ("crush", ["crush"], ["~/.config/crush"], "", "cli"),
     ("hermes", ADAPTER_CLI["hermes"], ["~/.hermes"], "hermes-local", "cli"),
     ("kylin-bot", ADAPTER_CLI["kylinbot"], ["~/.kylinbot"], "kylinbot", "cli"),
+    ("kylin-agent", ADAPTER_CLI["kylin-agent"], ["~/.kylin-agent-runtime"],
+     "kylin-agent", "cli"),
+    # --- 以下为 orca 名单对齐新增（2026-10-14；主流可装、openKylin 生态外）---
+    ("amp", ["amp"], [], "", "cli"),
+    ("auggie", ["auggie"], [], "", "cli"),
+    ("mistral-vibe", ["vibe", "mistral-vibe"], [], "", "cli"),
+    ("droid", ["droid"], [], "", "cli"),
+    ("antigravity", ["agy"], [], "", "cli"),
+    ("muse", ["muse"], [], "", "cli"),
+    ("devin", ["devin"], [], "", "cli"),
+    ("rovo-dev", ["acli"], [], "", "cli"),
+    ("command-code", ["command-code"], [], "", "cli"),
+    ("jcode", ["jcode"], [], "", "cli"),
     # --- IDE / 编辑器内智能体 ---
     ("cline", ["cline"], ["~/.cline"], "", "ide"),
-    ("continue", ["continue"], ["~/.continue"], "", "ide"),
+    ("continue", ["cn", "continue"], ["~/.continue"], "", "ide"),
     ("lingma (通义灵码)", ["lingma"], ["~/.lingma"], "", "ide"),
-    ("trae", ["trae", "trea"], ["~/.trae-cn", "~/.trae-aicc"], "", "ide"),
+    ("trae", ["traecli", "trae", "trea"], ["~/.trae-cn", "~/.trae-aicc"], "", "ide"),
     ("marscode", ["marscode"], ["~/.marscode"], "", "ide"),
-    ("kilocode", ["kilocode"], ["~/.kilocode"], "", "ide"),
+    ("kilocode", ["kilo", "kilocode"], ["~/.kilocode"], "", "ide"),
 ]
 
 # 目录存在还不够的（clawd 教训：目录可能被别的工具或用户随手创建，
@@ -201,6 +241,9 @@ EXTRA_TOOLS: list[tuple[str, list[str], list[str], str, str]] = [
 VM_AGENTS: list[tuple[str, list[str], str]] = [
     ("hermes", ["~/.hermes/bin/hermes", "/usr/local/bin/hermes"], "hermes"),
     ("kylin-bot", ["/usr/bin/kylin-bot", "/usr/local/bin/kylin-bot"], "kylinbot"),
+    ("kylin-agent-runtime",
+     ["/usr/bin/kylin-agent-runtime", "/usr/local/bin/kylin-agent-runtime",
+      "~/agent-runtime/.venv/bin/kylin-agent-runtime"], "kylin-agent"),
     ("openclaw", ["~/.local/bin/openclaw"], "openclaw"),
 ]
 
@@ -220,22 +263,59 @@ def _save_cache(cache: dict) -> None:
         pass
 
 
-_path_idx: dict[str, str] | None = None   # PATH 文件名索引（进程内一次构建）
+# PATH 名→[(目录, 最优扩展)]（PATH 目录序，进程内一次构建）
+_path_idx: dict[str, list[tuple[str, str]]] | None = None
 _EXT_RANK = {".exe": 4, ".com": 3, ".cmd": 2, ".bat": 1, "": 0}
 
 
-def _which(name: str) -> str:
-    """which 的索引版：长 PATH 下 shutil.which 逐目录 stat 太慢（实测 2 万+次），
-    一次 scandir 建名→扩展索引后全部内存查询。与 shutil.which 对齐的三点：
-    ①只索引文件；②POSIX 校验可执行位；③Windows 同名多扩展取 PATHEXT 优先级
-    最高者——fnm/git 的无扩展 bash shim 蹭不掉真身 claude.exe/claude.cmd
+def _is_pathlike(name: str) -> bool:
+    """候选是否 ~/、绝对路径形态（直接验文件，不走 PATH 索引）。"""
+    return name.startswith(("~", "/")) or (os.name == "nt" and name[1:2] == ":")
+
+
+def _build_path_index() -> dict[str, list[tuple[str, str]]]:
+    """一次 scandir 建 名→[(目录, 扩展)] 索引（目录序，同目录内同名只留
+    PATHEXT 优先级最高的扩展）。与 shutil.which 对齐的三点：①只索引文件；
+    ②POSIX 校验可执行位；③Windows 同名多扩展取优先级最高者——
+    fnm/git 的无扩展 bash shim 蹭不掉真身 claude.exe/claude.cmd
     （否则版本探测时 CreateProcess 找不到可执行文件直接失败）。"""
-    # ~/ 或绝对路径：直接验文件，不走 PATH 索引（clawd 同款思路：
-    # 候选清单里混排 PATH 名与安装位全路径）。win 下 npm 布局同名多扩展
-    # （无扩展 sh 脚本与 .cmd 并存），取 PATHEXT 优先级最高者——裸 sh
-    # 脚本喂给 subprocess 会 ENOEXEC（2026-10-09 包管理器布局适配补齐，
-    # 与下方 PATH 索引分支同一条规矩）
-    if name.startswith(("~", "/")) or (os.name == "nt" and name[1:2] == ":"):
+    idx: dict[str, list[tuple[str, str]]] = {}
+    dirs = dict.fromkeys(os.environ.get("PATH", "").split(os.pathsep))
+    for d in dirs:
+        best: dict[str, str] = {}   # 本目录内 名→最优扩展
+        try:
+            with os.scandir(d) as it:
+                for entry in it:
+                    try:
+                        if not entry.is_file():
+                            continue
+                        if os.name == "posix" and not os.access(entry.path, os.X_OK):
+                            continue
+                    except OSError:
+                        continue
+                    root, ext = os.path.splitext(entry.name)
+                    ext = ext.lower()
+                    if ext and ext not in (".exe", ".com", ".cmd", ".bat"):
+                        continue
+                    old = best.get(root.lower())
+                    if old is None or _EXT_RANK.get(ext, 0) > _EXT_RANK.get(old, 0):
+                        best[root.lower()] = ext
+        except OSError:
+            continue
+        for root, ext in best.items():
+            idx.setdefault(root, []).append((d, ext))
+    return idx
+
+
+def _which(name: str) -> str:
+    """按序探测 CLI：PATH 名或 ~/、绝对路径均可，返回首个命中（""=未找到）。
+    PATH 名命中返回裸名（子进程借 PATH 自行解析，与 shutil.which 展示口径
+    一致；全路径候选见 _which_all）。"""
+    # ~/ 或绝对路径：直接验文件（clawd 同款思路：候选清单里混排 PATH 名
+    # 与安装位全路径）。win 下 npm 布局同名多扩展（无扩展 sh 脚本与 .cmd
+    # 并存），取 PATHEXT 优先级最高者——裸 sh 脚本喂给 subprocess 会
+    # ENOEXEC（2026-10-09 包管理器布局适配补齐，与 PATH 索引分支同一条规矩）
+    if _is_pathlike(name):
         p = Path(name).expanduser()
         if os.name == "nt":
             for ext in (".cmd", ".exe", ".bat", ""):
@@ -246,33 +326,23 @@ def _which(name: str) -> str:
         return str(p) if p.is_file() and os.access(p, os.X_OK) else ""
     global _path_idx
     if _path_idx is None:
-        idx: dict[str, str] = {}
-        dirs = dict.fromkeys(os.environ.get("PATH", "").split(os.pathsep))
-        for d in dirs:
-            try:
-                with os.scandir(d) as it:
-                    for entry in it:
-                        try:
-                            if not entry.is_file():
-                                continue
-                            if os.name == "posix" and not os.access(entry.path, os.X_OK):
-                                continue
-                        except OSError:
-                            continue
-                        root, ext = os.path.splitext(entry.name)
-                        ext = ext.lower()
-                        if ext and ext not in (".exe", ".com", ".cmd", ".bat"):
-                            continue
-                        old = idx.get(root.lower())
-                        if old is None or _EXT_RANK.get(ext, 0) > _EXT_RANK.get(old, 0):
-                            idx[root.lower()] = ext
-            except OSError:
-                continue
-        _path_idx = idx
-    hit = _path_idx.get(name.lower())
-    if hit is None:
-        return ""
-    return name + hit
+        _path_idx = _build_path_index()
+    hits = _path_idx.get(name.lower()) or []
+    return name + hits[0][1] if hits else ""
+
+
+def _which_all(name: str, limit: int = 3) -> list[str]:
+    """同名多份的全路径候选，按 PATH 目录序返回。版本探测逐个试它（学 orca
+    findRunnableLocalCommand）：PATH 首命中的可能是版本管理器死 shim，
+    #22975 教训——用全路径钉住具体那份能跑的，绕开 PATH 重新解析又落回 shim。"""
+    if _is_pathlike(name):
+        w = _which(name)
+        return [w] if w else []
+    global _path_idx
+    if _path_idx is None:
+        _path_idx = _build_path_index()
+    hits = _path_idx.get(name.lower()) or []
+    return [os.path.join(d, name + ext) for d, ext in hits[:limit]]
 
 
 def _activity_days(cfgs: list[str]) -> int | None:
@@ -306,57 +376,154 @@ def _cfg_hit(agent: str, cfg: str) -> bool:
     return True
 
 
+# ---- 登录 shell PATH 水合（借 orca hydrate-shell-path，2026-10-14）----
+# 痛点：GUI/桌面/SSH 起的进程拿不到 rc 追加的用户安装位（~/.local/bin、
+# pnpm home、cargo bin……），此前只能逐工具硬编码绝对路径兜底（如 kylinbot）。
+# orca 的通用解法：与其穷举每个工具的安装位，不如 spawn 一次用户的登录
+# shell 问它"你眼里的 PATH 是什么"。rc 横幅/彩色提示符用首尾分隔符隔出
+# PATH 本体；慢 rc 有超时兜底，失败静默降级回进程 PATH。
+
+_PATH_PROBE_DELIM = "__MEMHALL_PATH__"
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_hydrated: list[str] | None = None   # None=未水合；[]=跑过但没补进新段
+
+
+def _parse_probe_path(out: str) -> list[str]:
+    """分隔符之间取 PATH 段：剥 ANSI（rc 横幅/彩色提示符泄进 stdout 的转义），
+    保序去重（PATH 首匹配优先，顺序就是语义——orca 同款）。"""
+    cleaned = _ANSI_RE.sub("", out)
+    first = cleaned.find(_PATH_PROBE_DELIM)
+    if first < 0:
+        return []
+    start = first + len(_PATH_PROBE_DELIM)
+    second = cleaned.find(_PATH_PROBE_DELIM, start)
+    if second < 0:
+        return []
+    segs = [s for s in (t.strip() for t in
+                        cleaned[start:second].split(os.pathsep)) if s]
+    return list(dict.fromkeys(segs))
+
+
+def _merge_path_front(segs: list[str]) -> list[str]:
+    """shell 段整体提到 PATH 最前（保序、去重），返回新增的段。
+    前置而非追加：用户 shell 的解析顺序优先于启动时继承的 PATH
+    （orca：shell-provided entries must win over packaged fallbacks）。"""
+    cur = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+    curset = set(cur)
+    shellset = set(segs)
+    os.environ["PATH"] = os.pathsep.join(
+        segs + [p for p in cur if p not in shellset])
+    return [s for s in segs if s not in curset]
+
+
+def hydrate_shell_path(fresh: bool = False, timeout_s: int = 6) -> list[str]:
+    """问登录 shell 要 PATH，把 shell 段提到进程 PATH 最前（进程内缓存一次；
+    fresh=True 重问——"刚装了新 CLI 但探测不到"的刷新语义，orca
+    refreshShellPathAndDetectAgents 同款）。仅 posix：win 下 memhall 从终端
+    起、PATH 完整，npm/pnpm 布局另有 _js_pm_bin_dirs 候选。成功后 PATH 索引
+    作废重建，本进程后续 find_cli/_which 全部受益。返回本次新增的段。"""
+    global _hydrated, _path_idx
+    import subprocess
+    if _hydrated is None or fresh:
+        added: list[str] = []
+        if os.name == "posix":
+            # -i 走交互 rc（.bashrc/.zshrc 才是装 CLI 改 PATH 的地方）；
+            # 无 tty 下 bash 的 job control 警告只进 stderr，不脏 stdout。
+            # fish 的 "$PATH" 是空格分隔 list，会解析失败→静默降级（可接受）。
+            shell = os.environ.get("SHELL") or "/bin/bash"
+            probe = (f"printf '%s' '{_PATH_PROBE_DELIM}'; printf '%s' \"$PATH\"; "
+                     f"printf '%s' '{_PATH_PROBE_DELIM}'")
+            try:
+                r = subprocess.run([shell, "-ilc", probe], capture_output=True,
+                                   encoding="utf-8", errors="replace",
+                                   timeout=timeout_s, stdin=subprocess.DEVNULL,
+                                   creationflags=NO_WINDOW)
+                segs = _parse_probe_path(r.stdout or "")
+            except Exception:   # 超时/无 shell/编码：降级回进程 PATH，水合不该拖垮体检
+                segs = []
+            if segs:
+                added = _merge_path_front(segs)
+                if added:
+                    _path_idx = None   # 索引按旧 PATH 建的，作废重建
+        _hydrated = added
+    return _hydrated
+
+
+def last_path_hydration() -> list[str]:
+    """最近一次水合补进 PATH 的段（doctor 报告/UI 端点展示用）。"""
+    return list(_hydrated or [])
+
+
 def scan_local(timeout_s: int = 4, fresh: bool = False) -> list[Finding]:
     import subprocess
     from concurrent.futures import ThreadPoolExecutor
+    hydrate_shell_path(fresh)   # 登录 shell 视角的 PATH（进程内一次；fresh 破缓存）
     cache = {} if fresh else _load_cache()
     versions_cache: dict = cache.get("versions", {})
 
     out: list[Finding] = []
-    hits: list[tuple[Finding, str]] = []   # (finding, exe)
+    hits: list[tuple[Finding, list[str]]] = []   # (finding, 版本探测候选表)
     for name, bins, cfgs, adapter, category in LOCAL_AGENTS:
-        exe = next((w for b in bins if (w := _which(b))), "")
+        hit = next(((w, b) for b in bins if (w := _which(b))), ("", ""))
+        exe, bin_name = hit
         hit_cfg = next((c for c in cfgs if _cfg_hit(name, c)), "")
         if exe or hit_cfg:
             hits.append((Finding(name, "local", True, category=category,
                                  detail=exe or hit_cfg, adapter=adapter,
                                  activity_days=_activity_days(cfgs),
-                                 evidence="cli" if exe else "cfg"), exe))
+                                 evidence="cli" if exe else "cfg"),
+                         _which_all(bin_name) or ([exe] if exe else [])))
         else:
             out.append(Finding(name, "local", False, category=category))
     # 周边工具：检出才列（未检出不占"未检出"名单——本来就不是智能体）
     for name, bins, cfgs, category, note in EXTRA_TOOLS:
-        exe = next((w for b in bins if (w := _which(b))), "")
+        hit = next(((w, b) for b in bins if (w := _which(b))), ("", ""))
+        exe, bin_name = hit
         hit_cfg = next((c for c in cfgs
                         if Path(c).expanduser().exists()), "")
         if exe or hit_cfg:
             hits.append((Finding(name, "local", True, category=category, hint=note,
                                  detail=exe or hit_cfg,
-                                 evidence="cli" if exe else "cfg"), exe))
+                                 evidence="cli" if exe else "cfg"),
+                         _which_all(bin_name) or ([exe] if exe else [])))
 
-    # 版本是锦上添花：并行探测 + 短超时 + 12h 落盘缓存（慢 CLI 如本地 hermes 实测 11s）
-    def _ver(exe: str) -> str:
-        if not exe:
-            return ""
-        hit = versions_cache.get(exe)
+    # 版本是锦上添花：并行探测 + 短超时 + 12h 落盘缓存（慢 CLI 如本地 hermes 实测 11s）。
+    # 多候选逐个试（orca findRunnableLocalCommand）：PATH 首命中可能是版本
+    # 管理器死 shim，钉住真正能跑 --version 的那份；--version 非零退出不再
+    # 把报错首行误当版本号（此前旧实现直接取 stdout/stderr 第一行）。
+    def _ver(cands: list[str]) -> tuple[str, str]:
+        """返回 (版本, 答话的那份可执行)；版本探测失败降级 ("", "")。"""
+        if not cands:
+            return "", ""
+        key = cands[0]   # 缓存键用首候选：PATH 布局变了键自然变
+        hit = versions_cache.get(key)
         if hit and time.time() - hit.get("ts", 0) < VERSION_TTL:
-            return hit.get("version", "")
-        try:
-            r = subprocess.run([exe, "--version"], capture_output=True,
-                               encoding="utf-8", errors="replace", timeout=timeout_s,
-                               creationflags=NO_WINDOW)
-            ver = ((r.stdout or r.stderr).strip().splitlines()[0][:40]
-                   if (r.stdout or r.stderr).strip() else "")
-        except Exception:  # 超时/编码崩溃/找不到一律降级为"无版本"，不让体检崩
-            ver = ""
-        versions_cache[exe] = {"version": ver, "ts": time.time()}
-        return ver
+            return hit.get("version", ""), key
+        ver, ran = "", ""
+        for exe in cands:
+            try:
+                r = subprocess.run([exe, "--version"], capture_output=True,
+                                   encoding="utf-8", errors="replace", timeout=timeout_s,
+                                   creationflags=NO_WINDOW)
+            except subprocess.TimeoutExpired:
+                break   # 超时≠坏（慢 CLI 实测 11s），别把预算烧在重试上
+            except Exception:   # ENOEXEC/找不到：试下一份候选
+                continue
+            out_put = (r.stdout or r.stderr).strip()
+            if getattr(r, "returncode", 0) == 0 and out_put:
+                ver = out_put.splitlines()[0][:40]
+                ran = exe
+                break
+        versions_cache[key] = {"version": ver, "ts": time.time()}
+        return ver, ran
 
     if hits:
         with ThreadPoolExecutor(max_workers=8) as ex:
             versions = list(ex.map(_ver, [h[1] for h in hits]))
-        for (f, _), ver in zip(hits, versions, strict=True):
+        for (f, _), (ver, ran) in zip(hits, versions, strict=True):
             f.version = ver
+            if ver and ran:
+                f.detail = ran   # 钉到答话的那份（orca #22975）
             out.append(f)
         cache["versions"] = versions_cache
         cache["updated_at"] = time.time()
@@ -373,6 +540,9 @@ _VM_PROBE = (
     "'hermes|/usr/local/bin/hermes' "
     "'kylin-bot|/usr/bin/kylin-bot' "
     "'kylin-bot|/usr/local/bin/kylin-bot' "
+    "'kylin-agent-runtime|/usr/bin/kylin-agent-runtime' "
+    "'kylin-agent-runtime|/usr/local/bin/kylin-agent-runtime' "
+    "'kylin-agent-runtime|~/agent-runtime/.venv/bin/kylin-agent-runtime' "
     "'openclaw|~/.local/bin/openclaw'; do "
     "n=${spec%%|*}; p=${spec##*|}; "
     "[ -x $(eval echo $p) ] && "
@@ -474,6 +644,7 @@ def adapter_availability(vm_probe=None) -> dict:
             "claude-local": {"label": "claude code", "ok": claude_ok},
             "hermes": {"label": "hermes", "ok": channel and local["hermes"]},
             "kylinbot": {"label": "kylinbot", "ok": channel and local["kylinbot"]},
+            "kylin-agent": {"label": "kylin-agent", "ok": channel and local["kylin-agent"]},
             "openclaw": {"label": "openclaw", "ok": channel and local["openclaw"]},
         }}
     adapters = {
@@ -488,6 +659,8 @@ def adapter_availability(vm_probe=None) -> dict:
     adapters.update({
         "hermes": {"label": "hermes（VM 连接）", "ok": "hermes" in found},
         "kylinbot": {"label": "kylinbot（VM 连接）", "ok": "kylinbot" in found},
+        "kylin-agent": {"label": "kylin-agent（VM 连接）",
+                        "ok": "kylin-agent" in found},
         "openclaw": {"label": "openclaw（VM 连接）", "ok": "openclaw" in found},
     })
     return {"mode": "remote", "adapters": adapters}
@@ -544,6 +717,7 @@ def run_doctor(scan_remote: bool = True, fresh: bool = False) -> DoctorReport:
         if fut_vm is not None:
             rep.vm, rep.vm_error = fut_vm.result()
         rep.env = fut_env.result()
+        rep.path_added = last_path_hydration()
     return rep
 
 
@@ -551,6 +725,9 @@ def render_doctor(rep: DoctorReport) -> str:
     lines = ["麟阁 MemHall · 环境体检", ""]
 
     lines.append("── 本机智能体 ──")
+    if rep.path_added:
+        lines.append(f"  · PATH 水合：登录 shell 补 {len(rep.path_added)} 段"
+                     f"（{rep.path_added[0]}{' 等' if len(rep.path_added) > 1 else ''}）")
     agents = [f for f in rep.local if f.category in ("", "cli", "ide")]
     for f in agents:
         if not f.found:

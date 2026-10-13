@@ -163,11 +163,15 @@ class FsDiffEntry(BaseModel):
     path: str
     change: Literal["created", "modified", "deleted"]
     stage: str = ""
+    before_sha256: str | None = None
+    after_sha256: str | None = None
 
 
 class FsDiff(BaseModel):
     before_snapshot: str = ""     # 快照标识/哈希
     after_snapshot: str = ""
+    before_hashes: dict[str, str] | None = None
+    after_hashes: dict[str, str] | None = None
     entries: list[FsDiffEntry] = Field(default_factory=list)
 
 

@@ -1,0 +1,9 @@
+manifest_version: '1.0'
+suite_id: memhall-generated-v1
+suite_version: 1.0.0
+description: Public development variants
+license: Apache-2.0
+split: development
+scoring_protocol: memhall.behavior-v2
+case_globs:
+- '*.yaml'

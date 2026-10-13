@@ -671,7 +671,9 @@ def test_run_suite_model_override_lifecycle(tmp_path, monkeypatch):
         case_id="t-001", schema_version="0.1", capability="persist",
         question_type="session_recall", content_type="path", difficulty=1,
         meta={"author": "t", "created": "2026-10-03", "source": "seed"},
-        phases=[], probes=[])
+        phases=[{"name": "probe", "steps": []}],
+        probes=[{"kind": "rule", "id": "t-001-p1", "check": [
+            {"assert": "default", "then": "correct"}]}])
 
     class _Noop:
         name = "hermes"

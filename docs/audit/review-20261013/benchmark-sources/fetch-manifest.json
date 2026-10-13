@@ -1,0 +1,31 @@
+{
+  "checked_date": "2026-10-13",
+  "sources": [
+    {
+      "file": "official-schedule-current.json",
+      "url": "https://apiv1.oschina.net/api/collections/ai2026_schedule/records?perPage=100",
+      "status": 200,
+      "bytes": 782,
+      "sha256": "666313fec6ff98fbcb2a3177d6f719f0964bd3b15a6efe2b3e426aa2a2befac7"
+    },
+    {
+      "file": "official-topics-current.json",
+      "url": "https://apiv1.oschina.net/api/collections/ai2026_corporate_topics/records?perPage=100",
+      "status": 200,
+      "bytes": 20230,
+      "sha256": "1cfa99883812004fd6685c4c18197a981c72401a7052afbd96e1eafb2c73701c"
+    },
+    {
+      "file": "official-challenge-current.pdf",
+      "url": "https://apiv1.oschina.net/api/files/fhhc7e8z6no3gyt/w9qliatd2m6lgs8/ai_open_kylin_open_kylin_benchmark_XaCQyZepC8.pdf",
+      "status": 200,
+      "bytes": 315645,
+      "sha256": "0f47d308d0c9ea2d11fecd6ec1b7bc230c258b4b446cbf1b672b27a398943ca0"
+    },
+    {
+      "file": "locomo10.json",
+      "url": "https://ghproxy.net/https://github.com/snap-research/locomo/raw/refs/heads/main/data/locomo10.json",
+      "error": "ReadError: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] sslv3 alert bad record mac (_ssl.c:2580)"
+    }
+  ]
+}

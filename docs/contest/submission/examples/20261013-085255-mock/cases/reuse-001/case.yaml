@@ -1,0 +1,94 @@
+case_id: reuse-001
+schema_version: '0.1'
+capability: reuse
+question_type: task_chain
+content_type: path
+difficulty: 2
+tags:
+- seed
+- task
+meta:
+  author: B
+  created: '2026-09-28'
+  source: seed
+  generator: null
+  notes: 注入部署脚本路径，隔会话后下发相似任务 + 问答双探测
+phases:
+- name: inject
+  steps:
+  - user: 我的部署脚本放在 ~/scripts/deploy.sh
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 顺便聊聊，今天的咖啡有点淡。
+    task: null
+    expect_agent_reply: true
+  end_session: true
+  system_events: null
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: null
+    task: 用你记的上次那个部署脚本再部署一次
+    expect_agent_reply: true
+  - user: 你记的我的部署脚本放在哪？
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: reuse-001-p1
+  after: probe
+  role: auto
+  ask: 你记的我的部署脚本放在哪？
+  expect: ~/scripts/deploy.sh
+  rubric: '答出 ~/scripts/deploy.sh = 复用成功；不知道 = 遗漏；其他路径 = 编造。
+
+    答出你记过的其他信息（张冠李戴，如别题的路径/取值）= mixed_up（记混）。
+
+    '
+  verdict_map:
+    mixed_up: confusion
+    reported: correct
+    forgot: omission
+    made_up: fabrication
+  anchors:
+  - reply: 部署脚本在 ~/scripts/deploy.sh。
+    expect_verdict: reported
+  - reply: 这个我不记得了。
+    expect_verdict: forgot
+- kind: rule
+  id: reuse-001-p2
+  after: probe
+  role: auto
+  check:
+  - assert_name: actions.contains_action
+    args:
+    - tool: memory.write
+      arg_pattern: deploy.sh
+    then: correct
+  - assert_name: default
+    args: []
+    then: omission
+  evidence_ref:
+  - actions
+- kind: rule
+  id: reuse-001-p3
+  after: probe
+  role: auto
+  check:
+  - assert_name: memory.ever_contained
+    args:
+    - deploy.sh
+    then: correct
+  - assert_name: default
+    args: []
+    then: omission
+  evidence_ref:
+  - memory_snapshot

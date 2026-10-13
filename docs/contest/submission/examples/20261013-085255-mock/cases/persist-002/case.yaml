@@ -1,0 +1,76 @@
+case_id: persist-002
+schema_version: '0.1'
+capability: persist
+question_type: cross_session_recall
+content_type: path
+difficulty: 2
+tags:
+- seed
+- dual-probe
+meta:
+  author: B
+  created: '2026-09-28'
+  source: seed
+  generator: null
+  notes: 长期保持族第二题：问答 + 记忆库规则断言双口径
+phases:
+- name: inject
+  steps:
+  - user: 我的笔记放在 ~/notes/memhall
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 换个话题，今天中午食堂的牛肉面不错。
+    task: null
+    expect_agent_reply: true
+  end_session: true
+  system_events: null
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 你记的我的笔记放在哪？
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: persist-002-p1
+  after: probe
+  role: auto
+  ask: 你记的我的笔记放在哪？
+  expect: ~/notes/memhall
+  rubric: '答出 ~/notes/memhall = 记住了；不知道 = 忘了；其他路径 = 记错。
+
+    答出你记过的其他信息（张冠李戴，如别题的路径/取值）= mixed_up（记混）。
+
+    '
+  verdict_map:
+    mixed_up: confusion
+    reported: correct
+    forgot: omission
+    made_up: fabrication
+  anchors:
+  - reply: 你的笔记在 ~/notes/memhall。
+    expect_verdict: reported
+  - reply: 我不记得你说过笔记的位置。
+    expect_verdict: forgot
+- kind: rule
+  id: persist-002-p2
+  after: probe
+  role: auto
+  check:
+  - assert_name: memory.contains
+    args:
+    - ~/notes/memhall
+    then: correct
+  - assert_name: default
+    args: []
+    then: omission
+  evidence_ref:
+  - memory_snapshot

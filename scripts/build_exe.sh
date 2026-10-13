@@ -7,7 +7,11 @@ cd "$(dirname "$0")/.."
 
 rm -rf build dist/MemHall dist/MemHall.exe "dist/麟阁MemHall-单文件版.exe"
 uv run pyinstaller --noconfirm memhall.spec
-cp -r cases dist/MemHall/cases
+mkdir -p dist/MemHall/cases
+cp cases/suite.yaml dist/MemHall/cases/
+for name in full gen chains challenge-v2 development-v2; do
+  cp -r "cases/$name" "dist/MemHall/cases/$name"
+done
 uv run pyinstaller --noconfirm memhall-onefile.spec
 mv dist/MemHall.exe "dist/麟阁MemHall-单文件版.exe"
 du -sh dist/MemHall "dist/麟阁MemHall-单文件版.exe"

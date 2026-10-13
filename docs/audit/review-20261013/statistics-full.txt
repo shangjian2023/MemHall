@@ -1,0 +1,37 @@
+== ① 系统内稳定性（同探测点轮间两两，4 轮 6 对）==
+  hermes    六态一致 71.2%–78.8%（均值 75.0%）　对错翻转 17%–24%（均值 21%）
+  kylinbot  六态一致 68.2%–75.8%（均值 71.2%）　对错翻转 16%–25%（均值 21%）
+  openclaw  六态一致 74.2%–90.9%（均值 83.6%）　对错翻转 5%–20%（均值 12%）
+== ② 探索性配对票检验（各轮合并，未校正重复题相关性）==
+  hermes vs kylinbot: 方向票 65+28=93，p=0.000，显著偏向 hermes
+  hermes vs openclaw: 方向票 47+43=90，p=0.752，不显著
+  kylinbot vs openclaw: 方向票 50+87=137，p=0.002，显著偏向 openclaw
+== ②b case 聚类稳健检验（独立单元=题，净方向票符号检验）==
+  hermes vs kylinbot: 题 21+12=33（36 题有方向票）,p=0.163，不显著
+  hermes vs openclaw: 题 12+16=28（31 题有方向票）,p=0.572，不显著
+  kylinbot vs openclaw: 题 12+22=34（38 题有方向票）,p=0.121，不显著
+== ③ 维度区分度（组间/组内方差比，描述性，n=4/组）==
+  长期保持  均值 hermes:87% kylinbot:63% openclaw:92%　组间/组内 = 4.7（描述性比值，组内 df=9；非 ANOVA F 值）
+  记忆调用  均值 hermes:65% kylinbot:69% openclaw:77%　组间/组内 = 0.8（描述性比值，组内 df=9；非 ANOVA F 值）　? 不区分
+  动态更新  均值 hermes:49% kylinbot:17% openclaw:60%　组间/组内 = 2.6（描述性比值，组内 df=9；非 ANOVA F 值）
+  相近区分  均值 hermes:88% kylinbot:47% openclaw:97%　组间/组内 = 7.4（描述性比值，组内 df=9；非 ANOVA F 值）
+  边界识别  均值 hermes:83% kylinbot:75% openclaw:40%　组间/组内 = 9.9（描述性比值，组内 df=9；非 ANOVA F 值）
+  任务复用  均值 hermes:68% kylinbot:61% openclaw:89%　组间/组内 = 1.2（描述性比值，组内 df=9；非 ANOVA F 值）
+== ④ 判卷口径差（同证据 dual vs scripted）与环境噪声（invalid 率）==
+  20261010-073953-hermes       dual 73.0%　invalid 3/66
+  20261010-135112-hermes       dual 72.7%　invalid 0/66
+  20261011-073455-hermes       dual 78.8%　invalid 0/66
+  20261011-103806-hermes       dual 73.8%　invalid 0/66
+  20261010-163950-kylinbot     dual 60.9%　invalid 2/66
+  20261010-181612-kylinbot     dual 61.5%　invalid 0/66
+  20261011-131723-kylinbot     dual 63.1%　invalid 0/66
+  20261011-145803-kylinbot     dual 48.4%　invalid 2/66
+  20261010-200117-openclaw     dual 66.2%　invalid 0/66
+  20261010-215351-openclaw     dual 71.2%　invalid 0/66
+  20261011-164757-openclaw     dual 75.8%　invalid 0/66
+  20261011-183642-openclaw     dual 76.9%　invalid 0/66
+== ⑤ 功效声明（需要几轮才能把两家分开）==
+  hermes vs kylinbot: 差距 16.1%，σ 2.8%/6.8% → 需 ≈2 轮
+  hermes vs openclaw: 差距 2.1%，σ 2.8%/4.9% → 需 ≈58 轮
+  kylinbot vs openclaw: 差距 14.0%，σ 6.8%/4.9% → 需 ≈3 轮
+（口径：score 探测、轮级总分、双侧 α=0.05、power 80%；轮数为基于小样本观测方差的近似估计；②未校正重复题相关性，以 ②b 按 case 聚类的净方向检验为稳健口径）

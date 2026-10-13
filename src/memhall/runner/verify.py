@@ -116,6 +116,14 @@ def verify_run(run_dir: Path) -> VerificationResult:
     if manifest is None:
         return result
 
+    if manifest.get("benchmark"):
+        from memhall.report.compatibility import check_compatibility
+        try:
+            checked = check_compatibility([run_dir])
+            result.warnings.extend(checked["warnings"])
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            result.errors.append(f"题单／题包身份校验失败: {error}")
+
     result.run_id = str(manifest.get("run_id", ""))
     if run_dir.name != result.run_id:
         result.warnings.append(

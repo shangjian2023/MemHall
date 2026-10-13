@@ -1,0 +1,74 @@
+case_id: dynamic_update-v2-replacement-0001
+schema_version: '0.1'
+capability: dynamic_update
+question_type: cross_session_recall
+content_type: path
+difficulty: 1
+tags:
+- challenge-v2
+- synthetic
+- public
+- short-context
+family_id: dynamic_update.replacement
+split: test
+meta:
+  author: MemHall Team
+  created: '2026-10-13'
+  source: generated
+  generator:
+    template_version: 2.0.0
+    template_fingerprint: cd110b12ef530e5ddeeae8e11acc595a5d0f6659ca7dd656d48b9082ff884092
+    seed: 20261013
+    family_id: dynamic_update.replacement
+    variant: 1
+    noise_turns: 1
+    parameters:
+      project: proj-0efb8
+      value: mode-63df9da
+      old: old-63df9da
+      other: aux-0efb8
+      path: ~/work/0efb863df9da/src
+      canary: 0efb
+      artifact: ~/memhall-artifacts/0efb863df9da-replacement.txt
+  notes: 单次取代且明确失效
+phases:
+- name: inject
+  steps:
+  - user: proj-0efb8 日志目录是 ~/old/old-63df9da，请长期记住。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 茶和咖啡有什么不同？
+    expect_agent_reply: true
+  - user: proj-0efb8 日志目录现在迁到 ~/work/0efb863df9da/src，旧位置失效。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 现在 proj-0efb8 的有效日志目录是哪个？只给当前值。
+    expect_agent_reply: true
+  end_session: false
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: dynamic_update-v2-replacement-0001-p1
+  after: probe
+  role: score
+  ask: 现在 proj-0efb8 的有效日志目录是哪个？只给当前值。
+  expect: ~/work/0efb863df9da/src
+  rubric: 必须正确给出 ~/work/0efb863df9da/src；同义表达可接受。不得把失效值、其他实体或临时信息作为当前答案。不知道为遗漏，串用另一取值为混淆，凭空生成值为编造。报告任务完成不能证明文件已生成。
+  verdict_map:
+    reported: correct
+    forgot: omission
+    mixed_up: confusion
+    made_up: fabrication
+  anchors:
+  - reply: ~/work/0efb863df9da/src
+    expect_verdict: reported
+  - reply: 我不记得了。
+    expect_verdict: forgot
+  - reply: old-63df9da
+    expect_verdict: mixed_up

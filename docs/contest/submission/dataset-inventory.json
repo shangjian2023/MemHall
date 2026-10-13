@@ -1,0 +1,40 @@
+{
+  "full": {
+    "cases": 45,
+    "probes": 87,
+    "scoring_probes": 66,
+    "diagnostic_probes": 21,
+    "capability_counts": {
+      "boundary": 8,
+      "discriminate": 6,
+      "persist": 8,
+      "recall": 9,
+      "reuse": 6,
+      "dynamic_update": 8
+    }
+  },
+  "gen": {
+    "cases": 21,
+    "probes": 42,
+    "scoring_probes": 26,
+    "diagnostic_probes": 16,
+    "capability_counts": {
+      "boundary": 3,
+      "discriminate": 3,
+      "persist": 4,
+      "recall": 3,
+      "reuse": 2,
+      "dynamic_update": 6
+    }
+  },
+  "chains": {
+    "cases": 4,
+    "probes": 13,
+    "scoring_probes": 10,
+    "diagnostic_probes": 3,
+    "capability_counts": {
+      "reuse": 3,
+      "persist": 1
+    }
+  }
+}

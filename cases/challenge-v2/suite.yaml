@@ -1,0 +1,9 @@
+case_globs:
+- '**/*.yaml'
+description: 公开合成场景变体；题族数不等于独立样本数
+license: Apache-2.0
+manifest_version: '1.0'
+scoring_protocol: memhall.behavior-v2
+split: test
+suite_id: memhall-challenge-v2-test
+suite_version: 2.0.0

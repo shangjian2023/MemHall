@@ -37,8 +37,8 @@ def test_version_is_not_stale_constant():
 
 def test_adapter_registry_covers_all_names():
     assert set(ADAPTERS) == {"mock", "hermes", "kylinbot", "openclaw",
-                             "hermes-local", "claude-local", "qwen-local",
-                             "opencode"}
+                             "kylin-agent", "hermes-local", "claude-local",
+                             "qwen-local", "opencode"}
 
 
 def test_create_adapter_mock_and_unknown():

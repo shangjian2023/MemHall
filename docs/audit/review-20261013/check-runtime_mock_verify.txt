@@ -1,0 +1,11 @@
+run_id: 20261013-094446-mock
+证据完整性: 通过（6 cases / 42 evidence）
+  提示: 无 cases.json 快照（主线 runner 逐题写 case.yaml）——阶段覆盖 按各 case.yaml 校验，题库级封印跳过
+  提示: manifest 无 case_results / 逐题 evidence_sha256 封印（主线口径：判定与对账走 verdicts.jsonl）——证据完整性仍逐条强校验
+  提示: persist-002: inject 仅 1 条记忆快照
+  提示: recall-002: inject 仅 1 条记忆快照
+  提示: update-001: inject 仅 1 条记忆快照
+  提示: discriminate-001: inject 仅 1 条记忆快照
+  提示: boundary-001: inject 仅 1 条记忆快照
+  提示: reuse-001: inject 仅 1 条记忆快照
+10-13 17:59:31 INFO    memhall.cli 已加载配置: D:\openkylins\.env

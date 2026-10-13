@@ -82,7 +82,9 @@ def test_run_suite_records_token_usage(tmp_path, monkeypatch):
         case_id="t-001", schema_version="0.1", capability="persist",
         question_type="session_recall", content_type="path", difficulty=1,
         meta={"author": "t", "created": "2026-10-03", "source": "seed"},
-        phases=[], probes=[])
+        phases=[{"name": "probe", "steps": []}],
+        probes=[{"kind": "rule", "id": "t-001-p1", "check": [
+            {"assert": "default", "then": "correct"}]}])
     run_id, _ = run_suite(_NoopAdapter(), [case], tmp_path, "broken")
     m = json.loads((tmp_path / run_id / "manifest.json").read_text(encoding="utf-8"))
     assert m["token_usage"]["total_tokens"] == 120

@@ -24,6 +24,7 @@ import yaml
 from memhall import __version__
 from memhall.adapters.base import NO_WINDOW, AdapterError, AgentAdapter
 from memhall.cost import summarize, usage_delta, usage_snapshot
+from memhall.sampling import FrozenPaper, run_identity
 from memhall.schema.evidence import (
     Evidence,
     EvidencePhase,
@@ -96,6 +97,9 @@ class CaseRunner:
         if verify is not None:
             verify()
         base_fs = self.adapter.fs_snapshot()
+        hash_fn = getattr(self.adapter, "fs_fingerprints", lambda paths: None)
+        base_hashes = hash_fn(base_fs) if base_fs is not None else None
+        inject_hashes = None
         session_id = "s-01"
         try:
             for phase in self.case.phases:
@@ -186,6 +190,7 @@ class CaseRunner:
                     # R50：inject 后文件面也采——fs 证据按阶段切分，
                     # 链题"第 1 会话产物"与"复用行为产物"不再混在一锅
                     inject_fs = self.adapter.fs_snapshot()
+                    inject_hashes = hash_fn(inject_fs) if inject_fs is not None else None
                 if phase.end_session:
                     self.adapter.end_session(session_id)
                     n = int(session_id.split("-")[1]) + 1
@@ -216,12 +221,9 @@ class CaseRunner:
                           self.case.case_id, e)
         # 文件系统 diff（适配器支持时）：before 快照 vs after 快照
         after_fs = self.adapter.fs_snapshot()
+        after_hashes = hash_fn(after_fs) if after_fs is not None else None
         if base_fs is not None and after_fs is not None:
-            # R50：fs 证据按阶段窗切分——base→inject 后（stage=inject）与
-            # inject 后→终采（stage=probe）。链题"第 1 会话教出来的产物"与
-            # "复用记忆时的行为产物"可分归因；断言层不筛 stage（旧证据 ""
-            # 兼容）。注：适配器快照只有路径清单，modified/内容哈希需适配器
-            # 提供内容指纹后才能落地（已知局限，见 review-tasks R50 状态）
+            # Keep injection artifacts and later task reuse in separate windows.
             inject_fs = locals().get("inject_fs")
             mid = inject_fs if inject_fs is not None else base_fs
             entries: list[FsDiffEntry] = []
@@ -233,7 +235,20 @@ class CaseRunner:
                         for p in sorted(set(after_fs) - set(mid))]
             entries += [FsDiffEntry(path=p, change="deleted", stage="probe")
                         for p in sorted(set(mid) - set(after_fs))]
-            fs_diff = FsDiff(entries=entries,
+            middle_hashes = inject_hashes if inject_hashes is not None else base_hashes
+            for stage, before, after in [("inject", base_hashes, middle_hashes),
+                                         ("probe", middle_hashes, after_hashes)]:
+                if before is not None and after is not None:
+                    for path in sorted(before.keys() & after.keys()):
+                        if before[path] != after[path]:
+                            entries.append(FsDiffEntry(path=path, change="modified", stage=stage,
+                                                       before_sha256=before[path], after_sha256=after[path]))
+            for entry in entries:
+                before = base_hashes if entry.stage == "inject" else middle_hashes
+                after = middle_hashes if entry.stage == "inject" else after_hashes
+                entry.before_sha256 = (before or {}).get(entry.path)
+                entry.after_sha256 = (after or {}).get(entry.path)
+            fs_diff = FsDiff(entries=entries, before_hashes=base_hashes, after_hashes=after_hashes,
                              before_snapshot=f"n={len(base_fs)}",
                              after_snapshot=f"n={len(after_fs)}")
             self._collect("probe", EvidenceType.FS_DIFF, fs_diff.model_dump(mode="json"))
@@ -260,12 +275,159 @@ def _git_hash() -> str:
         return "unknown"
 
 
+def _source_fingerprint() -> str:
+    """源码树指纹：git 检出与 tgz 铺树都能算，同代码同指纹。
+    VM 部署形态无 .git（git_hash 只能记 unknown），审计要能把
+    "这轮跑的代码"钉到具体字节——对 memhall 包全部 .py 做内容哈希。"""
+    root = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()[:16]
+
+
 def _safe_emit(on_event, payload: dict) -> None:
     """事件流给 UI 看过程用——它坏掉不能打崩评测。"""
     if on_event is None:
         return
     with contextlib.suppress(Exception):
         on_event(payload)
+
+
+def _clock_drift_seconds(adapter: AgentAdapter) -> float | None:
+    """宿主 vs 评测机系统钟差（秒，评测机-宿主）。
+
+    A1 错钟残留检测的探针：本机/原生车道（评测器与被测者同一块钟）
+    和读不到时间的场合返回 None（探测失败≠有漂移，不据此拦跑）。
+    """
+    from memhall.adapters.remote import SshChannel
+    ch = getattr(adapter, "ch", None)
+    if not isinstance(ch, SshChannel):
+        return None
+    rc, out, _ = ch.run("date +%s", timeout=15)
+    if rc != 0 or not out.strip().isdigit():
+        log.warning("错钟检测读不到评测机时间（rc=%s），跳过校验", rc)
+        return None
+    return int(out.strip()) - time.time()
+
+
+def _clock_drift_max_s() -> float:
+    raw = os.environ.get("MEMHALL_CLOCK_DRIFT_MAX", "").strip()
+    try:
+        return float(raw) if raw else 300.0
+    except ValueError:
+        return 300.0
+
+
+def _run_start_iso(started_at: str) -> str:
+    """run_id 紧凑时间戳（宿主本地钟）→ UTC ISO（网关账单 ts 同口径可比窗）。"""
+    if len(started_at) < 14:
+        return ""
+    local_start = datetime.strptime(started_at[:15], "%Y%m%d-%H%M%S")
+    return local_start.replace(
+        tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC).isoformat()
+
+
+def _reply_stats(stores: list) -> dict[str, dict]:
+    """逐 case 的真实回复统计：[RUNTIME_ERROR] 占位回复不算 agent 产出。
+
+    {case_id: {"n": 真实回复数, "t0": 首条证据时刻, "t1": 末条证据时刻,
+               "shifted": 本 case 是否拨过钟}}——A2 网关对账的本地侧账。
+    """
+    stats: dict[str, dict] = {}
+    for store in stores:
+        items = store.items()
+        if not items:
+            continue
+        entry = stats.setdefault(
+            items[0].case_id, {"n": 0, "t0": None, "t1": None, "shifted": False})
+        for ev in items:
+            entry["shifted"] = entry["shifted"] or bool(ev.clock_offset_days)
+            ts = ev.collected_at
+            if entry["t0"] is None or ts < entry["t0"]:
+                entry["t0"] = ts
+            if entry["t1"] is None or ts > entry["t1"]:
+                entry["t1"] = ts
+            if ev.type.value == "dialogue":
+                for r in (ev.payload or {}).get("replies") or []:
+                    if not str(r.get("text", "")).startswith("[RUNTIME_ERROR]"):
+                        entry["n"] += 1
+    return stats
+
+
+def _gateway_bypass_alarm(adapter: AgentAdapter, stores: list, start_iso: str,
+                          end_iso: str, adapter_name: str, mode: str,
+                          clock_restore_failed: list[str]) -> dict | None:
+    """A2 网关对账：统一网关车道里 agent 正常作答、该 tag 却零记账 → 绕行告警。
+
+    "必经网关"此前纯靠配置注入，没有"该来没来"的对账——agent 自带真 key
+    直连上游时分数照常出、口径记录却在说谎。账单读不到（网关在别机/没起
+    记账）= 无法对账，返回 None 不告警；触发才写 manifest。
+    per-case 归因只对没拨过钟的 case 做（VM 侧网关的账单 ts 会跟着拨钟走，
+    硬比对会误报）；本轮有拨钟恢复失败时整体跳过 per-case（残留偏移同理）。
+    """
+    if mode != "gateway":
+        return None
+    stats = _reply_stats(stores)
+    n_replies = sum(e["n"] for e in stats.values())
+    if n_replies == 0:
+        return None
+    from memhall.gateway import default_log_path
+    lines: list[str] | None = None
+    host_log = default_log_path()
+    if host_log.is_file():
+        try:
+            lines = host_log.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = None
+    if lines is None:
+        # 宿主无账单 → 试评测机侧网关的账单（VM 上跑网关的形态）
+        ch = getattr(adapter, "ch", None)
+        run = getattr(ch, "run", None)
+        if callable(run):
+            rc, out, _ = run("cat ~/.memhall/gateway-usage.jsonl 2>/dev/null",
+                             timeout=30)
+            if rc == 0 and out.strip():
+                lines = out.splitlines()
+    if lines is None:
+        return None
+    tag = f"memhall-{adapter_name}"
+    recs: list[str] = []   # ts[:19]，与 summarize_reasoning 同口径字符串比对
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if rec.get("agent") == tag:
+            ts = str(rec.get("ts", ""))
+            if ts:
+                recs.append(ts[:19])
+    suspects: list[str] = []
+    if not clock_restore_failed:
+        for cid, entry in stats.items():
+            if entry["n"] == 0 or entry["shifted"] or entry["t0"] is None:
+                continue
+            lo = entry["t0"].isoformat()[:19]
+            hi = entry["t1"].isoformat()[:19]
+            if not any(lo <= ts <= hi for ts in recs):
+                suspects.append(cid)
+    alarm = {"n_replies": n_replies, "n_tag_records": len(recs)}
+    if suspects:
+        alarm["suspect_cases"] = suspects
+        alarm["note"] = ("这些 case 有真实回复但网关零记账——疑似绕行网关/零上游"
+                         "调用，口径记录不可信，需人工核查")
+    elif not recs:
+        alarm["note"] = ("本轮有真实回复但整个账单无该智能体 tag 记录——疑似"
+                         "绕行网关，口径记录不可信，需人工核查")
+    else:
+        return None
+    if clock_restore_failed and not suspects:
+        alarm["per_case"] = "skipped（本轮有拨钟恢复失败，逐 case 归因不可靠）"
+    return alarm
 
 
 class _GlobalRunLock:
@@ -282,6 +444,7 @@ class _GlobalRunLock:
         # sys.platform 比较让 mypy 静态收窄平台分支（win 上 fcntl 分支不可达）
         if sys.platform == "win32":
             import msvcrt
+            f.seek(0)
             msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
         else:
             import fcntl
@@ -325,7 +488,9 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
               on_case_done=None, on_event=None,
               model_override: str | None = None,
               rotate_count: int | None = None,
-              rotation_seed: int | None = None) -> tuple[str, list[EvidenceStore]]:
+              rotation_seed: int | None = None,
+              paper: FrozenPaper | None = None,
+              suite_identity: dict | None = None) -> tuple[str, list[EvidenceStore]]:
     """跑整套用例，落盘 manifest，返回 (run_id, 每 case 的证据视图)。
 
     on_case_done(case_id, i, n)：每用例跑完后回调（UI 进度流用）；
@@ -346,6 +511,10 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
             raise ValueError("轮换题库包含重复 case_id")
 
     stores: list[EvidenceStore] = []
+    if paper is not None and rotate_count is not None:
+        raise ValueError("封存题单不能进行历史轮换")
+    identity = run_identity(cases, paper=paper, suite=suite_identity,
+                            exploratory=rotate_count is not None)
     failed: list[str] = []
     clock_restore_failed: list[str] = []
     rotation_meta: dict | None = None
@@ -378,8 +547,18 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
                     cases, count=rotate_count, seed=rotation_seed, out_dir=out_dir)
                 cases = rotation.cases
                 rotation_meta = rotation.manifest()
+                identity = run_identity(cases, suite=suite_identity, exploratory=True)
+            if paper is not None:
+                paper.save(run_dir / "paper.json")
             log.info("评测开始: %s × %d 用例 × %d 探测点 → %s", adapter_name, len(cases),
                      sum(len(c.probes) for c in cases), run_dir)
+            # R01 封印：题库级快照先行落盘（轮换后的实际题目集）——归档自包含，
+            # verify 据此校验阶段覆盖与题目是否被换（有则强校验）
+            snapshot_items = [c.model_dump(mode="json") for c in cases]
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "cases.json").write_text(
+                json.dumps({"cases": snapshot_items}, ensure_ascii=False, indent=2),
+                encoding="utf-8")
             for i, case in enumerate(cases):
                 log.info("[%d/%d] %s 开跑", i + 1, len(cases), case.case_id)
                 t0 = time.monotonic()
@@ -410,7 +589,7 @@ def run_suite(adapter: AgentAdapter, cases: list[MemoryCase], out_dir: Path,
                                 cases, failed, usage_before, adapter,
                                 clock_restore_failed=clock_restore_failed,
                                 model_override=model_override,
-                                case_rotation=rotation_meta)
+                                case_rotation=rotation_meta, benchmark=identity)
             finally:
                 if gw_tag:   # 改写表必清——残留会把下一场 run 偷偷挂到旧模型上
                     from memhall.gateway import set_model_override
@@ -435,12 +614,65 @@ def pair_stores(cases: list[MemoryCase],
     return [(c, st) for c in cases if (st := by_id.get(c.case_id)) is not None]
 
 
+def _seal_case_archive(run_dir: Path, manifest: dict,
+                       cases: list[MemoryCase]) -> None:
+    """R01 封印：题库指纹 + 逐题证据哈希 + 整包哈希，与 verify_run 的
+    复算口径逐字段对齐（cases.json 有则强校验）。失败的 case 记 failed
+    条目——缺证据的轮必须在 verify 面前亮红灯，而不是混进通过名单。"""
+    snapshot_path = run_dir / "cases.json"
+    if not snapshot_path.is_file():
+        return
+    manifest["cases_snapshot_sha256"] = _file_sha256(snapshot_path)
+    snapshot_items = json.loads(
+        snapshot_path.read_text(encoding="utf-8")).get("cases", [])
+    case_hashes = {str(item.get("case_id")): _sha256(item)
+                   for item in snapshot_items if isinstance(item, dict)}
+    manifest["case_hashes"] = case_hashes
+    manifest["cases_version"] = f"sha256:{_sha256(case_hashes)}"
+
+    file_hashes: dict[str, str | None] = {}
+    case_results: list[dict] = []
+    for case in cases:
+        cid = case.case_id
+        evidence_path = run_dir / "cases" / cid / "evidence.jsonl"
+        if evidence_path.is_file():
+            entry: dict = {
+                "case_id": cid,
+                "evidence_sha256": _file_sha256(evidence_path),
+                "evidence_count": sum(
+                    1 for line in evidence_path.read_text(
+                        encoding="utf-8").splitlines() if line.strip()),
+            }
+            file_hashes[cid] = entry["evidence_sha256"]
+            (run_dir / "cases" / cid / "case.json").write_text(
+                json.dumps(entry, ensure_ascii=False, indent=2),
+                encoding="utf-8")
+        else:
+            entry = {"case_id": cid, "failed": True}
+            file_hashes[cid] = None
+            (run_dir / "cases" / cid / "case.json").write_text(
+                json.dumps(entry, ensure_ascii=False, indent=2),
+                encoding="utf-8")
+        case_results.append(entry)
+    manifest["case_results"] = case_results
+    manifest["evidence_bundle_sha256"] = _sha256(file_hashes)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
                     case_source: str, cases: list[MemoryCase], failed: list[str],
                     usage_before, adapter: AgentAdapter,
                     clock_restore_failed: list[str] | None = None,
                     model_override: str | None = None,
-                    case_rotation: dict | None = None) -> None:
+                    case_rotation: dict | None = None,
+                    benchmark: dict | None = None) -> None:
     manifest = {
         "run_id": run_id,
         "tool": "memhall",
@@ -450,11 +682,21 @@ def _write_manifest(run_dir: Path, run_id: str, adapter_name: str,
         "adapter": adapter_name,
         "case_source": case_source,
         "git_hash": _git_hash(),
+        "source_fingerprint": _source_fingerprint(),
         "started_at": run_id[:15],
         "finished_at": _utc().isoformat(),
         "cases": [c.case_id for c in cases],
         "n_probes_total": sum(len(c.probes) for c in cases),
     }
+    manifest["benchmark"] = benchmark or run_identity(cases)
+    paper_path = run_dir / "paper.json"
+    if paper_path.is_file():
+        manifest["paper_sha256"] = hashlib.sha256(paper_path.read_bytes()).hexdigest()
+    try:
+        _seal_case_archive(run_dir, manifest, cases)
+    except OSError as e:
+        # 封印失败不能连累 manifest 落盘——没有 manifest 的 run 比没封印更糟
+        log.error("题库封印失败（run 无封印，verify 将降级警告）: %s", e)
     if failed:
         manifest["failed_cases"] = failed
     if case_rotation is not None:

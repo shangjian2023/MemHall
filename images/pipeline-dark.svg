@@ -11,7 +11,7 @@
 <text x="40" y="100" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9.5" fill="#34d399">评测器 · 宿主</text>
 <rect x="44" y="114" width="290" height="64" rx="6" fill="rgba(6, 78, 59, 0.40)" stroke="#34d399" stroke-width="1.5"/>
 <text x="189.0" y="142.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">剧本引擎</text>
-<text x="189.0" y="159.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">教 teach → 隔 confound → 考 probe（47 题三阶段剧本）</text>
+<text x="189.0" y="159.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">教 teach → 隔 confound → 考 probe（49 题三阶段剧本）</text>
 <rect x="44" y="196" width="290" height="56" rx="6" fill="rgba(6, 78, 59, 0.40)" stroke="#34d399" stroke-width="1.5"/>
 <text x="189.0" y="220.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">运行编排</text>
 <text x="189.0" y="237.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">SSH 车道 · 断线重连 · run.lock 互斥 · 成本预估</text>
@@ -52,7 +52,7 @@
 <rect x="760" y="254" width="396" height="152" rx="12" fill="none" stroke="#fb7185" stroke-width="1" stroke-dasharray="8,4" opacity="0.55"/>
 <text x="776" y="278" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="9.5" fill="#fb7185">判卷（契约 03 v0.2.1）</text>
 <rect x="780" y="292" width="176" height="52" rx="6" fill="rgba(136, 19, 55, 0.40)" stroke="#fb7185" stroke-width="1.5"/>
-<text x="868.0" y="314.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">双 LLM 判卷</text>
+<text x="868.0" y="314.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">LLM 判卷（B 可选）</text>
 <text x="868.0" y="331.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="8.5" fill="#94a3b8" text-anchor="middle">A/B 轮值仲裁 · kappa 复核</text>
 <rect x="972" y="292" width="168" height="52" rx="6" fill="rgba(136, 19, 55, 0.40)" stroke="#fb7185" stroke-width="1.5"/>
 <text x="1056.0" y="314.0" font-family="JetBrains Mono, Consolas, 'Microsoft YaHei', monospace" font-size="12" fill="#e2e8f0" font-weight="600" text-anchor="middle">锚例 + 诱饵</text>

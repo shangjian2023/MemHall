@@ -1,0 +1,10 @@
+manifest_version: '1.0'
+suite_id: memhall-core-v1
+suite_version: 1.0.0
+description: 'Frozen historical core: full + chains'
+license: Apache-2.0
+split: test
+scoring_protocol: memhall.behavior-v2
+case_globs:
+- full/*.yaml
+- chains/*.yaml

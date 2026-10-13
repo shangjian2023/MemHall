@@ -114,6 +114,9 @@ class MockAdapter(AgentAdapter):
         return MemorySnapshot(format="json", dumped_at=utc(),
                               entries=entries, raw=None)
 
+    def fs_fingerprints(self, paths: list[str]) -> dict[str, str] | None:
+        return {}
+
     def fs_snapshot(self) -> list[str] | None:
         """空工作区（刻意不返回 None）：设计画像"只说不做"——快照恒空，
         fs_diff 有证据但零创建，reuse 文件断言确定性失败。

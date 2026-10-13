@@ -1,0 +1,31 @@
+== ① 系统内稳定性（同探测点轮间两两，2 轮 1 对）==
+  hermes    六态一致 100.0%–100.0%（均值 100.0%）　对错翻转 0%–0%（均值 0%）
+  kylinbot  六态一致 90.0%–90.0%（均值 90.0%）　对错翻转 10%–10%（均值 10%）
+  openclaw  六态一致 100.0%–100.0%（均值 100.0%）　对错翻转 0%–0%（均值 0%）
+== ② 探索性配对票检验（各轮合并，未校正重复题相关性）==
+  hermes vs kylinbot: 方向票 3+0=3，p=0.250，不显著
+  hermes vs openclaw: 方向票 0+0=0，p=1.000，不显著
+  kylinbot vs openclaw: 方向票 0+3=3，p=0.250，不显著
+== ②b case 聚类稳健检验（独立单元=题，净方向票符号检验）==
+  hermes vs kylinbot: 题 2+0=2（2 题有方向票）,p=0.500，不显著
+  hermes vs openclaw: 题 0+0=0（0 题有方向票）,p=1.000，不显著
+  kylinbot vs openclaw: 题 0+2=2（2 题有方向票）,p=0.500，不显著
+== ③ 维度区分度（组间/组内方差比，描述性，n=2/组）==
+  长期保持  均值 hermes:100% kylinbot:75% openclaw:100%　组间/组内 = 0.5（描述性比值，组内 df=3；非 ANOVA F 值）　? 不区分
+  记忆调用  未测（本轮 run 无该能力计分探测点）
+  动态更新  未测（本轮 run 无该能力计分探测点）
+  相近区分  未测（本轮 run 无该能力计分探测点）
+  边界识别  未测（本轮 run 无该能力计分探测点）
+  任务复用  均值 hermes:25% kylinbot:12% openclaw:25%　组间/组内 = inf（描述性比值，组内 df=3；非 ANOVA F 值）
+== ④ 判卷口径差（同证据 dual vs scripted）与环境噪声（invalid 率）==
+  20261011-102221-hermes       dual 40.0%　invalid 0/10
+  20261011-130417-hermes       dual 40.0%　invalid 0/10
+  20261011-144945-kylinbot     dual 20.0%　invalid 0/10
+  20261011-164015-kylinbot     dual 30.0%　invalid 0/10
+  20261011-182539-openclaw     dual 40.0%　invalid 0/10
+  20261011-201110-openclaw     dual 40.0%　invalid 0/10
+== ⑤ 功效声明（需要几轮才能把两家分开）==
+  hermes vs kylinbot: 差距 15.0%，σ 0.0%/7.1% → 需 ≈2 轮
+  hermes vs openclaw: 均值无差距
+  kylinbot vs openclaw: 差距 15.0%，σ 7.1%/0.0% → 需 ≈2 轮
+（口径：score 探测、轮级总分、双侧 α=0.05、power 80%；轮数为基于小样本观测方差的近似估计；②未校正重复题相关性，以 ②b 按 case 聚类的净方向检验为稳健口径）

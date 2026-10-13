@@ -1,0 +1,14 @@
+[
+  {
+    "route": "retry",
+    "error": "ReadError: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] sslv3 alert bad record mac (_ssl.c:2580)"
+  },
+  {
+    "route": "alternate-proxy",
+    "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "route": "official-api",
+    "error": "ReadError: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] sslv3 alert bad record mac (_ssl.c:2580)"
+  }
+]

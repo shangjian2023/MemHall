@@ -347,6 +347,17 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
           <button class="act" id="btnStart">开始评测</button>
           <button class="ghostbtn" id="btnStop" disabled>停止</button>
         </div>
+        <details style="margin:12px 0"><summary>固定试卷：抽题、导入与导出</summary>
+          <p style="font-size:12px;color:var(--sub)">先生成一份试卷，再让各智能体使用同一份试卷。试卷包含完整题目，可以导入到另一台机器。</p>
+          <div class="formrow">
+            <div class="field"><label>抽取题数</label><input id="fPaperCount" type="number" min="6" value="24"></div>
+            <div class="field"><label>随机种子</label><input id="fPaperSeed" type="number" value="20261013"></div>
+            <button class="ghostbtn" id="btnPaperCreate">从所选题库生成</button>
+            <label class="ghostbtn">导入试卷<input id="fPaperImport" type="file" accept=".json" style="display:none"></label>
+            <a class="ghostbtn" id="btnPaperExport" style="display:none" download>导出所选试卷</a>
+          </div>
+          <div id="paperStatus" style="font-size:12px;margin-top:8px"></div>
+        </details>
         <div class="progress-wrap">
           <div class="progress-meta"><span id="progLabel">待命</span><span id="progCount"></span></div>
           <div class="progress"><i id="progBar"></i></div>
@@ -423,7 +434,7 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
             <img id="rdPCs" alt="逐用例计分通过率由低到高——哪几道题最不会">
           </figure>
         </div>
-        <h2.sec>判定明细</h2.sec>
+        <h2.sec>判定明细（含诊断探测）</h2.sec>
         <div id="reviewBar" style="display:none;margin:0 0 12px;padding:10px 14px;border:1px solid #e8b31a66;border-radius:10px;background:#e8b31a14;cursor:pointer" onclick="openReview()">
           <span style="font-weight:600;color:#b8860b">⚖ 人工复核</span>
           <span id="reviewCount" style="margin-left:8px;color:var(--sub)"></span>
@@ -431,7 +442,7 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
         </div>
         <div class="chips" id="vChips"></div>
         <table class="verdict-table"><thead><tr>
-          <th>探测点</th><th>用例</th><th>判定</th><th>判卷</th><th>说明</th></tr></thead>
+          <th>探测点</th><th>用例</th><th>判定</th><th>用途</th><th>判卷</th><th>说明</th></tr></thead>
           <tbody id="vBody"></tbody></table>
       </div>
     </section>
@@ -767,6 +778,13 @@ async function loadCaseDirs(){
   try{const d=await api("/api/case-dirs");
     $("#fCases").innerHTML=d.sets.map(x=>`<option value="${esc(x.id)}">${esc(x.label)}</option>`).join("");
     CASE_HINTS=Object.fromEntries(d.sets.map(x=>[x.id,x.hint||""]));
+    const ps=await api("/api/papers");
+    for(const p of ps.papers){
+      const id="paper:"+p.paper_id;
+      const label="固定试卷 · "+p.n_cases+" 题 · "+p.paper_id.slice(0,12);
+      $("#fCases").insertAdjacentHTML("beforeend",`<option value="${esc(id)}">${esc(label)}</option>`);
+      CASE_HINTS[id]=p.suite.suite_id+" · seed "+p.sampling.seed+" · 各智能体使用相同题目";
+    }
   }catch(e){$("#fCases").innerHTML='<option value="cases/full">cases/full</option>';}
   updCaseHint();
 }
@@ -774,7 +792,29 @@ function updCaseHint(){
   const h=$("#fCasesHint");if(!h)return;
   h.textContent=CASE_HINTS[$("#fCases").value]||"";
   h.style.display=h.textContent?"":"none";
+  const value=$("#fCases").value, link=$("#btnPaperExport");
+  if(link){link.style.display=value.startsWith("paper:")?"":"none";
+    if(value.startsWith("paper:"))link.href="/api/papers/"+value.slice(6);}
+
 }
+async function savePaper(body){
+  try{
+    const p=await api("/api/papers",{method:"POST",body:JSON.stringify(body)});
+    await loadCaseDirs();$("#fCases").value="paper:"+p.paper_id;updCaseHint();
+    $("#paperStatus").textContent="已封存 "+p.n_cases+" 题；题单 ID："+p.paper_id;
+  }catch(e){$("#paperStatus").textContent="试卷处理失败："+e.message;}
+}
+$("#btnPaperCreate").addEventListener("click",()=>{
+  const cases=$("#fCases").value;
+  if(cases.startsWith("paper:")){toast("请先选择一个题库");return;}
+  savePaper({cases,count:Number($("#fPaperCount").value),seed:Number($("#fPaperSeed").value)});
+});
+$("#fPaperImport").addEventListener("change",async(ev)=>{
+  const file=ev.target.files[0];if(!file)return;
+  try{await savePaper({paper:JSON.parse(await file.text())});}
+  catch(e){$("#paperStatus").textContent="JSON 解析失败："+e.message;}
+  ev.target.value="";
+});
 async function loadAdapters(){
   /* 下拉只列真实可跑的：本机检出 / 评测机（VM）内检出 / mock——未检出的
      不进名单（谁没装、什么原因，体检页有完整清单）。label 口径随部署形态：
@@ -825,7 +865,7 @@ function fmtDur(ms){const s=Math.round(ms/1000);return s<60?s+" 秒":Math.floor(
 function confirmRun(body){
   return new Promise(async(res)=>{
     let e=null;
-    try{e=await api("/api/estimate?adapter="+encodeURIComponent(body.adapter)+"&cases="+encodeURIComponent(body.cases));}catch(_){}
+    try{e=await api("/api/estimate?adapter="+encodeURIComponent(body.adapter)+"&cases="+encodeURIComponent(body.cases||"cases/full")+(body.paper?"&paper="+encodeURIComponent(body.paper):""));}catch(_){}
     const wrap=$("#costModal"),ok=$("#cmOk"),cancel=$("#cmCancel");
     const sub=$("#cmSub"),cost=$("#cmCost"),meta=$("#cmMeta");
     if(e&&e.available){
@@ -854,6 +894,7 @@ function confirmRun(body){
 $("#btnStart").addEventListener("click",async()=>{
   const gwModel=modelLaneOK($("#fAdapter").value)?($("#fModel").value||""):"";
   const body={adapter:$("#fAdapter").value,cases:$("#fCases").value,judge:$("#fJudge").value,model:gwModel};
+  if(body.cases.startsWith("paper:")){body.paper=body.cases.slice(6);delete body.cases;}
   if(!(await confirmRun(body)))return;
   try{await api("/api/start",{method:"POST",body:JSON.stringify(body)})}
   catch(e){
@@ -897,7 +938,7 @@ $("#btnStart").addEventListener("click",async()=>{
     else if(m.type==="phase"){logLine("lv-phase",m.msg);}
     else if(m.type==="done"){
       pendingRunId=m.run_id;
-      logLine("lv-done",`完成：总体正确率 ${pct(m.score)}（有效 ${m.n_valid}/${m.n_total}）`);
+      logLine("lv-done",`完成：总体正确率 ${pct(m.score)}（有效计分 ${m.n_valid}/${m.n_total}）`);
       if(G){G.to("#progBar",{width:"100%",duration:.55,ease:"power3.out"});}else{$("#progBar").style.width="100%"}
       $("#progLabel").textContent="评测完成";
       showResult(m);finishRun();
@@ -914,7 +955,7 @@ function finishRun(){$("#btnStart").disabled=false;$("#btnStop").disabled=true;
   if(es){es.close();es=null;}}
 function showResult(m){
   const rc=$("#resultCard");rc.style.display="block";
-  $("#resValid").textContent=`有效 ${m.n_valid} / ${m.n_total} 探测点`;
+  $("#resValid").textContent=`有效计分 ${m.n_valid} / ${m.n_total} 探测点`;
   countUp($("#resScore"),m.score,v=>pct(v));
   animBars($("#resCaps"),m.caps);
   if(G){G.fromTo(rc,{y:16,opacity:0},{y:0,opacity:1,duration:.45,ease:"power2.out"});
@@ -930,7 +971,7 @@ async function loadRuns(){
     const d=await api("/api/runs");
     if(!d.runs.length){list.innerHTML='<div class="empty">还没有运行记录——去「评测」页跑一轮。</div>';return}
     list.innerHTML=`<table class="runs-table"><thead><tr>
-      <th style="width:34px"></th><th>run_id</th><th>适配器</th><th>总体</th><th>有效</th></tr></thead>
+      <th style="width:34px"></th><th>run_id</th><th>适配器</th><th>总体</th><th>有效计分</th></tr></thead>
       <tbody>${d.runs.map(r=>`
         <tr class="row" data-id="${esc(r.run_id)}" data-adapter="${esc(r.adapter)}">
           <td><input type="checkbox" class="cmpck" data-id="${esc(r.run_id)}" data-adapter="${esc(r.adapter)}"
@@ -1033,6 +1074,7 @@ function renderVerdicts(vs){
       <td class="mono" style="font-size:12px">${esc(v.probe_id)}</td>
       <td style="font-size:12.5px">${esc(v.case_id||"")}</td>
       <td><span class="pill ${cls}">${label}</span></td>
+      <td style="font-size:12px;color:var(--sub)">${v.role==="score"?"计分":v.role==="diagnostic"?"诊断":"未标注"}</td>
       <td style="font-size:12px;color:var(--sub)">${esc(v.decided_by||"")}</td>
       <td class="exp" style="font-size:12.5px">${esc((v.explanation||"").slice(0,120))}</td></tr>`;}).join("");
   $$("#vBody tr.vrow").forEach(tr=>tr.addEventListener("click",()=>{

@@ -1,0 +1,3 @@
+paramiko 5.0.0
+pytest present False
+SSH/local adapter import OK

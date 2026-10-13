@@ -17,34 +17,29 @@ openKylin 侧：npm 装 claude-code 后同一套代码可用，
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
-import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from memhall.adapters.base import NO_WINDOW, AdapterError, AgentAdapter, AgentUnavailable
-from memhall.schema.evidence import ActionDump, MemoryEntry, MemorySnapshot, Reply
-
-_SEND_MIN_INTERVAL = float(os.environ.get("CLAUDE_SEND_INTERVAL", "2"))
-_send_lock = threading.Lock()
-_last_send = 0.0
-
-
-def _send_throttle() -> None:
-    global _last_send
-    with _send_lock:
-        wait = _SEND_MIN_INTERVAL - (time.monotonic() - _last_send)
-        if wait > 0:
-            time.sleep(wait)
-        _last_send = time.monotonic()
+from memhall.adapters.base import (
+    NO_WINDOW,
+    SEND_TIMEOUT_S,
+    AgentAdapter,
+    AgentUnavailable,
+    workspace_fs_snapshot,
+)
+from memhall.schema.evidence import MemoryEntry, MemorySnapshot, Reply
 
 
 class LocalClaudeAdapter(AgentAdapter):
     """被测智能体 Claude Code（本机安装，CLAUDE_CONFIG_DIR 沙箱隔离）。"""
 
     name = "claude-local"
+    send_interval_env = "CLAUDE_SEND_INTERVAL"
+    send_interval_default = 2.0
 
     def __init__(self, root: Path | None = None):
         self.root = root or Path.home() / ".memhall" / "claude-sandbox"
@@ -120,7 +115,7 @@ class LocalClaudeAdapter(AgentAdapter):
         self.workspace.mkdir(parents=True, exist_ok=True)
 
     def send(self, session_id: str, message: str) -> Reply:
-        _send_throttle()
+        self._send_throttle()
         sent = datetime.now(UTC)
         t0 = time.time()
         try:
@@ -129,7 +124,7 @@ class LocalClaudeAdapter(AgentAdapter):
                  "--output-format", "text", "--permission-mode", "acceptEdits"],
                 capture_output=True, encoding="utf-8", errors="replace",
                 cwd=str(self.workspace), env=self._sandbox_env(),
-                timeout=280, creationflags=NO_WINDOW)
+                timeout=SEND_TIMEOUT_S, creationflags=NO_WINDOW)
         except subprocess.TimeoutExpired as e:
             raise AgentUnavailable(f"claude 超时: {e}") from e
         text = (r.stdout or "").strip()
@@ -167,7 +162,9 @@ class LocalClaudeAdapter(AgentAdapter):
         for f in sources:
             rel = f.relative_to(self.root).as_posix()
             for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
-                s = line.strip().lstrip("-* ").strip()
+                # R58 对齐 hermes.py：只剥"- "/"* "形态的列表标记，不再
+                # lstrip("-* ") 误伤"-3°C"类正文首字符
+                s = re.sub(r"^[-*]\s+", "", line.strip()).strip()
                 if not s or s.startswith("#"):
                     continue
                 if s in seen:  # MEMORY.md 索引行与主题文件正文会重复
@@ -180,25 +177,9 @@ class LocalClaudeAdapter(AgentAdapter):
                               dumped_at=datetime.now(UTC),
                               entries=entries, raw=None)
 
-    def dump_actions(self) -> ActionDump:
-        return ActionDump(actions=[], coverage="unknown")
+    def fs_fingerprints(self, paths: list[str]) -> dict[str, str] | None:
+        from memhall.adapters.fs_hashes import local_hashes
+        return local_hashes(paths, self.workspace)
 
     def fs_snapshot(self) -> list[str] | None:
-        """workspace 清单，路径归一 ~/ 前缀（R24：fs 断言写 ~/dev/src/demo，
-        相对路径永不匹配——workspace 就是本适配器的"用户区"）。"""
-        if not self.workspace.exists():
-            return None
-        out = []
-        for p in sorted(self.workspace.rglob("*")):
-            if (p.is_file()
-                    and not any(part.startswith(".") for part in p.parts)):
-                out.append("~/" + p.relative_to(self.workspace).as_posix())
-        return out
-
-    def clock_shift(self, days: int) -> None:
-        if days == 0:
-            return
-        raise AdapterError("本机不支持拨钟——temporal 用例请在 openKylin VM 评测")
-
-    def clock_restore(self) -> None:
-        pass
+        return workspace_fs_snapshot(self.workspace)

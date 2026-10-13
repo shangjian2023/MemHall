@@ -83,6 +83,15 @@ def test_dump_memory_reads_global_and_workspace_qwen_md(adapter):
     assert any("out/build" in c for c in contents)
 
 
+def test_dump_memory_keeps_leading_minus_content(adapter):
+    """R58：列表标记只剥"- "/"* "形态，"-3°C"类正文首字符不得误剥。"""
+    adapter.reset()
+    (adapter.workspace / "QWEN.md").write_text(
+        "- 最低运行温度 -3°C\n", encoding="utf-8")
+    contents = [e.content for e in adapter.dump_memory().entries]
+    assert "最低运行温度 -3°C" in contents
+
+
 def test_clock_shift_unsupported(adapter):
     with pytest.raises(AdapterError):
         adapter.clock_shift(3)

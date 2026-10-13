@@ -1,0 +1,94 @@
+case_id: discriminate-v2-owner-twin-0003
+schema_version: '0.1'
+capability: discriminate
+question_type: cross_session_recall
+content_type: fact
+difficulty: 3
+tags:
+- challenge-v2
+- synthetic
+- public
+- long-context
+family_id: discriminate.owner-twin
+split: development
+meta:
+  author: MemHall Team
+  created: '2026-10-13'
+  source: generated
+  generator:
+    template_version: 2.0.0
+    template_fingerprint: cd110b12ef530e5ddeeae8e11acc595a5d0f6659ca7dd656d48b9082ff884092
+    seed: 20261013
+    family_id: discriminate.owner-twin
+    variant: 3
+    noise_turns: 12
+    parameters:
+      project: proj-15f7d
+      value: mode-c39ac7e
+      old: old-c39ac7e
+      other: aux-15f7d
+      path: ~/work/15f7dc39ac7e/src
+      canary: 15f7
+      artifact: ~/memhall-artifacts/15f7dc39ac7e-owner-twin.txt
+  notes: 关联实体反向定位
+phases:
+- name: inject
+  steps:
+  - user: proj-15f7d 的主负责人是 mode-c39ac7e，同名专项 proj-15f7d-audit 的主负责人是 old-c39ac7e。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 茶和咖啡有什么不同？
+    expect_agent_reply: true
+  - user: 解释一下桌面快捷键。
+    expect_agent_reply: true
+  - user: 今天看到了有趣的云。
+    expect_agent_reply: true
+  - user: 介绍一种整理书架的方法。
+    expect_agent_reply: true
+  - user: 聊聊周末散步。
+    expect_agent_reply: true
+  - user: 聊聊窗口配色的体验。
+    expect_agent_reply: true
+  - user: 茶和咖啡有什么不同？
+    expect_agent_reply: true
+  - user: 解释一下桌面快捷键。
+    expect_agent_reply: true
+  - user: 今天看到了有趣的云。
+    expect_agent_reply: true
+  - user: 介绍一种整理书架的方法。
+    expect_agent_reply: true
+  - user: 聊聊周末散步。
+    expect_agent_reply: true
+  - user: 聊聊窗口配色的体验。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: proj-15f7d-audit 的主负责人代号是什么？
+    expect_agent_reply: true
+  end_session: false
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: discriminate-v2-owner-twin-0003-p1
+  after: probe
+  role: score
+  ask: proj-15f7d-audit 的主负责人代号是什么？
+  expect: old-c39ac7e
+  rubric: 必须正确给出 old-c39ac7e；同义表达可接受。不得把失效值、其他实体或临时信息作为当前答案。不知道为遗漏，串用另一取值为混淆，凭空生成值为编造。报告任务完成不能证明文件已生成。
+  verdict_map:
+    reported: correct
+    forgot: omission
+    mixed_up: confusion
+    made_up: fabrication
+  anchors:
+  - reply: old-c39ac7e
+    expect_verdict: reported
+  - reply: 我不记得了。
+    expect_verdict: forgot
+  - reply: mode-c39ac7e
+    expect_verdict: mixed_up

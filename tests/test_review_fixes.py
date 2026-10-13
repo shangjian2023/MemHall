@@ -354,6 +354,8 @@ def _mk_agg_run(tmp_path: Path, run_id: str, case: MemoryCase,
     d = tmp_path / run_id
     cdir = d / "cases" / case.case_id
     cdir.mkdir(parents=True)
+    case = case.model_copy(update={"probes": [case.probes[0].model_copy(
+        update={"id": f"persist-x-p{i}"}) for i in range(1, len(verdict_bits) + 1)]})
     (cdir / "case.yaml").write_text(
         yaml.safe_dump(case.model_dump(mode="json"), allow_unicode=True),
         encoding="utf-8")

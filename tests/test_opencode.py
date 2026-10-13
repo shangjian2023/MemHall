@@ -57,7 +57,7 @@ def test_fs_snapshot_skips_dotdirs(adapter):
     d = adapter.workspace / ".opencode"
     d.mkdir()
     (d / "db.json").write_text("{}", encoding="utf-8")
-    assert adapter.fs_snapshot() == ["README.md"]
+    assert adapter.fs_snapshot() == ["~/README.md"]
 
 
 def test_clock_shift_unsupported(adapter):

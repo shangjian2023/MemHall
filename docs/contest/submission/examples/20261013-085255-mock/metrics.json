@@ -1,0 +1,122 @@
+{
+  "n_probes_total": 14,
+  "n_score_probes": 9,
+  "n_diagnostic_probes": 5,
+  "n_valid": 9,
+  "n_invalid_run": 0,
+  "n_human_review": 0,
+  "n_degraded": 0,
+  "overall_score": 0.5556,
+  "overall_score_floor": null,
+  "overall_score_case_weighted": 0.6667,
+  "capability_scores": {
+    "persist": 1.0,
+    "recall": 1.0,
+    "dynamic_update": 0.0,
+    "discriminate": 0.5,
+    "boundary": 0.5,
+    "reuse": 1.0
+  },
+  "capability_detail": {
+    "persist": {
+      "label_zh": "长期保持",
+      "n_probes": 1,
+      "n_valid": 1,
+      "n_correct": 1,
+      "score": 1.0,
+      "error_breakdown": {},
+      "n_invalid_run": 0,
+      "n_human_review": 0
+    },
+    "recall": {
+      "label_zh": "记忆调用",
+      "n_probes": 1,
+      "n_valid": 1,
+      "n_correct": 1,
+      "score": 1.0,
+      "error_breakdown": {},
+      "n_invalid_run": 0,
+      "n_human_review": 0
+    },
+    "dynamic_update": {
+      "label_zh": "动态更新",
+      "n_probes": 2,
+      "n_valid": 2,
+      "n_correct": 0,
+      "score": 0.0,
+      "error_breakdown": {
+        "wrong_reuse": 1,
+        "omission": 1
+      },
+      "n_invalid_run": 0,
+      "n_human_review": 0
+    },
+    "discriminate": {
+      "label_zh": "相近区分",
+      "n_probes": 2,
+      "n_valid": 2,
+      "n_correct": 1,
+      "score": 0.5,
+      "error_breakdown": {
+        "confusion": 1
+      },
+      "n_invalid_run": 0,
+      "n_human_review": 0
+    },
+    "boundary": {
+      "label_zh": "边界识别",
+      "n_probes": 2,
+      "n_valid": 2,
+      "n_correct": 1,
+      "score": 0.5,
+      "error_breakdown": {
+        "over_persist": 1
+      },
+      "n_invalid_run": 0,
+      "n_human_review": 0
+    },
+    "reuse": {
+      "label_zh": "任务复用",
+      "n_probes": 1,
+      "n_valid": 1,
+      "n_correct": 1,
+      "score": 1.0,
+      "error_breakdown": {},
+      "n_invalid_run": 0,
+      "n_human_review": 0
+    }
+  },
+  "decided_by": {
+    "scripted": 7,
+    "rule": 7
+  },
+  "rule_scoring_rate": 0.5,
+  "write_hygiene": 0.5,
+  "stale_info_rate": 0.5,
+  "fault_localization": {
+    "summary": {
+      "ok": 3,
+      "stored_wrong": 1,
+      "not_stored": 1,
+      "over_persisted": 1
+    },
+    "summary_zh": {
+      "记住了（存取一致）": 3,
+      "存了但内容错（写入质量/检索串台）": 1,
+      "没存（写入故障）": 1,
+      "该删没删（边界失效）": 1
+    },
+    "per_case": {
+      "persist-002": "ok",
+      "recall-002": "ok",
+      "update-001": "stored_wrong",
+      "discriminate-001": "not_stored",
+      "boundary-001": "over_persisted",
+      "reuse-001": "ok"
+    },
+    "n_cases_without_storage_evidence": 0
+  },
+  "judge_agreement_rate": null,
+  "judge_cohens_kappa": null,
+  "human_review_rate": 0.0
+}

@@ -229,7 +229,7 @@ def _fault_localization(by_case_score: dict[str, list[Verdict]],
 def _agreement_rate(verdicts: list[Verdict]) -> float | None:
     """双判一致率：双评委原始票相同的比例（无 judge_meta/无双判时 None）。"""
     dual = [v.judge_meta for v in verdicts if v.judge_meta is not None]
-    bs = [m.judge_b for m in dual if m.judge_b is not None]
+    bs = [m.judge_b for m in dual if m.judge_b is not None and m.judge_b.model]
     if not bs:
         return None
     agreed = sum(1 for b in bs if b.agreed)

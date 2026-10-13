@@ -31,6 +31,8 @@ def test_default_reproduces_committed_archive(tmp_path):
     存档不因生成器升级漂移）。"""
     out = _gen(tmp_path, "--seed", "20260928")
     for f in (REPO / "cases" / "gen").glob("*.yaml"):
+        if f.name == "suite.yaml":
+            continue
         assert (_strip_created(f) == _strip_created(out / f.name)), \
             f"漂移: {f.name}"
 

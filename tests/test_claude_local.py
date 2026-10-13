@@ -105,6 +105,15 @@ def test_dump_memory_merges_auto_memory_and_project_claude_md(adapter):
     assert all(e.source_turn.endswith(".md") for e in snap.entries)
 
 
+def test_dump_memory_keeps_leading_minus_content(adapter):
+    """R58：列表标记只剥"- "/"* "形态，"-3°C"类正文首字符不得误剥。"""
+    adapter.workspace.mkdir(parents=True, exist_ok=True)
+    (adapter.workspace / "CLAUDE.md").write_text(
+        "- 最低运行温度 -3°C\n- 常用笔记在 ~/out/build\n", encoding="utf-8")
+    contents = [e.content for e in adapter.dump_memory().entries]
+    assert "最低运行温度 -3°C" in contents
+
+
 def test_clock_shift_unsupported(adapter):
     with pytest.raises(AdapterError):
         adapter.clock_shift(3)

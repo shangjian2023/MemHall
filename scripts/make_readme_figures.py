@@ -72,15 +72,6 @@ def build_caliber(mod) -> tuple[str, str]:
                f"（2026-{date_str}）")
     return ver_str, caliber
 
-# stats_uncertainty.py 2026-10-12 n=4 输出（同源可复算）
-AGREE = {"hermes": 75.3, "kylinbot": 73.8, "openclaw": 87.5}   # 六态一致率均值 %
-FLIP = {"hermes": 22, "kylinbot": 22, "openclaw": 9}           # 对错翻转均值 %
-PAIRS = [  # (对比, p, 显著?)
-    ("Hermes  vs  KylinBot", 0.000, True),
-    ("Hermes  vs  OpenClaw", 0.856, False),
-    ("KylinBot  vs  OpenClaw", 0.003, True),
-]
-
 
 def _setup_font() -> None:
     available = {f.name for f in font_manager.fontManager.ttflist}
@@ -98,10 +89,6 @@ def _publication(ax: plt.Axes) -> None:
     ax.tick_params(direction="out", length=3, width=0.8)
     for spine in ax.spines.values():
         spine.set_linewidth(0.8)
-
-
-def _stars(p: float) -> str:
-    return "**" if p <= 0.01 else ("*" if p <= 0.05 else "ns")
 
 
 def _stats_module():
@@ -177,60 +164,81 @@ def fig1_six_dim_bars(caps: dict[str, dict[str, dict]], ver_str: str,
     plt.close(fig)
 
 
-def fig2_uncertainty() -> None:
+def fig2_uncertainty(mod) -> None:
     """测量可信度面板：(a) 同探测点两轮一致率 (b) 配对符号检验显著性。"""
     _setup_font()
     fig, (ax1, ax2) = plt.subplots(
         1, 2, figsize=(9.6, 3.1), gridspec_kw={"width_ratios": [1, 1.15]})
 
+    # 从运行快照的计分探测实时重算，避免图表的硬编码统计与正文漂移。
+    vd = {a: [mod.load_verdicts(RUNS / rid / "verdicts.jsonl")
+              for rid in mod.AGENTS[a]] for a in AGENTS}
+    agree, flip = {}, {}
+    for a, rounds in vd.items():
+        common = set.intersection(*(set(r) for r in rounds))
+        agreements, flips = [], []
+        for i in range(len(rounds)):
+            for j in range(i + 1, len(rounds)):
+                agreements.append(sum(rounds[i][p] == rounds[j][p] for p in common) / len(common))
+                binary_pairs = [(mod.binary(rounds[i][p]), mod.binary(rounds[j][p])) for p in common]
+                valid = [(x, y) for x, y in binary_pairs if x is not None and y is not None]
+                flips.append(sum(x != y for x, y in valid) / len(valid))
+        agree[a] = 100 * sum(agreements) / len(agreements)
+        flip[a] = 100 * sum(flips) / len(flips)
+    pairs = []
+    for a, b in [("hermes", "kylinbot"), ("hermes", "openclaw"), ("kylinbot", "openclaw")]:
+        to_a = to_b = 0
+        for ra, rb in zip(vd[a], vd[b], strict=True):
+            for probe in set(ra) & set(rb):
+                x, y = mod.binary(ra[probe]), mod.binary(rb[probe])
+                if x is None or y is None or x == y:
+                    continue
+                to_a += int(x)
+                to_b += int(y)
+        pairs.append((f"{AGENT_LABEL[a]}  vs  {AGENT_LABEL[b]}", mod.sign_p(to_a + to_b, to_b)))
+
     # (a) 一致率横向条 + 翻转率注记
     ys = np.arange(len(AGENTS))[::-1]
-    vals = [AGREE[a] for a in AGENTS]
+    vals = [agree[a] for a in AGENTS]
     ax1.barh(ys, vals, height=0.58, color=[COLOR[a] for a in AGENTS],
              alpha=0.88, zorder=2)
     for y, a, v in zip(ys, AGENTS, vals, strict=True):
         ax1.text(v + 1.5, y, f"{v:.0f}%", va="center", fontsize=10,
                  fontweight="bold", color="#222222")
-        ax1.text(2, y, f"对错翻转 {FLIP[a]}%", va="center", ha="left",
+        ax1.text(2, y, f"对错翻转 {flip[a]:.0f}%", va="center", ha="left",
                  fontsize=8.5, color="white", zorder=6)
     ax1.set_yticks(ys)
     ax1.set_yticklabels([AGENT_LABEL[a] for a in AGENTS], fontsize=10)
     ax1.set_xlim(0, 100)
-    ax1.set_xlabel("同探测点两轮六态一致率（%）")
+    ax1.set_xlabel("四轮两两六态一致率均值（%）")
     ax1.xaxis.grid(True, color="0.88", linewidth=0.7, zorder=0)
     ax1.set_axisbelow(True)
-    ax1.set_title("(a) 系统内稳定性（n=87 探测点 × 4 轮两两）",
+    ax1.set_title("(a) 计分探测稳定性（66 点 × 4 轮）",
                   fontsize=10.5, loc="left", pad=8)
     _publication(ax1)
     ax1.spines["left"].set_visible(False)
     ax1.tick_params(left=False)
 
     # (b) 配对符号检验：三对比较，p 值点在 log 轴上，注释列放右侧固定位置
-    ax2.set_title("(b) 排名主张的显著性（配对符号检验）",
+    ax2.set_title("(b) 探索性配对票（未校正同题相关）",
                   fontsize=10.5, loc="left", pad=8)
-    for i, (_label, p, sig) in enumerate(PAIRS):
-        y = len(PAIRS) - 1 - i
-        color = "#0072B2" if sig else NS_GRAY
-        marker = "*" if sig else "o"
-        size = 150 if sig else 46
-        ax2.scatter(p, y, s=size, color=color, zorder=3, marker=marker,
-                    linewidth=0.6)
-        star = _stars(p)
-        p_txt = f"p = {p:.3f}" if p < 1 else "p = 1.000"
-        note = f"{p_txt}  {star if star != 'ns' else 'ns · 并列'}"
-        ax2.text(2.6, y, note, fontsize=9.5, ha="left", va="center",
-                 color=color, clip_on=False)
+    for i, (_label, p) in enumerate(pairs):
+        y = len(pairs) - 1 - i
+        color = "#0072B2"
+        ax2.scatter(max(p, 0.0006), y, s=46, color=color, zorder=3, marker="o", linewidth=0.6)
+        p_txt = f"p = {p:.3f}" if p >= 0.001 else "p < 0.001"
+        ax2.text(2.6, y, p_txt, fontsize=9.5, ha="left", va="center", color=color, clip_on=False)
     ax2.set_xscale("log")
     ax2.set_xlim(0.0006, 1.18)
     ax2.set_xticks([0.001, 0.01, 0.05, 0.5, 1.0])
     ax2.set_xticklabels(["0.001", "0.01", "0.05", "0.5", "1.0"], fontsize=8.5)
-    ax2.set_yticks(range(len(PAIRS)))
-    ax2.set_yticklabels([p[0] for p in reversed(PAIRS)], fontsize=9.5)
+    ax2.set_yticks(range(len(pairs)))
+    ax2.set_yticklabels([p[0] for p in reversed(pairs)], fontsize=9.5)
     ax2.axvline(0.05, color="#D55E00", linewidth=0.9, linestyle=(0, (4, 3)),
                 alpha=0.7, zorder=2)
-    ax2.text(0.05, len(PAIRS) - 0.42, "α=0.05", fontsize=8, color="#D55E00",
+    ax2.text(0.05, len(pairs) - 0.42, "α=0.05", fontsize=8, color="#D55E00",
              ha="center", va="bottom")
-    ax2.set_ylim(-0.55, len(PAIRS) - 0.05)
+    ax2.set_ylim(-0.55, len(pairs) - 0.05)
     _publication(ax2)
     ax2.spines["left"].set_visible(False)
     ax2.tick_params(left=False)
@@ -313,7 +321,7 @@ def fig3_pipeline_svg() -> None:
     parts.append('<text x="40" y="100" font-family="' + FONT + '" '
                  'font-size="9.5" fill="#34d399">评测器 · 宿主</text>')
     parts.append(_box(44, 114, 290, 64, *C["eval"], "剧本引擎",
-                      "教 teach → 隔 confound → 考 probe（47 题三阶段剧本）"))
+                      "教 teach → 隔 confound → 考 probe（49 题三阶段剧本）"))
     parts.append(_box(44, 196, 290, 56, *C["eval"], "运行编排",
                       "SSH 车道 · 断线重连 · run.lock 互斥 · 成本预估"))
     parts.append(_box(44, 270, 138, 56, *C["eval"], "verify",
@@ -357,7 +365,7 @@ def fig3_pipeline_svg() -> None:
                  'stroke-dasharray="8,4" opacity="0.55"/>')
     parts.append('<text x="776" y="278" font-family="' + FONT + '" '
                  'font-size="9.5" fill="#fb7185">判卷（契约 03 v0.2.1）</text>')
-    parts.append(_box(780, 292, 176, 52, *C["judge"], "双 LLM 判卷",
+    parts.append(_box(780, 292, 176, 52, *C["judge"], "LLM 判卷（B 可选）",
                       "A/B 轮值仲裁 · kappa 复核"))
     parts.append(_box(972, 292, 168, 52, *C["judge"], "锚例 + 诱饵",
                       "188 诱饵 100% 拒收"))
@@ -491,7 +499,7 @@ def fig5_dual_vs_scripted(mod) -> None:
         Line2D([], [], marker="o", ls="", markerfacecolor="white",
                markeredgecolor="#666666", markersize=7, label="脚本判卷"),
         Line2D([], [], marker="o", ls="", color="#0072B2", markersize=7,
-               label="双 LLM 判卷"),
+               label="LLM 判卷（B 可选）"),
     ]
     ax.legend(handles=handles, frameon=False, loc="lower right", fontsize=9)
     ax.set_title("同一批证据，两种判卷口径", fontsize=10.5, loc="left", pad=8)
@@ -507,19 +515,19 @@ def fig5_dual_vs_scripted(mod) -> None:
 def fig6_separation(mod) -> None:
     """图 6：维度区分度棒棒糖（组间/组内方差比，n=4/组）。
 
-    比值 <1 = 轮间方差盖过智能体间差异，该维不构成区分；
-    ≥1 才是"这个维真的在分开不同系统"。
+    描述性呈现智能体均值差与同智能体轮间波动，不能当作显著性检验。
     """
     _setup_font()
     vd = {a: [mod.load_verdicts(RUNS / rid / "verdicts.jsonl")
               for rid in rids] for a, rids in mod.AGENTS.items()}
     rows = []
-    for fam, cap in mod.FAMILY_CAP.items():
+    probe_caps = mod.load_probe_capabilities(RUNS / mod.AGENTS[AGENTS[0]][0])
+    for cap in CAP_ORDER:
         per_agent: dict[str, list[float]] = {}
         for a in vd:
             scores = []
             for r in vd[a]:
-                ps = [p for p in r if p.split("-")[0] == fam]
+                ps = [p for p in r if probe_caps.get(p) == cap]
                 vals = [mod.binary(r[p]) for p in ps]
                 valid = [x for x in vals if x is not None]
                 scores.append(sum(valid) / len(valid) if valid else float("nan"))
@@ -534,7 +542,7 @@ def fig6_separation(mod) -> None:
         within = sum(sum((x - sum(v) / len(v)) ** 2 for x in v) / (len(v) - 1)
                      for v in per_agent.values()) / len(per_agent)
         ratio = between / within if within > 0 else float("inf")
-        rows.append((f"{mod.CAP_ZH[cap]} · {fam}", ratio))
+        rows.append((mod.CAP_ZH[cap], ratio))
 
     fig, ax = plt.subplots(figsize=(6.8, 3.4))
     ys = np.arange(len(rows))[::-1]
@@ -546,7 +554,7 @@ def fig6_separation(mod) -> None:
                 va="center", color=color)
     ax.axvline(1.0, color="#D55E00", linewidth=0.9, linestyle=(0, (4, 3)),
                alpha=0.8)
-    ax.text(1.0, len(rows) - 0.28, " n=4 可区分阈值", fontsize=8,
+    ax.text(1.0, len(rows) - 0.28, " 方差比=1", fontsize=8,
             color="#D55E00", va="bottom")
     ax.set_yticks(ys)
     ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
@@ -557,7 +565,7 @@ def fig6_separation(mod) -> None:
     ax.set_xlabel("维度区分度 = 组间方差（智能体间）/ 组内方差（同智能体轮间）")
     ax.xaxis.grid(True, color="0.9", linewidth=0.7, zorder=0)
     ax.set_axisbelow(True)
-    ax.set_title("哪些维在 n=4 下真的分开了系统（灰=尚不区分）",
+    ax.set_title("六维组间 / 组内方差比（描述性，n=4）",
                  fontsize=10.5, loc="left", pad=8)
     _publication(ax)
     ax.spines["left"].set_visible(False)
@@ -592,7 +600,7 @@ def main() -> int:
     fig0_final_radar(ver_str, caliber)
     caps = load_caps()
     fig1_six_dim_bars(caps, ver_str, caliber)
-    fig2_uncertainty()
+    fig2_uncertainty(mod)
     fig3_pipeline_svg()
     fig4_verdict_mix(mod, caliber)
     fig5_dual_vs_scripted(mod)

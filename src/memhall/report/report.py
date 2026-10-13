@@ -64,9 +64,9 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
             extra.append(f"按用例等权 {cw:.1%}")
         lines.append(f"  （{'，'.join(extra)}，规则判卷率 {metrics['rule_scoring_rate']:.0%}）")
     if metrics.get("n_human_review"):
-        dual = (manifest.get("judge") or {}).get("mode") == "dual"
-        hint = ("dual 仲裁后仍未决，转人工复核" if dual
-                else "脚本判卷天花板，正式口径建议 `--judge dual` 收尾")
+        dual = bool((manifest.get("judge") or {}).get("model_b"))
+        hint = ("双评委仲裁后仍未决，转人工复核" if dual
+                else "当前判卷未决，转人工复核；双评委需实际配置评委 B")
         lines.append(f"- ⚠️ 判卷未决 {metrics['n_human_review']} 个已剔出分母——{hint}")
     if metrics.get("n_degraded"):
         lines.append(f"- ⚠️ 判卷降级 {metrics['n_degraded']} 个（judge 故障窗口脚本兜底）"
@@ -80,13 +80,15 @@ def render_report(run_dir: Path, run_id: str, manifest: dict,
     jm = manifest.get("judge", {})
     if jm:
         model = f"（{jm.get('model_a', '')}）" if jm.get("model_a") else ""
-        line = (f"- 判卷口径：{jm.get('mode', '?')}{model}"
+        actual_mode = ("双 LLM 评委" if jm.get("model_b") else "单 LLM 评委（B 未配置）") \
+            if jm.get("mode") == "dual" else jm.get("mode", "?")
+        line = (f"- 判卷口径：{actual_mode}{model}"
                 f" · 提示词版本 {jm.get('prompt_version', '?')}")
         ar = metrics.get("judge_agreement_rate")
         kp = metrics.get("judge_cohens_kappa")
-        if ar is not None:
+        if ar is not None and jm.get("model_b"):
             line += f" · 双评委一致率 {ar:.1%}"
-        if kp is not None:
+        if kp is not None and jm.get("model_b"):
             line += f" · Cohen's Kappa {kp:.2f}"
         lines.append(line)
     lines.append("")

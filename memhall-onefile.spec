@@ -15,8 +15,11 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=[],
     datas=[
+        (str(ROOT / "cases" / "suite.yaml"), "cases"),
+        (str(ROOT / "src" / "memhall" / "data"), "memhall/data"),
         (str(ROOT / "src" / "memhall" / "ui" / "static"), "memhall/ui/static"),
-        (str(ROOT / "cases"), "cases"),
+        *[(str(ROOT / "cases" / name), f"cases/{name}")
+          for name in ("full", "gen", "chains", "challenge-v2", "development-v2")],
     ],
     hiddenimports=[
         # 适配器注册表 / vm、systest 子命令都是运行时 import_module（lazy），

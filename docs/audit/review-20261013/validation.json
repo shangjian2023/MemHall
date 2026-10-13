@@ -1,0 +1,159 @@
+{
+  "date": "2026-10-13T09:59:32.842021+00:00",
+  "baseline_commit": "33272aeb5fecc640574748e179f4b291ad58db8b",
+  "checks": {
+    "ruff": {
+      "command": [
+        "D:\\openkylins\\.venv\\Scripts\\python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "returncode": 0,
+      "log": "check-ruff.txt"
+    },
+    "mypy": {
+      "command": [
+        "D:\\openkylins\\.venv\\Scripts\\python.exe",
+        "-m",
+        "mypy"
+      ],
+      "returncode": 0,
+      "log": "check-mypy.txt"
+    },
+    "case_lint": {
+      "command": [
+        "D:\\openkylins\\.venv\\Scripts\\python.exe",
+        "scripts/lint_cases.py"
+      ],
+      "returncode": 0,
+      "log": "check-case_lint.txt"
+    },
+    "judge_offline": {
+      "command": [
+        "D:\\openkylins\\.venv\\Scripts\\python.exe",
+        "scripts/judge_selftest.py",
+        "--offline"
+      ],
+      "returncode": 0,
+      "log": "check-judge_offline.txt"
+    },
+    "lock_check": {
+      "command": [
+        "D:\\hermes\\bin\\uv.exe",
+        "lock",
+        "--check",
+        "--offline"
+      ],
+      "returncode": 0,
+      "log": "check-lock_check.txt"
+    },
+    "deb_shell_syntax": {
+      "command": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "-n",
+        "scripts/build_deb_vm.sh"
+      ],
+      "returncode": 0,
+      "log": "check-deb_shell_syntax.txt"
+    },
+    "exe_shell_syntax": {
+      "command": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "-n",
+        "scripts/build_exe.sh"
+      ],
+      "returncode": 0,
+      "log": "check-exe_shell_syntax.txt"
+    },
+    "runtime_dependencies": {
+      "command": [
+        "D:\\hermes\\bin\\uv.exe",
+        "pip",
+        "check",
+        "--python",
+        "D:\\openkylins\\build\\audit-runtime\\Scripts\\python.exe"
+      ],
+      "returncode": 0,
+      "log": "check-runtime_dependencies.txt"
+    },
+    "runtime_mock_verify": {
+      "command": [
+        "D:\\openkylins\\build\\audit-runtime\\Scripts\\memhall.exe",
+        "verify",
+        "build/audit-runtime-runs/20261013-094446-mock"
+      ],
+      "returncode": 0,
+      "log": "check-runtime_mock_verify.txt"
+    },
+    "public_example_verify": {
+      "command": [
+        "D:\\openkylins\\.venv\\Scripts\\memhall.exe",
+        "verify",
+        "docs/contest/submission/examples/20261013-085255-mock"
+      ],
+      "returncode": 0,
+      "log": "check-public_example_verify.txt"
+    },
+    "git_diff_check": {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "returncode": 0,
+      "log": "check-git_diff_check.txt"
+    },
+    "runtime_import": {
+      "returncode": 0,
+      "no_dev_packages": true,
+      "log": "check-runtime-import.txt"
+    },
+    "frozen_wheels_match": {
+      "returncode": 0,
+      "matches_locked_runtime_export": true
+    },
+    "pytest": {
+      "command": [
+        "D:\\openkylins\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "returncode": 0,
+      "passed": 215,
+      "warnings": 2,
+      "duration_seconds": 60.42,
+      "terminal_session": 36943,
+      "log": "check-pytest-final.txt"
+    }
+  },
+  "all_checks_passed": true,
+  "source_fingerprints": {
+    ".github/workflows/ci.yml": "0b9745d30e5e306d839f8a6c942309813b16a6ae4a840f71ae82a8639f302de6",
+    "CHANGELOG.md": "70e5959f7890a0e83ec2e555e1842ef78c33b6417df52341675c233afa7197b7",
+    "README.md": "6d69a86ac7960718758eb2f1eefec641642cc3dd8c1b68e202de508bf145e6be",
+    "docs/dataset-card.md": "feaf4c8bc7b384f4f96673a111802a8fe2790b7ad3b70b3fb9b7cb7e56ce1801",
+    "docs/demo-script.md": "3f15486006942065d0c13ad47b7b5fa39bcb50ea3b7abcf1cd0ed5d9d20dc8d2",
+    "memhall-onefile.spec": "8805c80561f114e3fdf5062aea8ba919a226c3445906a2b68179550c06637ab1",
+    "packaging/deb-wheels.txt": "5d84e47fa63f0c7766ce8006181395f058b0247b32846bf3954b512c1764e666",
+    "pyproject.toml": "15749b144a7de728676c1d39fd2103f4cf4113062c20e274789d06da2c465c1d",
+    "scripts/build_deb_vm.sh": "ad7ea245e97002f7bfa57f452536114a9150fee7c2b54259011bbaa136d71ce8",
+    "scripts/build_exe.sh": "b3c9a4e01e27cd9b4c94d6c315f2199a9f304a5666826f6198e7d9debc912380",
+    "scripts/build_submission_doc.py": "4541c72fffd9d5b1bc2429756b432b838d341f00dcb452b47db43788b7a9b16c",
+    "scripts/make_readme_figures.py": "872d1f45642edea2cd3509acc248442d75356d91746ba1edd32090d3b0a21e18",
+    "scripts/stats_uncertainty.py": "90911d856412dfaeb25166d58d86a76e8339bb358b96f1169a8bd128313a2adc",
+    "src/memhall/adapters/remote.py": "be8c8ecf9b3ff2cd71b353644e4f83bb766cf1e0caad9d8cecaed9c9643fb133",
+    "src/memhall/report/metrics.py": "65dbd7a7c1bea6bc112e9ad22bb95ab8efcba73665224f2f3695d2e5dca20991",
+    "src/memhall/report/report.py": "89240201a95bb0b3b78d63ee81407177bba9bf99d45c7fc3aa7febcbcfe58314",
+    "src/memhall/ui/app.py": "a0815461177a0da76c1e0013da1d0ba54ce3f5e53d6aa836787e5ab549fdc4d9",
+    "src/memhall/ui/static/index.html": "e9c1be0f57e8ae6c1cfd8b976fb388d25f2ef2b59e58dee76b77e36bff14b61b",
+    "team-plan.md": "01ba6adbfc60afe3ba9b1877a2823e63f707cab294504cfdd067742a3e64e076",
+    "tests/test_submission_audit.py": "22d46a56666d7ea4ceb8355ff7019ddf77f4f0aed120dab5f2e565847e82fd80",
+    "uv.lock": "07d5f23a5d7a3aac336616dcc4210dbd247a226b9ff6a556bf8ebf042f2dd38b"
+  },
+  "real_paid_model_rerun": false,
+  "system_events_rerun": false,
+  "binary_rebuild": false
+}

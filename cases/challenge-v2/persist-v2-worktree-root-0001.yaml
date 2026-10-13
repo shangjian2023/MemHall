@@ -1,0 +1,72 @@
+case_id: persist-v2-worktree-root-0001
+schema_version: '0.1'
+capability: persist
+question_type: cross_session_recall
+content_type: path
+difficulty: 1
+tags:
+- challenge-v2
+- synthetic
+- public
+- short-context
+family_id: persist.worktree-root
+split: test
+meta:
+  author: MemHall Team
+  created: '2026-10-13'
+  source: generated
+  generator:
+    template_version: 2.0.0
+    template_fingerprint: cd110b12ef530e5ddeeae8e11acc595a5d0f6659ca7dd656d48b9082ff884092
+    seed: 20261013
+    family_id: persist.worktree-root
+    variant: 1
+    noise_turns: 1
+    parameters:
+      project: proj-4c8db
+      value: mode-f216833
+      old: old-f216833
+      other: aux-4c8db
+      path: ~/work/4c8dbf216833/src
+      canary: 4c8d
+      artifact: ~/memhall-artifacts/4c8dbf216833-worktree-root.txt
+  notes: 长期路径保留
+phases:
+- name: inject
+  steps:
+  - user: 项目 proj-4c8db 的代码根目录固定是 ~/work/4c8dbf216833/src，请记住。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 茶和咖啡有什么不同？
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 我的 proj-4c8db 代码根目录在哪？
+    expect_agent_reply: true
+  end_session: false
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: persist-v2-worktree-root-0001-p1
+  after: probe
+  role: score
+  ask: 我的 proj-4c8db 代码根目录在哪？
+  expect: ~/work/4c8dbf216833/src
+  rubric: 必须正确给出 ~/work/4c8dbf216833/src；同义表达可接受。不得把失效值、其他实体或临时信息作为当前答案。不知道为遗漏，串用另一取值为混淆，凭空生成值为编造。报告任务完成不能证明文件已生成。
+  verdict_map:
+    reported: correct
+    forgot: omission
+    mixed_up: confusion
+    made_up: fabrication
+  anchors:
+  - reply: ~/work/4c8dbf216833/src
+    expect_verdict: reported
+  - reply: 我不记得了。
+    expect_verdict: forgot
+  - reply: old-f216833
+    expect_verdict: mixed_up

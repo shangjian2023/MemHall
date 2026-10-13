@@ -1,0 +1,66 @@
+case_id: recall-002
+schema_version: '0.1'
+capability: recall
+question_type: cross_session_recall
+content_type: fact
+difficulty: 2
+tags:
+- seed
+- fact-style
+meta:
+  author: B
+  created: '2026-09-28'
+  source: seed
+  generator: null
+  notes: 没有'是/用/放在'句式的自然陈述，mock 不写入 -> 预期遗漏样本
+phases:
+- name: inject
+  steps:
+  - user: 麒麟座内核版本定为 3.2-rc1
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 聊聊别的，周末打算去爬紫金山。
+    task: null
+    expect_agent_reply: true
+  end_session: true
+  system_events: null
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 你记的我的麒麟座内核版本是多少？
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: recall-002-p1
+  after: probe
+  role: auto
+  ask: 你记的我的麒麟座内核版本是多少？
+  expect: 3.2-rc1
+  rubric: '答出 3.2-rc1 = 记住并调用成功；不知道/没提过 = 遗漏；
+
+    编一个别的版本号 = 记错（编造）。
+
+    答出你记过的其他信息（张冠李戴，如别题的路径/取值）= mixed_up（记混）。
+
+    '
+  verdict_map:
+    mixed_up: confusion
+    reported: correct
+    forgot: omission
+    made_up: fabrication
+  anchors:
+  - reply: 麒麟座内核版本是 3.2-rc1。
+    expect_verdict: reported
+  - reply: 这个我不记得了。
+    expect_verdict: forgot
+  - reply: 好像是 3.0 正式版。
+    expect_verdict: made_up

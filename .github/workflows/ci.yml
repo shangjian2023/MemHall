@@ -7,6 +7,7 @@ name: CI
 on:
   push:
     branches: [main, dev]
+    tags: ["v*"]
   pull_request:
 
 env:
@@ -68,6 +69,7 @@ jobs:
     # T23：tag（v*）触发——Windows runner 出 exe 双发行物挂 GitHub Release；
     # deb 是 openKylin 目标机原生构建物（build_deb_vm.sh），不走 CI
     if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, test]
     runs-on: windows-latest
     permissions:
       contents: write

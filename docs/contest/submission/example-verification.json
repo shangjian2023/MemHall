@@ -1,0 +1,18 @@
+{
+  "run_id": "20261013-085255-mock",
+  "ok": true,
+  "n_cases": 6,
+  "n_evidence": 42,
+  "errors": [],
+  "warnings": [
+    "无 cases.json 快照（主线 runner 逐题写 case.yaml）——阶段覆盖 按各 case.yaml 校验，题库级封印跳过",
+    "manifest 无 case_results / 逐题 evidence_sha256 封印（主线口径：判定与对账走 verdicts.jsonl）——证据完整性仍逐条强校验",
+    "persist-002: inject 仅 1 条记忆快照",
+    "recall-002: inject 仅 1 条记忆快照",
+    "update-001: inject 仅 1 条记忆快照",
+    "discriminate-001: inject 仅 1 条记忆快照",
+    "boundary-001: inject 仅 1 条记忆快照",
+    "reuse-001: inject 仅 1 条记忆快照"
+  ],
+  "computed_bundle_sha256": "f3d7631e03688196ff075905e4274ccf91f290ef6484c7ca35240a92b2f0020f"
+}

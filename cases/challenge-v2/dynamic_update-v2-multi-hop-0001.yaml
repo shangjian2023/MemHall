@@ -1,0 +1,76 @@
+case_id: dynamic_update-v2-multi-hop-0001
+schema_version: '0.1'
+capability: dynamic_update
+question_type: cross_session_recall
+content_type: project_state
+difficulty: 1
+tags:
+- challenge-v2
+- synthetic
+- public
+- short-context
+family_id: dynamic_update.multi-hop
+split: test
+meta:
+  author: MemHall Team
+  created: '2026-10-13'
+  source: generated
+  generator:
+    template_version: 2.0.0
+    template_fingerprint: cd110b12ef530e5ddeeae8e11acc595a5d0f6659ca7dd656d48b9082ff884092
+    seed: 20261013
+    family_id: dynamic_update.multi-hop
+    variant: 1
+    noise_turns: 1
+    parameters:
+      project: proj-afaf0
+      value: mode-d5172ad
+      old: old-d5172ad
+      other: aux-afaf0
+      path: ~/work/afaf0d5172ad/src
+      canary: afaf
+      artifact: ~/memhall-artifacts/afaf0d5172ad-multi-hop.txt
+  notes: 多次更新取最后有效值
+phases:
+- name: inject
+  steps:
+  - user: proj-afaf0 当前发布状态是 old-d5172ad。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 聊聊周末散步。
+    expect_agent_reply: true
+  - user: proj-afaf0 发布状态改为 aux-afaf0。
+    expect_agent_reply: true
+  - user: 最终确认 proj-afaf0 状态是 mode-d5172ad，前面的状态失效。
+    expect_agent_reply: true
+  end_session: true
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: proj-afaf0 最终有效发布状态是什么？
+    expect_agent_reply: true
+  end_session: false
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: dynamic_update-v2-multi-hop-0001-p1
+  after: probe
+  role: score
+  ask: proj-afaf0 最终有效发布状态是什么？
+  expect: mode-d5172ad
+  rubric: 必须正确给出 mode-d5172ad；同义表达可接受。不得把失效值、其他实体或临时信息作为当前答案。不知道为遗漏，串用另一取值为混淆，凭空生成值为编造。报告任务完成不能证明文件已生成。
+  verdict_map:
+    reported: correct
+    forgot: omission
+    mixed_up: confusion
+    made_up: fabrication
+  anchors:
+  - reply: mode-d5172ad
+    expect_verdict: reported
+  - reply: 我不记得了。
+    expect_verdict: forgot
+  - reply: old-d5172ad
+    expect_verdict: mixed_up

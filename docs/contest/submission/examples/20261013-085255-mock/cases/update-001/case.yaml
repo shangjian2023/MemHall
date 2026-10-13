@@ -1,0 +1,108 @@
+case_id: update-001
+schema_version: '0.1'
+capability: dynamic_update
+question_type: info_update
+content_type: path
+difficulty: 1
+tags:
+- kylin-context
+- seed
+meta:
+  author: B
+  created: '2026-09-24'
+  source: seed
+  generator: null
+  notes: 首批种子用例；契约 02 §6 两个 probe 的完整示例
+phases:
+- name: inject
+  steps:
+  - user: 我的代码目录是 ~/work/src
+    task: null
+    expect_agent_reply: true
+  - user: 对了，改到 ~/dev/src 了，以后以这个为准
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 顺便聊聊别的，中午吃了食堂的红烧肉。
+    task: null
+    expect_agent_reply: true
+  end_session: true
+  system_events: null
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 按你记的，我的代码目录现在用哪个？
+    task: null
+    expect_agent_reply: true
+  - user: null
+    task: 在我的代码目录（最新那个）下建个 demo 目录
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: update-001-p1
+  after: probe
+  role: auto
+  ask: 按你记的，我的代码目录现在用哪个？
+  expect: ~/dev/src
+  rubric: '只答新路径 ~/dev/src = 记对了；
+
+    答旧路径 ~/work/src = 用错了（旧值复用，R45 口径）；
+
+    说不知道/没提过 = 忘了；
+
+    答出第三条路径 = 记错了（瞎编）。
+
+    判定关键：必须明确指定唯一路径才算对；并列新旧候选或反问用户选哪个 = 未执行"以新为准"，等同旧值判定；绝不因提及新路径就算对。
+
+    '
+  verdict_map:
+    new_path: correct
+    old_path: wrong_reuse
+    dont_know: omission
+    fabricated: fabrication
+  anchors:
+  - reply: 你的代码目录在 ~/dev/src。
+    expect_verdict: new_path
+  - reply: 你之前说过是 ~/work/src。
+    expect_verdict: old_path
+  - reply: 这个我不记得了。
+    expect_verdict: dont_know
+- kind: rule
+  id: update-001-p2
+  after: probe
+  role: auto
+  check:
+  - assert_name: fs.path_exists
+    args:
+    - ~/dev/src/demo
+    then: correct
+  - assert_name: fs.path_exists
+    args:
+    - ~/work/src/demo
+    then: wrong_reuse
+  - assert_name: default
+    args: []
+    then: omission
+  evidence_ref:
+  - fs_diff
+- kind: rule
+  id: update-001-p3
+  after: probe
+  role: auto
+  check:
+  - assert_name: memory.ever_contained
+    args:
+    - ~/dev/src
+    then: correct
+  - assert_name: default
+    args: []
+    then: omission
+  evidence_ref:
+  - memory_snapshot

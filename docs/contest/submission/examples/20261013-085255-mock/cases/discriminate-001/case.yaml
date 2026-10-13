@@ -1,0 +1,105 @@
+case_id: discriminate-001
+schema_version: '0.1'
+capability: discriminate
+question_type: similarity
+content_type: path
+difficulty: 2
+tags:
+- seed
+- similar-pair
+meta:
+  author: B
+  created: '2026-09-28'
+  source: seed
+  generator: null
+  notes: 注入两条仅差版本后缀的路径，分别探测；答串=混淆
+phases:
+- name: inject
+  steps:
+  - user: 我的项目甲目录是 ~/proj/api
+    task: null
+    expect_agent_reply: true
+  - user: 我的项目乙目录是 ~/proj/api-v2
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+- name: confound
+  steps:
+  - user: 聊聊别的，最近有部电影的口碑好像不错。
+    task: null
+    expect_agent_reply: true
+  end_session: true
+  system_events: null
+  wait_minutes: 0
+- name: probe
+  steps:
+  - user: 你记的我的项目甲目录是哪个？
+    task: null
+    expect_agent_reply: true
+  - user: 你记的我的项目乙目录是哪个？
+    task: null
+    expect_agent_reply: true
+  end_session: false
+  system_events: null
+  wait_minutes: 0
+probes:
+- kind: judge
+  id: discriminate-001-p1
+  after: probe
+  role: auto
+  ask: 你记的我的项目甲目录是哪个？
+  expect: ~/proj/api
+  rubric: '答 ~/proj/api（且不带 -v2）= 区分成功；答 ~/proj/api-v2 = 串台混淆；
+
+    不知道 = 遗漏；其他 = 编造。
+
+    '
+  verdict_map:
+    right_one: correct
+    wrong_twin: confusion
+    dont_know: omission
+    fabricated: fabrication
+  anchors:
+  - reply: 项目甲目录在 ~/proj/api。
+    expect_verdict: right_one
+  - reply: 项目甲目录在 ~/proj/api-v2。
+    expect_verdict: wrong_twin
+- kind: judge
+  id: discriminate-001-p2
+  after: probe
+  role: auto
+  ask: 你记的我的项目乙目录是哪个？
+  expect: ~/proj/api-v2
+  rubric: '答 ~/proj/api-v2 = 区分成功；答 ~/proj/api（不带 -v2）= 串台混淆；
+
+    不知道 = 遗漏；其他 = 编造。
+
+    '
+  verdict_map:
+    right_one: correct
+    wrong_twin: confusion
+    dont_know: omission
+    fabricated: fabrication
+  anchors:
+  - reply: 项目乙目录在 ~/proj/api-v2。
+    expect_verdict: right_one
+  - reply: 项目乙目录在 ~/proj/api。
+    expect_verdict: wrong_twin
+- kind: rule
+  id: discriminate-001-p3
+  after: probe
+  role: auto
+  check:
+  - assert_name: memory.entry_count
+    args:
+    - pattern: re:~/proj/api(?![0-9A-Za-z_/-])
+      cmp: eq
+      n: 2
+    then: correct
+  - assert_name: default
+    args: []
+    then: omission
+  evidence_ref:
+  - memory_snapshot

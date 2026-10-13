@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn>=0.54.0",
     "pywebview>=5.0; sys_platform == 'win32'",
     "httpx>=0.28.1",
+    "paramiko>=5.0.0",
 ]
 
 [project.scripts]
@@ -40,8 +41,8 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
 
 [dependency-groups]
+docs = ["python-docx>=1.2,<2"]
 dev = [
-    "paramiko>=5.0.0",
     "pytest>=9.1.1",
     "pyinstaller>=6.10",
     "ruff>=0.16.10",

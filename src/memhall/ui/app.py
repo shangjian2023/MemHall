@@ -199,12 +199,13 @@ def create_app() -> FastAPI:
     # 异常也回结构化 JSON（而非裸 500），让前端能展示具体原因。
     @app.get("/api/doctor/local")
     async def doctor_local(fresh: bool = False) -> dict:
-        from memhall.discovery import scan_local
+        from memhall.discovery import last_path_hydration, scan_local
         try:
             rep = await asyncio.to_thread(scan_local, 4, fresh)
         except Exception as e:
             return {"error": f"{type(e).__name__}: {e}"[:300]}
-        return {"local": [asdict(f) for f in rep]}
+        return {"local": [asdict(f) for f in rep],
+                "path_added": last_path_hydration()}
 
     @app.get("/api/doctor/vm")
     async def doctor_vm() -> dict:
@@ -255,9 +256,62 @@ def create_app() -> FastAPI:
             v = "dev"
         return {"version": v, "python": sys.version.split()[0]}
 
+    def paper_path(paper_id: str) -> Path:
+        if not re.fullmatch(r"[a-f0-9]{64}", paper_id):
+            raise HTTPException(400, "题单 ID 格式无效")
+        return _runs_root() / "_papers" / f"{paper_id}.json"
+
+    def paper_summary(paper) -> dict:
+        return {"paper_id": paper.paper_id, "suite": paper.suite,
+                "sampling": paper.sampling, "n_cases": len(paper.cases)}
+
+    @app.get("/api/papers")
+    def papers() -> dict:
+        from memhall.sampling import load_paper
+        found = []
+        for path in sorted((_runs_root() / "_papers").glob("*.json")):
+            try:
+                found.append(paper_summary(load_paper(path)))
+            except (ValueError, OSError):
+                continue
+        return {"papers": found}
+
+    @app.post("/api/papers")
+    def create_paper(body: dict) -> dict:
+        from memhall.datasets import load_pack
+        from memhall.sampling import FrozenPaper, load_paper, make_paper
+        try:
+            if "paper" in body:
+                paper = FrozenPaper.model_validate(body["paper"])
+                paper.verify()
+            else:
+                paper = make_paper(load_pack(body.get("cases", "cases/full")),
+                                   count=int(body.get("count", 24)), seed=int(body.get("seed", 0)),
+                                   split=body.get("split"),
+                                   max_per_family=body.get("max_per_family"))
+            path = paper_path(paper.paper_id)
+            try:
+                paper.save(path)
+            except FileExistsError:
+                load_paper(path)  # Existing content must still be intact.
+            return paper_summary(paper)
+        except (ValueError, OSError, TypeError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.get("/api/papers/{paper_id}")
+    def export_paper(paper_id: str) -> FileResponse:
+        from memhall.sampling import load_paper
+        path = paper_path(paper_id)
+        try:
+            load_paper(path)
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+        return FileResponse(path, filename=f"memhall-paper-{paper_id[:12]}.json")
+
     # ---------- 用例目录 ----------
     @app.get("/api/case-dirs")
     def case_dirs() -> dict:
+        from memhall.datasets import load_directory
         found: dict[str, Path] = {}
         for root in _case_roots():
             base = root / "cases"
@@ -275,7 +329,7 @@ def create_app() -> FastAPI:
             {"id": f"cases/{name}",
              "label": (CASE_SET_DESC.get(name, {}).get("label")
                        or "{name} · {n} 题").format(
-                           n=len(list(d.glob("*.y*ml"))), name=name),
+                           n=len(load_directory(d).cases), name=name),
              "hint": CASE_SET_DESC.get(name, {}).get("hint", "")}
             for name, d in sorted(found.items(), key=lambda kv: (order.get(kv[0], 99), kv[0]))
         ]
@@ -284,12 +338,13 @@ def create_app() -> FastAPI:
 
     # ---------- 运行会话 ----------
     @app.get("/api/estimate")
-    def estimate(adapter: str, cases: str) -> dict:
+    def estimate(adapter: str, cases: str = "cases/full", paper: str | None = None) -> dict:
         """跑前 token 预估：按该智能体历史 run 的网关记账均摊（弹窗数据源）。"""
         from memhall.cli import load_case_set
         from memhall.cost import estimate as estimate_fn
         try:
-            n = len(load_case_set(cases))
+            from memhall.sampling import load_paper
+            n = len(load_paper(paper_path(paper)).cases) if paper else len(load_case_set(cases))
         except Exception:
             return {"available": False, "note": "用例集加载失败"}
         if not n:
@@ -330,6 +385,17 @@ def create_app() -> FastAPI:
             raise HTTPException(409, "已有评测在跑")
         adapter_name = body.get("adapter", "mock")
         case_dir = body.get("cases", "cases/full")
+        from memhall.datasets import load_pack
+        from memhall.sampling import load_paper, make_paper
+        try:
+            if body.get("paper"):
+                frozen = load_paper(paper_path(body["paper"]))
+                case_dir = f"paper:{frozen.paper_id}"
+            else:
+                frozen = make_paper(load_pack(case_dir))
+            cases = frozen.cases
+        except (ValueError, OSError, TypeError) as error:
+            raise HTTPException(400, str(error)) from error
         judge_mode = body.get("judge", "scripted")
         model_override = (body.get("model") or "").strip() or None
         if model_override:
@@ -355,15 +421,11 @@ def create_app() -> FastAPI:
 
         def worker() -> None:
             from memhall.adapters import create_adapter
-            from memhall.cli import _finish_run, load_case_set
+            from memhall.cli import _finish_run
             from memhall.runner.orchestrator import run_suite
             from memhall.scoring.engine import evaluate_case
             from memhall.scoring.judge import OpenAICompatJudge
             try:
-                cases = load_case_set(case_dir)
-                if not cases:
-                    emit({"type": "error", "msg": f"未找到用例: {case_dir}"})
-                    return
                 try:
                     adapter = create_adapter(adapter_name)
                 except ValueError as e:
@@ -401,7 +463,7 @@ def create_app() -> FastAPI:
                 emit({"type": "done", "run_id": run_id,
                       "score": metrics["overall_score"],
                       "n_valid": metrics["n_valid"],
-                      "n_total": metrics["n_probes_total"],
+                      "n_total": metrics.get("n_score_probes", metrics["n_probes_total"]),
                       "caps": metrics["capability_scores"]})
                 from memhall.notify import notify_run_done
                 notify_run_done(adapter_name, metrics["overall_score"],
@@ -474,7 +536,8 @@ def create_app() -> FastAPI:
                     m = json.loads(mfile.read_text(encoding="utf-8"))
                     entry["score"] = m.get("overall_score")
                     entry["n_valid"] = m.get("n_valid")
-                    entry["n_total"] = m.get("n_probes_total")
+                    entry["n_total"] = m.get("n_score_probes", m.get("n_probes_total"))
+                    entry["n_diagnostic"] = m.get("n_diagnostic_probes", 0)
                 entries.append(entry)
         entries.sort(key=lambda e: e["run_id"], reverse=True)
         return {"runs": entries}
@@ -486,11 +549,28 @@ def create_app() -> FastAPI:
         if not mfile.is_file():
             raise HTTPException(404, "无指标（运行未完成或已中止）")
         metrics = json.loads(mfile.read_text(encoding="utf-8"))
+        manifest_file = d / "manifest.json"
+        if manifest_file.is_file():
+            manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+            metrics["adapter"] = manifest.get("adapter", "?")
+        import yaml
+        from pydantic import ValidationError
+
+        from memhall.schema.models_case import MemoryCase, probe_role
+        roles: dict[str, str] = {}
+        for case_file in (d / "cases").glob("*/case.yaml"):
+            try:
+                case = MemoryCase.model_validate(yaml.safe_load(case_file.read_text(encoding="utf-8")))
+            except (ValueError, ValidationError, yaml.YAMLError):
+                continue  # 历史快照不兼容：用途明确标未标注，不猜成计分
+            roles.update((p.id, probe_role(case, p)) for p in case.probes)
         verdicts = []
         vfile = d / "verdicts.jsonl"
         if vfile.is_file():
             verdicts = [json.loads(line)
                         for line in vfile.read_text(encoding="utf-8").splitlines()]
+        for verdict in verdicts:
+            verdict["role"] = roles.get(verdict["probe_id"], "unknown")
         return {"metrics": metrics, "verdicts": verdicts}
 
     @app.get("/api/runs/{run_id}/radar")
@@ -669,7 +749,12 @@ def create_app() -> FastAPI:
         ids = [r for r in runs.split(",") if r.strip()][:2]
         if len(ids) != 2:
             raise HTTPException(400, "需要恰好两个 run_id")
+        from memhall.report.compatibility import check_compatibility
         from memhall.report.radar import render_radar
+        try:
+            check_compatibility([_safe_run_id(rid) for rid in ids])
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
         scores = {}
         names = []
         for rid in ids:
@@ -678,7 +763,9 @@ def create_app() -> FastAPI:
             if not mfile.is_file():
                 raise HTTPException(404, f"{rid} 无指标")
             m = json.loads(mfile.read_text(encoding="utf-8"))
-            label = f"{m.get('adapter', rid)} ({m['overall_score']:.1%})"
+            score = m.get("overall_score")
+            text = f"{score:.1%}" if score is not None else "未测"
+            label = f"{m.get('adapter', rid)} ({text})"
             scores[label] = m["capability_scores"]
             names.append(label)
         out_dir = _runs_root() / "_compare"
@@ -702,8 +789,20 @@ def create_app() -> FastAPI:
 
     @app.post("/api/config")
     def save_config(body: dict) -> dict:
-        updates = {k: (v or "").strip() for k, v in (body.get("updates") or {}).items()
-                   if k in KNOWN_KEYS and (v or "").strip()}
+        raw_updates = body.get("updates") or {}
+        if not isinstance(raw_updates, dict):
+            raise HTTPException(400, "updates 必须是对象")
+        updates = {}
+        for k, v in raw_updates.items():
+            if k not in KNOWN_KEYS:
+                continue
+            if v is None:
+                continue
+            if not isinstance(v, str) or any(c in v for c in "\r\n\0"):
+                raise HTTPException(400, f"{k} 必须是单行字符串")
+            value = v.strip()
+            if value:
+                updates[k] = value
         if not updates:
             return {"ok": True, "saved": 0}
         lines = (ENV_PATH.read_text(encoding="utf-8").splitlines()
@@ -713,13 +812,13 @@ def create_app() -> FastAPI:
         for line in lines:
             m = re.match(r"^([A-Z_0-9]+)\s*=", line)
             if m and m.group(1) in updates:
-                out.append(f"{m.group(1)}={updates[m.group(1)]}")
+                out.append(f'{m.group(1)}="{updates[m.group(1)]}"')
                 seen.add(m.group(1))
             else:
                 out.append(line)
         for k, v in updates.items():
             if k not in seen:
-                out.append(f"{k}={v}")
+                out.append(f'{k}="{v}"')
         ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
         for k, v in updates.items():
             os.environ[k] = v

@@ -1,0 +1,16 @@
+warning: in the working copy of '.github/workflows/ci.yml', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'CHANGELOG.md', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'README.md', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'docs/dataset-card.md', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'docs/demo-script.md', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'packaging/deb-wheels.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/build_deb_vm.sh', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'scripts/build_exe.sh', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'scripts/make_readme_figures.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'scripts/stats_uncertainty.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/memhall/adapters/remote.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/memhall/report/metrics.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/memhall/report/report.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'src/memhall/ui/app.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'team-plan.md', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'uv.lock', LF will be replaced by CRLF the next time Git touches it

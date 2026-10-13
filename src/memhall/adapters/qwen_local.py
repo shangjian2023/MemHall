@@ -14,34 +14,29 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
-import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from memhall.adapters.base import NO_WINDOW, AdapterError, AgentAdapter, AgentUnavailable
-from memhall.schema.evidence import ActionDump, MemoryEntry, MemorySnapshot, Reply
-
-_SEND_MIN_INTERVAL = float(os.environ.get("QWEN_SEND_INTERVAL", "10"))
-_send_lock = threading.Lock()
-_last_send = 0.0
-
-
-def _send_throttle() -> None:
-    global _last_send
-    with _send_lock:
-        wait = _SEND_MIN_INTERVAL - (time.monotonic() - _last_send)
-        if wait > 0:
-            time.sleep(wait)
-        _last_send = time.monotonic()
+from memhall.adapters.base import (
+    NO_WINDOW,
+    SEND_TIMEOUT_S,
+    AgentAdapter,
+    AgentUnavailable,
+    workspace_fs_snapshot,
+)
+from memhall.schema.evidence import MemoryEntry, MemorySnapshot, Reply
 
 
 class LocalQwenAdapter(AgentAdapter):
     """被测智能体 Qwen Code CLI（本机安装，QWEN_HOME 沙箱隔离）。"""
 
     name = "qwen-local"
+    send_interval_env = "QWEN_SEND_INTERVAL"
+    send_interval_default = 10.0
 
     def __init__(self, root: Path | None = None):
         self.root = root or Path.home() / ".memhall" / "qwen-sandbox"
@@ -102,7 +97,7 @@ class LocalQwenAdapter(AgentAdapter):
     # ---------- 契约 01 ----------
 
     def send(self, session_id: str, message: str) -> Reply:
-        _send_throttle()
+        self._send_throttle()
         sent = datetime.now(UTC)
         t0 = time.time()
         try:
@@ -110,7 +105,7 @@ class LocalQwenAdapter(AgentAdapter):
                 [self._resolve_exe(), message, "--approval-mode", "auto-edit"],
                 capture_output=True, encoding="utf-8", errors="replace",
                 cwd=str(self.workspace), env=self._sandbox_env(),
-                timeout=280, creationflags=NO_WINDOW)
+                timeout=SEND_TIMEOUT_S, creationflags=NO_WINDOW)
         except subprocess.TimeoutExpired as e:
             raise AgentUnavailable(f"qwen 超时: {e}") from e
         text = (r.stdout or "").strip()
@@ -147,7 +142,9 @@ class LocalQwenAdapter(AgentAdapter):
                 continue
             rel = f.relative_to(self.root).as_posix()
             for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
-                s = line.strip().lstrip("-* ").strip()
+                # R58 对齐 hermes.py：只剥"- "/"* "形态的列表标记，不再
+                # lstrip("-* ") 误伤"-3°C"类正文首字符
+                s = re.sub(r"^[-*]\s+", "", line.strip()).strip()
                 if not s or s.startswith("#") or s in seen:
                     continue
                 seen.add(s)
@@ -158,23 +155,5 @@ class LocalQwenAdapter(AgentAdapter):
                               dumped_at=datetime.now(UTC),
                               entries=entries, raw=None)
 
-    def dump_actions(self) -> ActionDump:
-        return ActionDump(actions=[], coverage="unknown")
-
     def fs_snapshot(self) -> list[str] | None:
-        if not self.workspace.exists():
-            return None
-        out = []
-        for p in sorted(self.workspace.rglob("*")):
-            if (p.is_file()
-                    and not any(part.startswith(".") for part in p.parts)):
-                out.append(p.relative_to(self.workspace).as_posix())
-        return out
-
-    def clock_shift(self, days: int) -> None:
-        if days == 0:
-            return
-        raise AdapterError("本机不支持拨钟——temporal 用例请在 openKylin VM 评测")
-
-    def clock_restore(self) -> None:
-        pass
+        return workspace_fs_snapshot(self.workspace)

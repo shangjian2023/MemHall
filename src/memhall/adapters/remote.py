@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -164,6 +165,13 @@ class LocalChannel:
 
     def __init__(self, password: str | None = None):
         self.bash = shutil.which("bash")
+        if sys.platform == "win32":
+            # Windows 的 system32/bash.exe 是 WSL 转发器，-c 会再次解释
+            # 命令中的变量与引号。优先使用 Git for Windows 的原生 bash。
+            git = shutil.which("git")
+            native_bash = Path(git).parent.parent / "bin" / "bash.exe" if git else None
+            if native_bash is not None and native_bash.is_file():
+                self.bash = str(native_bash)
         if not self.bash:
             raise ValueError("本机执行通道需要 bash（openKylin/Linux 环境）")
         self.password = password or _env("VM_PASS")
@@ -275,6 +283,8 @@ print(json.dumps({
             data["agent_version"] = lines[0][:200]
     data["ssh_host_key_sha256"] = channel.host_key_sha256()
     data["vm_snapshot"] = _env("VM_SNAPSHOT", "unknown")
+    # B8 OS 沙箱状态进环境指纹（口径可追溯：这轮跑分有没有开强制隔离）
+    data["sandbox"] = _env("MEMHALL_SANDBOX", "off")
     return data
 
 

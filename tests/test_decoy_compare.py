@@ -60,5 +60,9 @@ def test_compare_runs(tmp_path: Path):
     lines[0]["verdict"] = "fabrication"
     vp.write_text("\n".join(json.dumps(ln, ensure_ascii=False) for ln in lines),
                   encoding="utf-8")
+    from memhall.schema.evidence import Verdict
+    manifest = json.loads((made[1] / "manifest.json").read_text(encoding="utf-8"))
+    _finish_run(made[1], manifest["run_id"], manifest,
+                [Verdict.model_validate(v) for v in lines], case_map)
     res2 = compare_runs(made[0], made[1], tmp_path / "_compare2")
     assert res2["n_flips"] == 1

@@ -1,0 +1,268 @@
+{
+  "checked_date": "2026-10-13",
+  "basis": "local working tree; not a released binary",
+  "sets": {
+    "full": {
+      "cases": 45,
+      "probes": 87,
+      "roles": {
+        "score": 66,
+        "diagnostic": 21
+      },
+      "capabilities": {
+        "boundary": 8,
+        "discriminate": 6,
+        "persist": 8,
+        "recall": 9,
+        "reuse": 6,
+        "dynamic_update": 8
+      },
+      "contents": {
+        "sensitive": 8,
+        "path": 10,
+        "fact": 9,
+        "project_state": 6,
+        "preference": 6,
+        "template": 6
+      },
+      "difficulty": {
+        "1": 13,
+        "2": 24,
+        "3": 8
+      },
+      "question_types": {
+        "session_recall": 6,
+        "false_premise": 6,
+        "cross_session_recall": 12,
+        "similarity": 6,
+        "task_chain": 6,
+        "temporal": 2,
+        "info_update": 7
+      },
+      "matrix_cells": {
+        "boundary/fact": 1,
+        "boundary/path": 1,
+        "boundary/preference": 1,
+        "boundary/project_state": 1,
+        "boundary/sensitive": 3,
+        "boundary/template": 1,
+        "discriminate/fact": 1,
+        "discriminate/path": 1,
+        "discriminate/preference": 1,
+        "discriminate/project_state": 1,
+        "discriminate/sensitive": 1,
+        "discriminate/template": 1,
+        "dynamic_update/fact": 1,
+        "dynamic_update/path": 3,
+        "dynamic_update/preference": 1,
+        "dynamic_update/project_state": 1,
+        "dynamic_update/sensitive": 1,
+        "dynamic_update/template": 1,
+        "persist/fact": 2,
+        "persist/path": 2,
+        "persist/preference": 1,
+        "persist/project_state": 1,
+        "persist/sensitive": 1,
+        "persist/template": 1,
+        "recall/fact": 3,
+        "recall/path": 2,
+        "recall/preference": 1,
+        "recall/project_state": 1,
+        "recall/sensitive": 1,
+        "recall/template": 1,
+        "reuse/fact": 1,
+        "reuse/path": 1,
+        "reuse/preference": 1,
+        "reuse/project_state": 1,
+        "reuse/sensitive": 1,
+        "reuse/template": 1
+      },
+      "cell_multiplicity": {
+        "3": 3,
+        "1": 30,
+        "2": 3
+      },
+      "input_script_chars": {
+        "min": 33,
+        "median": 69,
+        "max": 361,
+        "definition": "sum of user/task script string lengths; excludes agent replies, system prompts and tool logs"
+      },
+      "phase_counts": {
+        "3": 41,
+        "2": 4
+      },
+      "session_boundary_counts": {
+        "1": 40,
+        "0": 5
+      }
+    },
+    "gen": {
+      "cases": 21,
+      "probes": 42,
+      "roles": {
+        "score": 26,
+        "diagnostic": 16
+      },
+      "capabilities": {
+        "boundary": 3,
+        "discriminate": 3,
+        "persist": 4,
+        "recall": 3,
+        "reuse": 2,
+        "dynamic_update": 6
+      },
+      "contents": {
+        "sensitive": 3,
+        "path": 15,
+        "fact": 3
+      },
+      "difficulty": {
+        "2": 13,
+        "3": 5,
+        "1": 3
+      },
+      "question_types": {
+        "false_premise": 3,
+        "similarity": 3,
+        "cross_session_recall": 7,
+        "task_chain": 2,
+        "temporal": 2,
+        "info_update": 4
+      },
+      "matrix_cells": {
+        "boundary/sensitive": 3,
+        "discriminate/path": 3,
+        "dynamic_update/path": 6,
+        "persist/path": 4,
+        "recall/fact": 3,
+        "reuse/path": 2
+      },
+      "cell_multiplicity": {
+        "3": 3,
+        "4": 1,
+        "2": 1,
+        "6": 1
+      },
+      "input_script_chars": {
+        "min": 38,
+        "median": 72,
+        "max": 122,
+        "definition": "sum of user/task script string lengths; excludes agent replies, system prompts and tool logs"
+      },
+      "phase_counts": {
+        "3": 21
+      },
+      "session_boundary_counts": {
+        "1": 21
+      }
+    },
+    "chains": {
+      "cases": 4,
+      "probes": 13,
+      "roles": {
+        "score": 10,
+        "diagnostic": 3
+      },
+      "capabilities": {
+        "reuse": 3,
+        "persist": 1
+      },
+      "contents": {
+        "project_state": 2,
+        "path": 1,
+        "template": 1
+      },
+      "difficulty": {
+        "3": 3,
+        "2": 1
+      },
+      "question_types": {
+        "task_chain": 4
+      },
+      "matrix_cells": {
+        "persist/template": 1,
+        "reuse/path": 1,
+        "reuse/project_state": 2
+      },
+      "cell_multiplicity": {
+        "2": 1,
+        "1": 2
+      },
+      "input_script_chars": {
+        "min": 81,
+        "median": 125.5,
+        "max": 312,
+        "definition": "sum of user/task script string lengths; excludes agent replies, system prompts and tool logs"
+      },
+      "phase_counts": {
+        "3": 3,
+        "6": 1
+      },
+      "session_boundary_counts": {
+        "2": 3,
+        "5": 1
+      }
+    },
+    "heldout": {
+      "cases": 21,
+      "probes": 42,
+      "roles": {
+        "score": 26,
+        "diagnostic": 16
+      },
+      "capabilities": {
+        "boundary": 3,
+        "discriminate": 3,
+        "persist": 4,
+        "recall": 3,
+        "reuse": 2,
+        "dynamic_update": 6
+      },
+      "contents": {
+        "sensitive": 3,
+        "path": 15,
+        "fact": 3
+      },
+      "difficulty": {
+        "2": 13,
+        "3": 5,
+        "1": 3
+      },
+      "question_types": {
+        "false_premise": 3,
+        "similarity": 3,
+        "cross_session_recall": 7,
+        "task_chain": 2,
+        "temporal": 2,
+        "info_update": 4
+      },
+      "matrix_cells": {
+        "boundary/sensitive": 3,
+        "discriminate/path": 3,
+        "dynamic_update/path": 6,
+        "persist/path": 4,
+        "recall/fact": 3,
+        "reuse/path": 2
+      },
+      "cell_multiplicity": {
+        "3": 3,
+        "4": 1,
+        "2": 1,
+        "6": 1
+      },
+      "input_script_chars": {
+        "min": 38,
+        "median": 72,
+        "max": 114,
+        "definition": "sum of user/task script string lengths; excludes agent replies, system prompts and tool logs"
+      },
+      "phase_counts": {
+        "3": 21
+      },
+      "session_boundary_counts": {
+        "1": 21
+      }
+    }
+  }
+}

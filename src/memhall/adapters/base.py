@@ -9,13 +9,22 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
+import time
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import ClassVar
 
 from memhall.schema.evidence import ActionDump, MemorySnapshot, Reply
 
 # Windows：无控制台进程（windowed exe）spawn 控制台子程序会弹黑窗，
 # 每发一条消息闪一下。统一带此 flag（stdout/stderr 走管道不受影响）。
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+# send 统一超时惯例（原为各适配器手抄的字面量，2026-10-13 收编上收）：
+# 内层负责杀子进程，外层是通道收包兜底，必须 > 内层。
+SEND_TIMEOUT_S = 280
+CHANNEL_TIMEOUT_S = 300
 
 
 # ---------- 异常（契约 01 §2）----------
@@ -52,6 +61,25 @@ def cli_version(args: list[str]) -> str | None:
     return lines[0] if lines else None
 
 
+def workspace_fs_snapshot(workspace: Path) -> list[str] | None:
+    """本地车道 workspace 文件清单（R24/R30：统一 ~ 相对形式）。
+
+    workspace 就是本适配器的"用户区"（工作区根 = ~），fs 断言写
+    ~/dev/src/demo——出口统一 ~ 前缀后 evidence 各车道逐字可比
+    （R30 曾靠规则层双向归一兜底）。隐藏目录按 workspace 内相对
+    部分判定：绝对路径部件含 ~/.memhall 这类点目录祖先时不误剪
+    （2026-10-13 修复：默认沙箱根下快照曾恒空）。
+    """
+    if not workspace.exists():
+        return None
+    return [
+        "~/" + p.relative_to(workspace).as_posix()
+        for p in sorted(workspace.rglob("*"))
+        if p.is_file()
+        and not any(part.startswith(".") for part in p.relative_to(workspace).parts)
+    ]
+
+
 # ---------- 基类 ----------
 
 class AgentAdapter(ABC):
@@ -62,6 +90,25 @@ class AgentAdapter(ABC):
     """
 
     name: str = "abstract"
+
+    # 发送节流（原为各适配器模块级三件套的六连抄，2026-10-13 收编）：同一
+    # 车道类进程内共享上次发送时刻，间隔可用环境变量覆盖；None = 不节流。
+    send_interval_env: ClassVar[str | None] = None
+    send_interval_default: ClassVar[float] = 10.0
+    _send_state: ClassVar[dict[type[AgentAdapter], float]] = {}
+    _send_lock: ClassVar[threading.Lock] = threading.Lock()
+
+    def _send_throttle(self) -> None:
+        if self.send_interval_env is None:
+            return
+        with self._send_lock:
+            interval = float(os.environ.get(
+                self.send_interval_env, str(self.send_interval_default)))
+            last = self._send_state.get(type(self), 0.0)
+            wait = interval - (time.monotonic() - last)
+            if wait > 0:
+                time.sleep(wait)
+            self._send_state[type(self)] = time.monotonic()
 
     @abstractmethod
     def reset(self) -> None:
@@ -79,9 +126,13 @@ class AgentAdapter(ABC):
     def dump_memory(self) -> MemorySnapshot:
         """导出当前全部记忆。没有导出接口就直读存储文件，format 如实标注。"""
 
-    @abstractmethod
     def dump_actions(self) -> ActionDump:
-        """导出 reset 以来的操作记录。来源优先级：MCP 日志 > 智能体日志 > auditd。"""
+        """导出 reset 以来的操作记录。来源优先级：MCP 日志 > 智能体日志 > auditd。
+
+        默认空壳（coverage=unknown）：暂无操作日志源的车道如实标注完整度、
+        不装作没有（原为六处逐字复制，2026-10-13 收编为默认实现）；
+        有源的适配器（如 hermes 解析 agent.log）覆写。"""
+        return ActionDump(actions=[], coverage="unknown")
 
     def version_info(self) -> str | None:
         """被测智能体版本标识（进 manifest/report，可复现性元数据）。
@@ -95,6 +146,10 @@ class AgentAdapter(ABC):
 
         路径统一 ~ 相对形式（如 ~/dev/src/demo）。
         """
+        return None
+
+    def fs_fingerprints(self, paths: list[str]) -> dict[str, str] | None:
+        """Optional SHA-256 map for captured files; None means unavailable."""
         return None
 
     def clock_shift(self, days: int) -> None:
