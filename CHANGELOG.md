@@ -46,7 +46,7 @@ Unreleased 节（A 档 A1–A8、B8 OS 沙箱、kylin-agent 适配器、题库�
 - 新增材料一致性测试 `tests/test_blind_review_materials.py`：在库盲评三件套指纹对账、双人副本与底表一致、终裁模板 sample_id 对齐。
 
 
-- 全回归 373 项（基线 293 + 新增 80）+ 离线 mock e2e
+- 全回归 377 项（基线 293 + 修复轮 80 + 盲评材料 4）+ 离线 mock e2e
   （sample→run→verify→report→aggregate→stats --index）全链路通过。
 
 ## [Unreleased] — A 档小修全档（2026-10-14）
