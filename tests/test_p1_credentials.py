@@ -52,8 +52,9 @@ def test_hermes_send_credentials_via_stdin_only(monkeypatch):
 
 def test_clock_shift_sudo_not_on_cmdline(monkeypatch):
     fake = FakeChannel()
+    # 新读钟格式：一行两读数（wall epoch + 单调钟），见 vm_common.read_vm_clock
     monkeypatch.setattr(fake, "run", lambda cmd, timeout=300, stdin_data=None:
-                        (0, "1700000000\n", ""))
+                        (0, "1700000000 1000.00\n", ""))
     sudo_cmds = []
     monkeypatch.setattr(fake, "sudo",
                         lambda cmd, timeout=120: (sudo_cmds.append(cmd), (0, "", ""))[1])
