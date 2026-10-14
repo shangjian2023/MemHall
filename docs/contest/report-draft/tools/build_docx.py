@@ -387,7 +387,7 @@ def add_footer_pagenum(doc):
 
 
 def cover(doc):
-    for line, size, before in ((f"openKylin 开源贡献赛 · 开源 AI 工具赛道", 26, 80),
+    for line, size, before in ((f"openKylin 赛题 · 开源 AI 工具赛道", 26, 80),
                                ("作品报告", 26, 20)):
         p = doc.add_paragraph()
         p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER

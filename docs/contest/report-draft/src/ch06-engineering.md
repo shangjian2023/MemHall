@@ -6,9 +6,9 @@
 
 评测系统如果只能靠读源码复现，对社区用户就是一纸空文；openKylin 用户还要自己解决依赖版本与桌面集成。
 
-本作品的方案是把全链路收进一条命令。`memhall run` 跑完即在 runs/<run_id>/ 下落齐五类产物：manifest.json（被测智能体版本、模型口径、token 记账、环境封存）、verdicts.jsonl、metrics.json、radar.png、report.md，每条判定都能下钻到证据哈希。发车前 `memhall doctor` 一键体检三路：本机（PATH、配置目录、版本）、评测机（SSH 单往返复合探测，含记忆库是否在位）、环境就绪度（密钥/SSH/网关可达）。跑完再一条 `memhall verify` 复核产物完整性（CLI 全产物链路图见第五章 图~cli-run~）。
+本作品的方案是把全链路收进一条命令。`memhall run` 跑完即在 runs/<run_id>/ 下落齐六类产物：manifest.json（被测智能体版本、模型口径、token 记账、环境封存）、verdicts.jsonl、metrics.json、radar.png、report.md 与逐题证据 JSONL，每条判定都能下钻到证据哈希。发车前 `memhall doctor` 一键体检三路：本机（PATH、配置目录、版本）、评测机（SSH 单往返复合探测，含记忆库是否在位）、环境就绪度（密钥/SSH/网关可达）。跑完再一条 `memhall verify` 复核产物完整性（CLI 全产物链路图见第五章 图~cli-run~）。
 
-发行物覆盖双平台。openKylin 侧是 .deb 安装包：注册 UKUI 应用菜单项，系统目录只读（run 产物写 ~/memhall-runs，配置读 ~/memhall.env，卸载一条 `dpkg -r` 清理干净）；依赖按 uv.lock 冻结清单以离线 wheels 打进包内，装机不联网；构建在 openKylin 目标机上原生完成，保证 wheel 与目标机 Python 精确匹配，同版本源码任何时间构建产物一致。Windows 侧是便携 exe：onedir 目录版启动快，单文件版可直发，双击即进 Web UI 原生窗口。如实交代进度：v2.0.0 单文件 exe 已完成打包与冒烟验收，v2.0.0 的 .deb 最终包正随目标机验收流程重建。openKylin 集成还有一个细节：评测收尾发 UKUI 桌面通知并自动弹出雷达图。装机与桌面形态见图~desktop~。
+发行物覆盖双平台。openKylin 侧是 .deb 安装包：注册 UKUI 应用菜单项，系统目录只读（run 产物写 ~/memhall-runs，配置读 ~/memhall.env，卸载一条 `dpkg -r` 清理干净）；依赖按 uv.lock 冻结清单以离线 wheels 打进包内，装机不联网；构建在 openKylin 目标机上原生完成，保证 wheel 与目标机 Python 精确匹配，同版本源码任何时间构建产物一致。Windows 侧是便携 exe：onedir 目录版启动快，单文件版可直发，双击即进 Web UI 原生窗口。如实交代进度：v2.0.0 单文件 exe 已完成打包，冒烟覆盖版本自检、doctor 体检与干净目录下一轮完整 mock 评测（产物 verify 通过）；v2.0.0 的 .deb 最终包正随目标机验收流程重建。openKylin 集成还有一个细节：评测收尾发 UKUI 桌面通知并自动弹出雷达图。装机与桌面形态见图~desktop~。
 {{fig:desktop|openKylin 桌面、UKUI 菜单项与 deb 安装|待截图}}
 
 Web UI（`memhall ui`，FastAPI + SSE）覆盖评测全流程的人机面。发车页选适配器与用例库，跑前给出 token 成本预估再确认；直播流把每条问答与记忆快照逐条实时呈现，拨钟等关键动作同样上屏；报告页出六维雷达，支持证据下钻与人工复核队列，裁决一条未决判定后指标自动重算。三个页面分别见图~ui-launch~、图~ui-live~、图~ui-report~。
@@ -16,7 +16,7 @@ Web UI（`memhall ui`，FastAPI + SSE）覆盖评测全流程的人机面。发�
 {{fig:ui-live|评测直播流|待截图}}
 {{fig:ui-report|报告详情页|待截图}}
 
-三分钟上手只有三条命令：`uv sync --group dev` → `uv run memhall doctor` → `uv run memhall run -a mock -c cases/full -o runs`。mock 适配器离线零成本，不配任何 API key 就能跑通"教→隔→考"全链路。
+三分钟上手只有三条命令（doctor 体检 → mock 试跑 → verify 对账，全文见附录 B 复现指南）。mock 适配器离线零成本，不配任何 API key 就能跑通"教→隔→考"全链路。
 
 ## 6.2 九适配器架构：同一把尺量四家
 
@@ -51,7 +51,7 @@ Web UI（`memhall ui`，FastAPI + SSE）覆盖评测全流程的人机面。发�
 本作品的方案是统一车道流量必经本地网关（监听 8311），自研薄层实现，只依赖项目里已有的 fastapi/httpx，不新增打包负担。三条保证机制：其一，模型强制改写——请求体里的模型名一律替换为网关指定模型，智能体侧配置漂移无效；逐智能体的改写表按 memhall-<agent> 身份标签键控，发车时写入、收尾清理，由此构造 (agent, model) 二元组对照——相当于把"模型"变成同一台仪器，四家被测对象在同一台仪器上读数。其二，凭据单点——真上游 key 只存在于网关进程环境，智能体只拿形如 memhall-<agent> 的 dummy key；入站凭据兼作记账归因身份，绝不写日志、绝不转发给上游。其三，逐请求记账与节奏控制——每请求一行 JSONL（智能体、模型、token、耗时、状态码、重试数），转发最小间隔默认 8 秒，上游 429/5xx 指数退避并尊重 Retry-After，被测侧无感。原理如图~gateway~所示。
 {{fig:gateway|统一模型网关原理|绘制中}}
 
-对账是这套仪器的检定环节：网关按账单追加序号归因，逐场评测给出三态结论——verified（账实相符）、suspect（有疑点）、unknown（账单读不到，不冒充无告警）；拨过钟的用例也能精确对账。"必经网关"由此从配置约定升级为有"该来没来"检查的仪器。
+对账是这套仪器的检定环节：网关按账单追加序号归因，逐场评测给出三态结论——verified（账实相符）、suspect（有疑点）、unknown（账单读不到，不冒充无告警）；拨过钟的用例也能精确对账。三态对账块随每场评测写入 manifest，聚合出数前逐场核对，对账未过的场进不了同一张榜。"必经网关"由此从配置约定升级为有"该来没来"检查的仪器。
 
 > 设计取舍：claude 本机车道走 anthropic 协议，不进统一对照车道——配置了网关地址会显式报错，而不是静默绕过，把不可比的数混进榜里。
 
