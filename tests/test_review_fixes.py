@@ -6,7 +6,7 @@ Round A（评分口径 v2）+ Round B（判卷与鲁棒）核心语义：
 - R04 锚例进 LLM 判卷提示词
 - R07 role 推断：存储/actions 断言=diagnostic 不进六维
 - R09/R17 after:inject 阶段过滤：canary 教学时点判，probe 段删除洗白失效
-- R14 无效票采信对侧 + 仲裁轮值
+- R14 单 LLM 评委（v2.0.0 起双判移除）
 - R18 无有效探测的维=None（未测≠0 分）
 - R22 _answer_for 取 probe 段回复
 - R23 单 case 异常隔离：failed_cases 记录、manifest 兜底落盘
@@ -42,7 +42,7 @@ from memhall.scoring.engine import _answer_for, evaluate_case
 from memhall.scoring.judge import (
     JUDGE_PROMPT,
     OpenAICompatJudge,
-    dual_judge,
+    llm_judge,
 )
 from memhall.scoring.rules import EvidenceMissing, EvidenceStore, run_check
 
@@ -239,7 +239,7 @@ def test_judge_prompt_contains_anchors():
     assert "rendered-anchors" in prompt
 
 
-# ---------- R14 无效票采信对侧 + 仲裁轮值 ----------
+# ---------- R14 单 LLM 评委（v2.0.0 起双评委仲裁移除） ----------
 
 class _FakeJudge(OpenAICompatJudge):
     """离线评委：按脚本吐 JSON 票。"""
@@ -254,39 +254,42 @@ class _FakeJudge(OpenAICompatJudge):
         return self._replies.pop(0)
 
 
-def _dual_probe() -> JudgeProbe:
+def _llm_probe() -> JudgeProbe:
     return JudgeProbe(kind="judge", id="persist-x-p1", after="probe",
                       ask="我的目录在哪", expect="~/dev", rubric="x",
                       verdict_map={"reported": "correct", "forgot": "omission"})
 
 
-def test_dual_judge_adopts_valid_vote_when_other_invalid():
-    a = _FakeJudge("A", ["不是 JSON"])
-    b = _FakeJudge("B", ['{"verdict": "forgot", "confidence": 0.9,'
+def test_llm_judge_single_vote_decides():
+    a = _FakeJudge("A", ['{"verdict": "forgot", "confidence": 0.9,'
                          ' "evidence_refs": ["t"], "reason": "r"}'])
-    out = dual_judge(_dual_probe(), "回答", a, b)
-    assert out.key == "forgot" and out.decided_by == "judge_b"
-    assert a.calls == 1 and b.calls == 1  # 无效票不再触发仲裁调用
+    out = llm_judge(_llm_probe(), "回答", a)
+    assert out.key == "forgot" and out.decided_by == "judge_a"
+    assert a.calls == 1  # 单判一票定案，无第二次/仲裁调用
 
 
-def test_dual_judge_arbiter_rotates(monkeypatch):
-    """双票不一致 → 仲裁；默认 A/B 轮值（不再固定 judge_a 自议）。"""
-    vote = '{"verdict": "%s", "confidence": 0.9, "evidence_refs": ["t"], "reason": "r"}'
-    arb = ['{"verdict": "reported", "confidence": 0.8,'
-           ' "evidence_refs": ["t"], "reason": "arb"}']
-    a = _FakeJudge("A", [vote % "reported", vote % "reported"])
-    b = _FakeJudge("B", [vote % "forgot", vote % "forgot"] + arb * 3)
-    monkeypatch.delenv("JUDGE_ARBITER", raising=False)
-    out = dual_judge(_dual_probe(), "回答", a, b)
-    assert out.arbitrated and out.key == "reported"
-    # 第二次分歧：轮到 A 仲裁
-    a2_replies = [vote % "reported", vote % "reported",
-                  '{"verdict": "forgot", "confidence": 0.8,'
-                  ' "evidence_refs": ["t"], "reason": "arb2"}']
-    a2 = _FakeJudge("A", a2_replies)
-    b2 = _FakeJudge("B", [vote % "forgot", vote % "forgot"])
-    out2 = dual_judge(_dual_probe(), "回答", a2, b2)
-    assert out2.arbitrated and out2.key == "forgot"
+def test_llm_judge_invalid_vote_goes_human():
+    a = _FakeJudge("A", ["不是 JSON"])
+    out = llm_judge(_llm_probe(), "回答", a)
+    assert out.key is None and "转人工" in out.reason
+    assert a.calls == 1
+
+
+def test_judge_b_env_is_ignored_with_warning(monkeypatch, caplog):
+    """v2.0.0 起判卷为规则+单 LLM 评委：JUDGE_B_* 存在时显式告警忽略。"""
+    import logging
+
+    from memhall.scoring.judge import OpenAICompatJudge
+
+    monkeypatch.setenv("JUDGE_A_BASE_URL", "http://gw/v1")
+    monkeypatch.setenv("JUDGE_A_KEY", "k")
+    monkeypatch.setenv("JUDGE_A_MODEL", "m-a")
+    monkeypatch.setenv("JUDGE_B_BASE_URL", "http://gw2/v1")
+    monkeypatch.setenv("JUDGE_B_KEY", "k2")
+    with caplog.at_level(logging.WARNING, logger="memhall.scoring.judge"):
+        judge = OpenAICompatJudge.judge_from_env()
+    assert judge is not None and judge.model == "m-a"
+    assert any("JUDGE_B" in r.message for r in caplog.records)
 
 
 # ---------- R02/R23 runner：隔离与防线 ----------

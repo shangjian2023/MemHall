@@ -123,7 +123,7 @@ def render_report(
     if metrics.get("n_human_review"):
         dual = bool((manifest.get("judge") or {}).get("model_b"))
         hint = (
-            "双评委仲裁后仍未决，转人工复核" if dual else "当前判卷未决，转人工复核；双评委需实际配置评委 B"
+            "历史双判归档仍未决，转人工复核" if dual else "LLM 评委未决，转人工复核"
         )
         lines.append(f"- ⚠️ 判卷未决 {metrics['n_human_review']} 个已剔出分母——{hint}")
     if metrics.get("n_degraded"):
@@ -149,7 +149,7 @@ def render_report(
         ar = metrics.get("judge_agreement_rate")
         kp = metrics.get("judge_cohens_kappa")
         if ar is not None and jm.get("model_b"):
-            line += f" · 双评委一致率 {ar:.1%}"
+            line += f" · 双评委一致率 {ar:.1%}"  # 仅历史双判归档（B 实际配置过）才会出现
         if kp is not None and jm.get("model_b"):
             line += f" · Cohen's Kappa {kp:.2f}"
         lines.append(line)

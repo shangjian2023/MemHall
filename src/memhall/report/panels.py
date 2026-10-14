@@ -4,7 +4,7 @@
 就跳过该图——UI 端按 404 自动隐藏，不硬凑空图）：
 - report-verdict-mix.png：分能力的判定构成堆积条——错误集中在哪一维、
   什么形态（遗漏/混淆/编造/错误持久化/错误复用/无效），一眼可读
-- report-caliber.png：双判 vs 脚本判卷哑铃（per 能力）——重判把哪些维
+- report-caliber.png：LLM 评委 vs 脚本判卷哑铃（per 能力）——重判把哪些维
   拉低了多少（幸存者偏差摘除的可视化）；无 verdicts.scripted.jsonl
   存档时跳过（scripted run 不画）
 - report-latency.png：教/扰/考三阶段回复延迟分布（对数轴带状散点）——
@@ -102,7 +102,7 @@ def _verdict_mix(run_dir: Path, verdicts, cases: dict) -> str | None:
 
 
 def _caliber(run_dir: Path, verdicts, cases: dict) -> str | None:
-    """双判 vs 脚本判卷哑铃（per 能力，同证据两口径）。"""
+    """LLM 评委 vs 脚本判卷哑铃（per 能力，同证据两口径）。"""
     s_file = run_dir / "verdicts.scripted.jsonl"
     if not s_file.is_file():
         return None

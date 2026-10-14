@@ -187,7 +187,7 @@ class JudgeMeta(BaseModel):
     judge_a: JudgeMetaItem | None = None
     judge_b: JudgeMetaItem | None = None
     prompt_version: str = ""
-    arbiter: str | None = None   # 双判不一致时：rule | 第三模型 | None(转人工)
+    arbiter: str | None = None   # 历史双判归档字段（v2.0.0 起单判，新判定恒 None）
 
 
 class Verdict(BaseModel):

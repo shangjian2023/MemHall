@@ -82,7 +82,7 @@ def test_degraded_guess_kept_but_not_scored():
     degraded 置位、confidence 0、判定值不进分数。"""
     probe = _probe()
     store = EvidenceStore([_dialogue([(probe.ask, probe.expect)])])
-    vs = evaluate_case(_case(probe), store, "r", judges=(_DeadJudge(),))
+    vs = evaluate_case(_case(probe), store, "r", judge=_DeadJudge())
     assert len(vs) == 1
     v = vs[0]
     assert v.verdict == VerdictValue.CORRECT          # 猜测值保留
@@ -96,7 +96,7 @@ def test_degraded_undecided_goes_human_review_not_counted_twice():
     """降级且脚本判不了：转 human_review（原有语义），不重复计入 n_degraded。"""
     probe = _probe()
     store = EvidenceStore([_dialogue([(probe.ask, "可能是那边吧")])])
-    vs = evaluate_case(_case(probe), store, "r", judges=(_DeadJudge(),))
+    vs = evaluate_case(_case(probe), store, "r", judge=_DeadJudge())
     v = vs[0]
     assert v.verdict == VerdictValue.HUMAN_REVIEW
     assert v.decided_by == DecidedBy.HUMAN_REVIEW

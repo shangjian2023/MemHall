@@ -183,7 +183,7 @@ def compute_metrics(verdicts: list[Verdict], cases: dict[str, MemoryCase]) -> di
         "write_hygiene": write_hygiene,
         "stale_info_rate": stale,
         "fault_localization": _fault_localization(by_case_score, by_case_storage),
-        # 判卷质检（design.md §8 评测质量指标）：仅 dual 判卷时有值
+        # 判卷质检（design.md §8 评测质量指标）：仅历史双判归档有值（v2.0.0 起单判）
         "judge_agreement_rate": _agreement_rate(verdicts),
         "judge_cohens_kappa": _cohens_kappa(verdicts),
         "human_review_rate": round(
@@ -343,7 +343,7 @@ def _fault_localization(
 
 
 def _agreement_rate(verdicts: list[Verdict]) -> float | None:
-    """双判一致率：双评委原始票相同的比例（无 judge_meta/无双判时 None）。"""
+    """双评委原始票一致率：仅历史双判归档非 None；单判/脚本判卷恒 None。"""
     dual = [v.judge_meta for v in verdicts if v.judge_meta is not None]
     bs = [m.judge_b for m in dual if m.judge_b is not None and m.judge_b.model]
     if not bs:

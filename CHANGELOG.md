@@ -36,6 +36,12 @@ Unreleased 节（A 档 A1–A8、B8 OS 沙箱、kylin-agent 适配器、题库�
 - **整合接缝**：runner 落账 manifest.environment.sandbox（运行路径此前
   无人写这格，兼容校验会把所有新 run 判"未封存"）；F 两条 xfail(strict)
   转正；stats --index 单智能体臂 ③ 区分度除零修复（如实标注不适用）。
+- **判卷口径定版：规则+单 LLM 评委（v2.0.0 起双评委交叉仲裁移除）**：
+  B 评委无独立授权且从未配置、同模型双判票相关——移除 JUDGE_B/仲裁
+  执行路径（历史归档 judge_b/arbitrated 字段保持可读，重渲染/聚合不变）；
+  CLI 新增 `--judge llm` 正名，`--judge dual` 保留为等价别名（manifest
+  协议 id 沿用 dual 以兼容全部历史归档与在跑矩阵）；JUDGE_B_* 若在环境
+  存在则显式告警忽略；判卷可信性出口=金标准门禁+诱饵负样本+人工盲评。
 
 ### E 档：参赛材料复核与人工盲评导出（2026-10-14）
 

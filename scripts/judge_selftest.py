@@ -19,7 +19,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from memhall.schema.models_case import Anchor, JudgeProbe  # noqa: E402
-from memhall.scoring.judge import OpenAICompatJudge, dual_judge  # noqa: E402
+from memhall.scoring.judge import OpenAICompatJudge, llm_judge  # noqa: E402
 
 VM = {  # 通用 verdict_map
     "path": {"new_path": "correct", "old_path": "confusion",
@@ -97,17 +97,16 @@ ANCHORS = {
 def main() -> int:
     if "--offline" in sys.argv:
         return offline_selftest()
-    judges = OpenAICompatJudge.pair_from_env()
-    if judges is None:
+    judge_a = OpenAICompatJudge.judge_from_env()
+    if judge_a is None:
         print("缺 JUDGE_A_ 环境变量（.env source 后再跑）")
         return 1
-    judge_a = judges[0]
 
     n_ok = 0
     print(f"{'案例':<12} {'标注':<15} {'judge':<15} 结果")
     for name, ask, expect, rubric, vmap, answer, gold_key in GOLD:
         probe = _probe(name, ask, expect, rubric, vmap)
-        outcome = dual_judge(probe, answer, judge_a)
+        outcome = llm_judge(probe, answer, judge_a)
         got = outcome.key or "(无效)"
         ok = got == gold_key
         n_ok += ok

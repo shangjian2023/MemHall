@@ -26,14 +26,14 @@ python -m memhall sample -c cases/challenge-v2 --count 24 --seed 20261013 --max-
 python -m memhall run -a mock --paper build/paper-24.json
 python -m memhall generate --seed 20261013 --variants 42 -o build/pool-1008
 # 配好真实车道后，所有轮次使用同一试卷：
-python -m memhall batch --paper build/paper-24.json --adapters hermes kylinbot openclaw --repeats 2 --judge dual
+python -m memhall batch --paper build/paper-24.json --adapters hermes kylinbot openclaw --repeats 2 --judge llm
 ```
 
 CLI、数据契约、插件示例、评分边界和校准流程见 [题库与扩展使用说明](docs/benchmark-v2.md)。[题库升级版作品介绍（Word）](docs/contest/submission/MemHall-作品介绍-题库升级版.docx) 从原可编辑版复制并追加本轮说明，便于继续修改；原文件保留。
 
 ## 终榜先看
 
-> 2026-10-13 审计更正：本批 full/chains 归档均只有评委 A（`judge.model_b=null`），为规则 + 单 LLM 评委实测；`--judge dual` 是配置模式名称，双评委功能需另配 B。评委 A 与被测智能体同一模型标识（统一网关只授权该模型）——同模型偏袒风险如实披露，校准出口是人工双人盲评（72 条工作表已于 2026-10-14 从 14 轮通过核验的归档导出，`python -m memhall calibrate`，状态 awaiting_human_labels，见 [`docs/audit/blind-review-20261014/`](docs/audit/blind-review-20261014/README.md)）与单/双判对照。实测原始分数保持不变，统计脚本已剔除 diagnostic、修正四轮功效，并新增按题聚类的稳健检验（②b，见下文脚注）。归档完整性单独见 `docs/audit/review-20261013/verification.json`。
+> 2026-10-13 审计更正：本批 full/chains 归档均只有评委 A（`judge.model_b=null`），为规则 + 单 LLM 评委实测；`--judge dual` 是配置模式名称（v2.0.0 起双评委机制移除，CLI 新名 `--judge llm`，`dual` 保留为等价别名）。评委 A 与被测智能体同一模型标识（统一网关只授权该模型）——同模型偏袒风险如实披露，校准出口是人工双人盲评（72 条工作表已于 2026-10-14 从 14 轮通过核验的归档导出，`python -m memhall calibrate`，状态 awaiting_human_labels，见 [`docs/audit/blind-review-20261014/`](docs/audit/blind-review-20261014/README.md)）。实测原始分数保持不变，统计脚本已剔除 diagnostic、修正四轮功效，并新增按题聚类的稳健检验（②b，见下文脚注）。归档完整性单独见 `docs/audit/review-20261013/verification.json`。
 
 > **本次参赛材料（2026-10-13）**：[可编辑 Word 作品介绍](docs/contest/submission/MemHall-作品介绍-可编辑版.docx) · [材料与修改指引](docs/contest/submission/README.md) · [全面审计报告](docs/audit/review-20261013/MemHall-全面审计报告.md)。Word 对照命题要求组织，附公开实验表、样例与来源；现存二进制仍需按审计修复重建验收。
 
@@ -76,11 +76,11 @@ CLI、数据契约、插件示例、评分边界和校准流程见 [题库与扩
 <p align="center">
   <img src="images/pipeline-dark.svg" width="880" alt="评测管线架构图：评测器、openKylin 被测环境、证据、判卷、统一模型网关">
 </p>
-<p align="center"><sub>评测管线全景：剧本引擎经 SSH 车道驱动真机智能体，本批被测流量配置为经统一网关，四类证据带哈希封印，规则与 LLM 判卷出六维报告（双评委为可选能力）</sub></p>
+<p align="center"><sub>评测管线全景：剧本引擎经 SSH 车道驱动真机智能体，本批被测流量配置为经统一网关，四类证据带哈希封印，规则与单 LLM 评委判卷出六维报告</sub></p>
 
 - **「教 → 隔 → 考」三阶段剧本，不是简单问答**。教学注入 → 干扰隔离 → 多时点探测（含拨钟跨天），六维能力独立出分：长期保持 / 记忆调用 / 动态更新 / 相近区分 / 边界识别 / 任务复用。题库 full 45 + gen 21 + chains 4（六会话长链对齐 LongMemEval/LoCoMo）+ heldout 21（运行时生成加试池，公开 seed 仍可重构）；正式口径 = full + chains（终榜 v3：full 45 × 4 轮成榜 + chains 4 × 2 轮附表）。
 - **证据即真相**。对话、记忆快照、操作记录、文件变化统一为证据流，每条判定可下钻到证据哈希；canary 金丝雀教学时点判（probe 段删除洗白不了 over_persist）+ 超串干扰防线（188 个干扰项 100% 拒绝）。
-- **五态判定 + 分层判卷**。正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用——不止判对错，还判「记错的样子」；规则判不了的升级 LLM judge（配置 B 后可做双评委交叉仲裁）（锚例随提示词下发、仲裁评委 A/B 轮值），未决单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
+- **五态判定 + 分层判卷**。正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用——不止判对错，还判「记错的样子」；规则判不了的升级 LLM 评委（锚例随提示词下发，一票定案），未决单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
 - **评测诚实优先**（design §5 明规则）。口径 v1→v3 全程留痕（R01–R60 共 60 项专项排查，见 [review-tasks](docs/review-tasks.md)）；敢报分差：同一批证据换判卷口径，六轮总体全部下移（0.8–19 分）、维度级 −45～+27 分非单向，掉分机制已抽查证实（脚本判卷把判不了的点剔出分母，幸存者偏差低估与高估并存）；数字必须带口径出行。
 - **公平性工程**。统一网关强制同后端同模型——对照才有意义；逐请求 token 记账、限速排队、429 指数退避；heldout 池公开 seed 支持复现，但不能抵御定向重构（威胁模型见 [dataset-card §8](docs/dataset-card.md)）；对外分享产物先过脱敏脚本（R54）。
 - **把完整智能体框架当黑盒横评，业界没有现成尺子**。主流长期记忆基准（LoCoMo / LongMemEval / MemoryAgentBench / MemBench）全是"记忆模块对比"——同一段历史喂给各家记忆 API 再出题；最接近的 OmniMemEval agent 轨道也走记忆插件协议。本基准不解析任何一家记忆内部格式：subprocess 驱动完整 CLI（九个适配器：openKylin 真机 hermes / kylinbot / openclaw / kylin-agent + 本机 claude / qwen / opencode / hermes + mock 基线；kylin-agent 适配器已接入——独立网关身份修复在集成分支 `codex/integrate-20261014`——VM 真机待验收，尚无实测成绩，不引用 Hermes 分数推断），判据锚定环境侧证据（文件终态字节级哈希 + 行为判定），各家痕迹异构照样同一把尺——接口层的已知妥协逐条披露在 [dataset-card §8 适配器妥协清单](docs/dataset-card.md)，OS 级沙箱（bwrap 整根只读 + 白名单可写）为可选强化层。
@@ -147,13 +147,14 @@ uv run memhall gateway --report                      # 按智能体出 token 账
 # claude-local 走 anthropic 协议不进统一车道（配了 GATEWAY_URL 会显式报错）
 ```
 
-### 双 LLM judge 判卷（可选）
+### LLM 评委判卷（规则 + 单 LLM 评委）
 
 ```bash
-# 替代默认离线脚本判卷；两 judge 需跨厂商；锚例随提示词下发，仲裁评委 A/B 轮值
+# 替代默认离线脚本判卷；锚例随提示词下发，无效票转人工复核
 export JUDGE_A_BASE_URL=... JUDGE_A_MODEL=... JUDGE_A_KEY=...
-export JUDGE_B_BASE_URL=... JUDGE_B_MODEL=... JUDGE_B_KEY=...
-uv run memhall run -a mock --judge dual
+uv run memhall run -a mock --judge llm
+# --judge dual 为历史别名（等价 llm；manifest 协议 id 沿用 dual 以兼容历史归档）
+# v2.0.0 起不再支持双评委交叉仲裁；判卷可信性由金标准门禁+诱饵负样本+人工盲评校准
 ```
 
 ### 第三方使用（自带已装好的智能体）
@@ -208,7 +209,7 @@ dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall�
 - **LLM 重判 vs 脚本判卷**：六轮总体分全部更低（0.8–19 分，方向一致），掉分集中在记忆调用维（六轮 −16～−39 分）；但口径差不是单向的——边界识别/任务复用维 dual 反而更高（最高 +12/+27 分），机制是脚本把判不了的探测点剔出分母，幸存者偏差低估与高估并存（模式匹配把语义答错的回答计对也已抽查证实）。脚本判卷数字仅存档对账（`verdicts.scripted.jsonl`），不用于排名。（口径对照数据来自初版终榜 run 的 R25 留档；现役终榜 run 一律 dual 直判，无脚本侧对照。）
 
 <p align="center">
-  <img src="images/fig-dual-vs-scripted.png" width="560" alt="双判 vs 脚本判卷哑铃图">
+  <img src="images/fig-dual-vs-scripted.png" width="560" alt="LLM 评委 vs 脚本判卷哑铃图">
 </p>
 <p align="center"><sub>同一批证据、两种判卷口径（空心=脚本判卷，实心=LLM 判卷；初版终榜 run 留档数据）——六轮全部下移不是判官严，是脚本判卷的分母幸存者偏差被摘除</sub></p>
 - **测量边界**（`uv run python scripts/stats_uncertainty.py` 可复现）：仅 score 探测进入六维、总体和不确定度统计。四轮同探测点六态一致率均值为 openclaw 83.6%、hermes 75.0%、kylinbot 71.2%；对错翻转均值约 12%/21%/21%。探索性配对票的 p 值未校正同题跨轮相关性；轮级功效估计使用实际轮数、样本标准差，头部需约 58 轮。能力标签取各次运行的题目快照，维度方差比只作描述，不误当 ANOVA F 值。

@@ -19,7 +19,7 @@ from memhall.scoring.judge import (
     JudgeOutcome,
     OpenAICompatJudge,
     ScriptedJudge,
-    dual_judge,
+    llm_judge,
 )
 from memhall.scoring.rules import EvidenceMissing, EvidenceStore, run_check
 
@@ -76,7 +76,7 @@ def _raw_verdict(key: str | None, probe: JudgeProbe) -> VerdictValue:
 
 
 def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: int,
-                   judges: tuple[OpenAICompatJudge, ...] | None) -> Verdict:
+                   judge: OpenAICompatJudge | None) -> Verdict:
     answer = _answer_for(store, probe.ask)
     if "[RUNTIME_ERROR]" in answer:
         return Verdict(
@@ -90,13 +90,12 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
     decided_by: DecidedBy
     degraded = False
 
-    if judges is not None:
+    if judge is not None:
         try:
-            outcome = dual_judge(probe, answer, *judges)
-            # dual_judge 显式标注（adopt/轮值仲裁）优先；旧推导兜底
+            outcome = llm_judge(probe, answer, judge)
+            # llm_judge 显式标注优先；旧推导兜底
             decided_by = (DecidedBy(outcome.decided_by) if outcome.decided_by
-                          else (DecidedBy.ARBITRATION if outcome.arbitrated
-                                else DecidedBy.JUDGE_A))
+                          else DecidedBy.JUDGE_A)
             from memhall.scoring.judge import JUDGE_PROMPT_VERSION
             meta = JudgeMeta(
                 judge_a=JudgeMetaItem(model=outcome.judge_a or "",
@@ -186,7 +185,7 @@ def _rule_verdict(probe: RuleProbe, store: EvidenceStore, run_id: str, seq: int)
 
 
 def evaluate_case(case: MemoryCase, store: EvidenceStore, run_id: str,
-                  judges: tuple[OpenAICompatJudge, ...] | None = None
+                  judge: OpenAICompatJudge | None = None
                   ) -> list[Verdict]:
     # case 级检查：任何一步的回复带 [RUNTIME_ERROR]（适配器挂掉）→ 整 case
     # 运行无效，不能静默降级成 omission/human_review（probe 可能根本没问）
@@ -208,5 +207,5 @@ def evaluate_case(case: MemoryCase, store: EvidenceStore, run_id: str,
                                      run_id, i))
         else:
             out.append(_judge_verdict(probe, _store_upto(store, probe.after),
-                                      run_id, i, judges))
+                                      run_id, i, judge))
     return out

@@ -440,8 +440,8 @@ def create_app() -> FastAPI:
                         raise _RunAborted()
                     emit({"type": "case", "case": cid, "i": i, "n": n})
 
-                judges = (OpenAICompatJudge.pair_from_env()
-                          if judge_mode == "dual" else None)
+                judge = (OpenAICompatJudge.judge_from_env()
+                         if judge_mode == "dual" else None)
                 run_id, stores = run_suite(adapter, cases, out_root,
                                            adapter_name, case_source=case_dir,
                                            on_case_done=on_case_done,
@@ -451,7 +451,7 @@ def create_app() -> FastAPI:
                 verdicts = []
                 from memhall.runner.orchestrator import pair_stores
                 for case, store in pair_stores(cases, stores):
-                    verdicts.extend(evaluate_case(case, store, run_id, judges))
+                    verdicts.extend(evaluate_case(case, store, run_id, judge))
                     if session.stop:
                         break
                 run_dir = out_root / run_id

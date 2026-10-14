@@ -81,7 +81,7 @@ def notes(doc):
         "python -m memhall run -a mock --paper build/paper-24.json",
         (
             "python -m memhall batch --paper build/paper-24.json --adapte"
-            "rs hermes kylinbot openclaw --repeats 2 --judge dual"
+            "rs hermes kylinbot openclaw --repeats 2 --judge llm"
         ),
     ]:
         paragraph(doc, command, size=9, color="142C46")
@@ -225,7 +225,7 @@ def notes(doc):
         (
             "完成真实人工标签后，可输出六态混淆矩阵、对错一致率、误判为正确的数量、分能力统计和 Cohen κ。空白保持待人工标签，"
             "部分填写保持 partial。当前状态即 awaiting_human_labels——一致率等数字在真人标签到齐前不存在。离线脚本样本可验证"
-            "工具，但不是实际 LLM 校准，也不是独立双评委实验。"
+            "工具，判卷口径为规则+单 LLM 评委（v2.0.0 起双判机制移除）。"
         ),
     )
 
@@ -286,7 +286,7 @@ def notes(doc):
         ["语义判卷准确度与偏差", "人工分层盲评，报告一致率、误判正确率和未决率"],
         ["重复性与跨智能体公平性", "同卷、同协议与评委配置封存，重复判卷与交叉核对"],
     ])
-    paragraph(doc, "当前历史 full/chains 实测只有评委 A，且 A 与被测智能体同一模型。--judge dual 是配置模式名称，B 必须实际配置并成功调用才构成双评委。双人盲评表已实际导出（72 条，六维分层，状态待真人标签），但真实人工标签和独立 B 实验尚未完成，材料如实披露此限制。")
+    paragraph(doc, "判卷口径为规则+单 LLM 评委（v2.0.0 起双评委机制移除；--judge dual 为历史别名等价 --judge llm，manifest 协议 id 沿用 dual 以兼容历史归档）。评委与被测智能体同一模型——同模型偏袒风险如实披露。双人人工盲评表已实际导出（72 条，六维分层，状态待真人标签），作为判卷可信性的流程外校准证据，真实人工标签尚未完成，材料如实披露。")
     paragraph(doc, "证据不足、无效输出和未解决争议保留未决状态，输出有效覆盖率与保守下界。人工介入主要用于校准和异常复核；无需把全部题目交由人工判卷。官方来源、判卷配置及验证记录见 provenance.json、docs/benchmark-v2.md 与审计目录。")
 
 

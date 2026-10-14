@@ -32,7 +32,7 @@ python -m memhall sample -c cases/challenge-v2 --count 24 --seed 20261013 --max-
 python -m memhall paper-info build/paper-24.json
 python -m memhall run -a mock --paper build/paper-24.json -o runs
 # 配好真实智能体后由操作者启动；各车道使用同一份试卷：
-python -m memhall batch --paper build/paper-24.json --adapters hermes kylinbot openclaw --repeats 2 --judge dual -o runs
+python -m memhall batch --paper build/paper-24.json --adapters hermes kylinbot openclaw --repeats 2 --judge llm -o runs
 ```
 
 试卷保存完整用例，不依赖原题包仍留在原机器。题单 ID 是完整内容的 SHA-256；同时记录题包 ID/版本/内容指纹、seed、具体题目、分层分布和计分协议。保存拒绝覆盖，运行前重新核对完整内容；封存后禁止再做历史轮换。普通 `run -c` 也会保存全量试卷，供重复使用。`batch` 记录每次运行目录与退出状态；模型或题包错误会在相应车道明确报出。

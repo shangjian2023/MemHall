@@ -88,8 +88,8 @@ def _finish_run(
     # 误读为 LLM 判卷（判卷方式与模型口径是两回事，decided_by 同步区分）
     judge_info: dict = {"mode": judge_mode, "prompt_version": JUDGE_PROMPT_VERSION}
     if judge_mode == "dual":
-        # model_b 为 null = JUDGE_B 未配（单判降级，A/B 轮值仲裁不触发）；
-        # 网关限额放开后配 JUDGE_B_* 即恢复双判——null 别写 ""，审计要能区分
+        # mode="dual" 是协议 id（历史名），含义=规则+单 LLM 评委；
+        # model_b 恒 null（v2.0.0 起单判），保留字段供历史双判归档对齐
         judge_info.update(
             {
                 "model_a": os.environ.get("JUDGE_A_MODEL", ""),
@@ -193,6 +193,8 @@ def cmd_batch(args: argparse.Namespace) -> int:
     except (ValueError, OSError) as error:
         print(str(error), file=sys.stderr)
         return 2
+    # 协议 id 沿用历史名 dual（batch 索引/manifest 与历史归档同口径）
+    args.judge = "dual" if args.judge == "llm" else args.judge
     root = Path(args.out)
     root.mkdir(parents=True, exist_ok=True)
     prefix = "batch-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -400,8 +402,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(up_err, file=sys.stderr)
         return 2
 
-    judges = OpenAICompatJudge.pair_from_env() if args.judge == "dual" else None
-    if args.judge == "dual" and judges is None:
+    args.judge = "dual" if args.judge == "llm" else args.judge  # 协议 id 沿用历史名
+    judge = OpenAICompatJudge.judge_from_env() if args.judge == "dual" else None
+    if args.judge == "dual" and judge is None:
         print("缺少 JUDGE_A_ 环境变量，回退脚本判卷", file=sys.stderr)
 
     from memhall.cost import estimate, fmt_tokens
@@ -433,7 +436,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     verdicts = []
     for case, store in pair_stores(cases, stores):
-        verdicts.extend(evaluate_case(case, store, run_id, judges))
+        verdicts.extend(evaluate_case(case, store, run_id, judge))
     metrics = _finish_run(
         run_dir, run_id, manifest, verdicts, {c.case_id: c for c in cases}, judge_mode=args.judge
     )
@@ -478,7 +481,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def _load_verdicts(
-    run_dir: Path, manifest: dict, cases: dict[str, MemoryCase], judges, rejudge: bool = False
+    run_dir: Path, manifest: dict, cases: dict[str, MemoryCase], judge, rejudge: bool = False
 ) -> tuple[list[Verdict], list[str]]:
     """优先读已落盘 verdicts；缺则（或 --re-judge 强制时）从证据 JSONL 重放评分。
 
@@ -513,7 +516,7 @@ def _load_verdicts(
                 for line in ev_path.read_text(encoding="utf-8").splitlines()
             ]
         )
-        verdicts.extend(evaluate_case(case, store, manifest["run_id"], judges))
+        verdicts.extend(evaluate_case(case, store, manifest["run_id"], judge))
     return verdicts, skipped
 
 
@@ -625,9 +628,10 @@ def cmd_report(args: argparse.Namespace) -> int:
     run_dir = _resolve_run(args.run_dir)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     cases = load_cases_for_run(run_dir)
-    judges = OpenAICompatJudge.pair_from_env() if args.judge == "dual" else None
-    if args.judge == "dual" and judges is None:
-        print("缺少 JUDGE_A_ 环境变量，无法 dual 判卷", file=sys.stderr)
+    args.judge = "dual" if args.judge == "llm" else args.judge  # 协议 id 沿用历史名
+    judge = OpenAICompatJudge.judge_from_env() if args.judge == "dual" else None
+    if args.judge == "dual" and judge is None:
+        print("缺少 JUDGE_A_ 环境变量，无法启用 LLM 判卷", file=sys.stderr)
         return 1
     vpath = run_dir / "verdicts.jsonl"
     if args.rejudge and vpath.exists():
@@ -636,7 +640,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         backup = run_dir / f"verdicts.{old_mode}.jsonl"
         vpath.replace(backup)
         print(f"旧 verdicts 备份: {backup.name}")
-    verdicts, skipped = _load_verdicts(run_dir, manifest, cases, judges, rejudge=args.rejudge)
+    verdicts, skipped = _load_verdicts(run_dir, manifest, cases, judge, rejudge=args.rejudge)
     if skipped:
         # R35：无证据 case 单列，不悄悄缩水（报告头/控制台都可见）
         manifest["n_cases_no_evidence"] = len(skipped)
@@ -647,7 +651,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     # 口径跟着已有 verdicts/manifest 走，--judge 只在真判卷时生效
     effective_mode = (
         args.judge
-        if (judges is not None or args.rejudge)
+        if (judge is not None or args.rejudge)
         else manifest.get("judge", {}).get("mode", args.judge)
     )
     metrics = _finish_run(run_dir, manifest["run_id"], manifest, verdicts, cases, judge_mode=effective_mode)
@@ -891,9 +895,9 @@ def main() -> None:
     )
     p_run.add_argument(
         "--judge",
-        choices=["scripted", "dual"],
+        choices=["scripted", "llm", "dual"],
         default="scripted",
-        help="判卷方式（dual=LLM 判卷[单判或双判，按 JUDGE_B 是否配置]）",
+        help="判卷方式（llm=规则+单 LLM 评委；dual 为历史别名，等价 llm）",
     )
     p_run.add_argument(
         "--rotate-count", type=int, help="探索评测：按历史轮换抽题；正式对比建议 sample + --paper"
@@ -907,7 +911,7 @@ def main() -> None:
     p_batch.add_argument("--paper", required=True)
     p_batch.add_argument("-a", "--adapters", nargs="+", required=True)
     p_batch.add_argument("--repeats", type=int, default=2)
-    p_batch.add_argument("--judge", choices=["scripted", "dual"], default="scripted")
+    p_batch.add_argument("--judge", choices=["scripted", "llm", "dual"], default="scripted")
     p_batch.add_argument("--model")
     p_batch.add_argument("-o", "--out", default="runs")
     p_batch.set_defaults(func=cmd_batch)
@@ -947,7 +951,7 @@ def main() -> None:
     p_rep = sub.add_parser("report", help="出报告（缺 verdicts 时从证据重放评分）", parents=[common])
     p_rep.add_argument("run_dir", help="runs/ 下的 run 目录")
     p_rep.add_argument(
-        "--judge", choices=["scripted", "dual"], default="scripted", help="重放评分时的判卷方式"
+        "--judge", choices=["scripted", "llm", "dual"], default="scripted", help="重放评分时的判卷方式"
     )
     p_rep.add_argument(
         "--rejudge", action="store_true", help="忽略已落盘 verdicts，从证据重放评分（旧 verdicts 自动备份）"

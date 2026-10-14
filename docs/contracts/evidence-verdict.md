@@ -8,7 +8,8 @@
 > 以契约为准的条款第一次与实现对齐）。
 > **v0.2.1 · 2026-10-06**（C 角色队友复核 P0-2/P2-6）：Verdict 增 `degraded` 标记——
 > judge 故障窗口脚本兜底的判定保留值但不计分（metrics `n_degraded`，保守下界按错计）；
-> 指标层增 `judge_cohens_kappa`（双评委一致性，剔除随机一致）。
+> 指标层增 `judge_cohens_kappa`（双评委一致性，剔除随机一致；v2.0.0 起判卷
+> 为规则+单 LLM 评委，κ 仅对历史双判归档有值）。
 > 证据 = 判卷的全部输入；判定 = 每个证据组合的结论，带可下钻的引用链。对应 design.md §5/§6。
 > JSONL 格式，一次 run 一个目录 `evidence/<run_id>/`。
 
@@ -124,7 +125,7 @@ full，故 actions 断言探测一律 role=diagnostic 不进六维，待证据�
     "judge_a": {"model": "deepseek-v4", "verdict": "correct", "agreed": true},
     "judge_b": {"model": "qwen-max", "verdict": "correct", "agreed": true},
     "prompt_version": "judge-v1.2",
-    "arbiter": null                    // 双判不一致时：rule | 第三模型 | null(转人工)
+    "arbiter": null                    // 历史双判归档字段（v2.0.0 起单判恒 null）
   },
   "degraded": false                    // judge 故障窗口脚本兜底的判定：值保留供人工复核，
                                       // 不进分子分母（metrics.n_degraded 单列，保守下界按错计）
@@ -153,12 +154,10 @@ full，故 actions 断言探测一律 role=diagnostic 不进六维，待证据�
   ├─ 值级复查存疑（回答含期望值超串/前缀近形，R26）→ 转下一层
   └─ 判不了（None）→ 转人工或 LLM
 LLM 判卷（rubric + anchors + verdict_map）
-  ├─ 单判（JUDGE_B 未配）→ 一票定案，decided_by=judge_a；无效票转人工
-  ├─ 双判一致 → 采信，decided_by=judge_a
-  ├─ 一票无效 → 直接采信对侧有效票（R14，省一次仲裁调用）
-  ├─ 双票不一致 → 仲裁评委 A/B 轮值（JUDGE_ARBITER，R14：固定 A 仲裁自己
-  │               的分歧引入自偏好）；decided_by=arbitration
-  └─ 仲裁无效 → human_review 队列（人工复核率的分母来源，目标 <5%）
+  ├─ 单判（v2.0.0 起唯一路径）→ 一票定案，decided_by=judge_a；无效票转人工
+  └─ human_review 队列（人工复核率的分母来源，目标 <5%）
+     （历史双判分支——一致采信/一票无效采信对侧/仲裁轮值——v2.0.0 移除，
+       历史 verdicts 的 judge_b/arbitrated 字段保持可读）
 降级：LLM 端点全挂 → 退脚本判卷，decided_by=scripted、explanation 带
 [judge 降级]（R27：机器判定不得混入人工未决率）；脚本也判不了 → human_review
 ```
@@ -170,7 +169,7 @@ LLM 判卷（rubric + anchors + verdict_map）
   **pass^k 口径**（k 次每次都对才算过，τ-bench 惯例）作为"agent 稳定性敏感"的
   并列口径评估输出，两者差异大时报告注明；
 - 错误构成：omission/confusion/fabrication/over_persist/wrong_reuse 各占比（雷达图旁的第二张图）；
-- 判卷质量四件套：人工复核率、双判一致率、金标准符合率、诱饵拒绝率——从 verdicts + 质检任务数据算；
+- 判卷质量四件套：人工复核率、金标准符合率、诱饵拒绝率 + 人工盲评一致率——从 verdicts + 质检任务数据算（双判一致率仅历史归档有值）；
 - 故障定位四态（没存/存了没用上/存错了/该删没删）：由 memory_snapshot×dialogue/actions 交叉推导，附 evidence_refs，写进深化报告——**推导规则 C 在 W2 冻结为附录 A，本契约预留**。
 
 ## 5. Run manifest（一次运行的总账单，D 产出）

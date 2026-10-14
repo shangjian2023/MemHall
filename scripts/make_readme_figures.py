@@ -10,7 +10,8 @@
   箭头 marker/网格纹理）→ 图 3 评测管线 SVG。
 
 用法：uv run python scripts/make_readme_figures.py
-数据源：runs/_agg-{hermes,kylinbot,openclaw}-dual/aggregate.json（双判聚合）、
+数据源：runs/_agg-{hermes,kylinbot,openclaw}-dual/aggregate.json（LLM 评委判卷聚合，
+目录名 -dual 为历史口径名）、
 六场 run 的 verdicts.jsonl / verdicts.scripted.jsonl、
 stats_uncertainty.py 同源逻辑（一致率/符号检验/区分度，经 import 复用）。
 """
@@ -458,7 +459,7 @@ SCRIPTED_RUNS = ["20261002-073342-hermes", "20261002-112443-hermes",
 
 
 def fig5_dual_vs_scripted(mod) -> None:
-    """图 5：同证据双判 vs 脚本判卷哑铃——"敢报分差"可视化。"""
+    """图 5：同证据 LLM 评委 vs 脚本判卷哑铃——"敢报分差"可视化。"""
     _setup_font()
     rows = []
     for rid in SCRIPTED_RUNS:
