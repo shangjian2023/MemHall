@@ -28,6 +28,8 @@
 | assets/ | 实测图、SVG 源及本轮 UI 截图 |
 | examples/20261013-085255-mock/ | 完整离线工具链样例，verify 通过 |
 | real-evidence-sample/ | 严格通过真实 run 中的一题片段，仅用于查看证据契约 |
+| ../../audit/submission-readiness-20261014.md | 2026-10-14 E 档：赛题交付与评分细则逐项对照、版本索引、剩余扣分点 |
+| ../../audit/blind-review-20261014/ | 72 条双人盲评工作表、受限映射与协议（状态 awaiting_human_labels） |
 | ../../audit/review-20261013/ | 全面审计、官方原材料、校验与内部排版记录 |
 
 ## 从公开资料重建 Word

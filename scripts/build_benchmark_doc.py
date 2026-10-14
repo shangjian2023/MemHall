@@ -206,14 +206,16 @@ def notes(doc):
     paragraph(
         doc,
         (
-            "新增人工盲评工具按能力抽样，工作表隐藏智能体身份和机器结论，答案键另存。人工只填 human_verdict 和备注；问"
-            "题内容、来源和答案键被修改会被拒绝。"
+            "人工盲评工具按能力抽样，工作表隐藏智能体身份和机器结论，答案键另存。人工只填 human_verdict 和备注；问"
+            "题内容、来源和答案键被修改会被拒绝。2026-10-14 已实际导出：抽样框为 14 轮通过核验归档中的 LLM 评委判"
+            "定共 472 条，得 72 条双人工作表（六维各 12、题族 35、correct 52／错误态 17／待复核 3、over_persist 0——"
+            "框内仅 6 条，该态多为规则判）。协议与偏差清单见 docs/audit/blind-review-20261014/。"
         ),
     )
     for command in [
         (
-            "python -m memhall calibrate runs/某轮A runs/某轮B --per-capabili"
-            "ty 12 --seed 20261013 -o build/human-audit"
+            "python -m memhall calibrate runs/通过核验的各轮 --per-capability 12 --"
+            "seed 20261014 -o build/human-audit"
         ),
         "python -m memhall calibrate --analyze build/human-audit",
     ]:
@@ -222,7 +224,8 @@ def notes(doc):
         doc,
         (
             "完成真实人工标签后，可输出六态混淆矩阵、对错一致率、误判为正确的数量、分能力统计和 Cohen κ。空白保持待人工标签，"
-            "部分填写保持 partial。离线脚本样本可验证工具，但不是实际 LLM 校准，也不是独立双评委实验。"
+            "部分填写保持 partial。当前状态即 awaiting_human_labels——一致率等数字在真人标签到齐前不存在。离线脚本样本可验证"
+            "工具，但不是实际 LLM 校准，也不是独立双评委实验。"
         ),
     )
 
@@ -283,7 +286,7 @@ def notes(doc):
         ["语义判卷准确度与偏差", "人工分层盲评，报告一致率、误判正确率和未决率"],
         ["重复性与跨智能体公平性", "同卷、同协议与评委配置封存，重复判卷与交叉核对"],
     ])
-    paragraph(doc, "当前历史 full/chains 实测只有评委 A，且 A 与被测智能体同一模型。--judge dual 是配置模式名称，B 必须实际配置并成功调用才构成双评委。人工盲评工具已实现，但真实人工标签和独立 B 实验尚未完成，材料如实披露此限制。")
+    paragraph(doc, "当前历史 full/chains 实测只有评委 A，且 A 与被测智能体同一模型。--judge dual 是配置模式名称，B 必须实际配置并成功调用才构成双评委。双人盲评表已实际导出（72 条，六维分层，状态待真人标签），但真实人工标签和独立 B 实验尚未完成，材料如实披露此限制。")
     paragraph(doc, "证据不足、无效输出和未解决争议保留未决状态，输出有效覆盖率与保守下界。人工介入主要用于校准和异常复核；无需把全部题目交由人工判卷。官方来源、判卷配置及验证记录见 provenance.json、docs/benchmark-v2.md 与审计目录。")
 
 

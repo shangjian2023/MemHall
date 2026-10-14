@@ -1,0 +1,15 @@
+{
+  "status": "awaiting_human_labels",
+  "seed": 20261014,
+  "n_samples": 72,
+  "per_capability": {
+    "discriminate": 12,
+    "persist": 12,
+    "boundary": 12,
+    "dynamic_update": 12,
+    "reuse": 12,
+    "recall": 12
+  },
+  "sheet_fingerprint": "c73abd9fd03ee4e3aed796511cb9ae8bdb975f528bfe18cf58d5b756da83f5c5",
+  "key_fingerprint": "8e7aba62727128345faa040c13d68068309dfd8053bbe5c4071ab44a6851f6c7"
+}
