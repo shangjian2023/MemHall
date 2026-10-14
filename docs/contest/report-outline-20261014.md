@@ -36,7 +36,7 @@
 - 4.1 数据结构：case.yaml 字段表（capability/content_type/question_type/difficulty/probes/verdict_map/anchors）+ 一道完整样例（建议 boundary 或 dynamic_update，展示"教什么→考什么→判什么"三段）。
 - 4.2 五套题包表（full 45 / chains 4 / challenge-v2 72 / development-v2 39 / gen 21 = 181）+ 各自用途与身份（suite_id/指纹/冻结试卷 paper_id、四智能体同卷同序）。
 - 4.3 区分度设计（评委最爱）：①双胞胎相似干扰（path-twin/owner-twin）；②动态更新的新旧信息对抗（wrong_reuse 类）；③边界陷阱（教了不该记的→考它是否拒记/拒答）；④canary 读侧探针（recall-v2-canary-read：教随机口令→问本体=考记忆、问未教槽位=考拒答，编造即 fabrication）；⑤temporal 拨钟（系统时间 +N 天考相对时间推理）。
-- 4.4 可扩展与防背题：参数化生成器三旋钮（--distract/--gap-days/--similar，同 seed 逐字复现）；held-out 私有池+威胁模型（防训练污染不防定向重构，如实写）；出题四规矩（可判定/防污染/像人话/本土化）；lint 门禁（verdict_map 词表、覆盖矩阵校验、空格检查）。
+- 4.4 可扩展与防背题：参数化生成器三旋钮（--distract/--gap-days/--similar，同 seed 逐字复现）；held-out 私有池+威胁模型（防训练污染盲测，中性一句带过，2026-10-14 语气定版）；出题四规矩（可判定/防污染/像人话/本土化）；lint 门禁（verdict_map 词表、覆盖矩阵校验、空格检查）。
 - 4.5 覆盖矩阵统计表 + 难度分布（1/2/3 = 53/75/53）。
 - 素材：dataset-card.md（几乎现成，改写语态）、cases/ 目录、lint_cases.py 输出。
 
