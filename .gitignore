@@ -34,3 +34,4 @@ cases/heldout/
 # 工具缓存
 .pytest_cache/
 tmp_dist_test/
+docs/contest/report-draft/out/
