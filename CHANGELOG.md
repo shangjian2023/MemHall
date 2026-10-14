@@ -1,5 +1,44 @@
 # Changelog
 
+## [2.0.0] — 2026-10-14
+
+首个"可信评测工程"完整版：本轮（judge-review-20261014）评审修复 + 以下各
+Unreleased 节（A 档 A1–A8、B8 OS 沙箱、kylin-agent 适配器、题库与可复现
+评测升级、参赛审计修复）随本版本一并发布。
+
+评审修复轮（五项已复现缺陷 + 两项口径漏洞 + kylin-agent 身份误标，独立
+复现取证见 build/judge-review-20261014/）：
+
+- **runner/gateway（A）**：run 起点改存发车时 aware UTC（+8 宿主下不再差
+  8 小时，兼容历史紧凑戳/后缀）；模型改写移入互斥锁内、全生命周期 finally
+  恢复旧值（锁拒绝/错钟预检拒绝零残留）；网关对账改账单追加序号归因（与
+  系统钟无关，拨钟 case 亦可精确对账），三态结论
+  verified/suspect/unknown——账单读不到是 unknown，不再冒充无告警；
+  旧题请求不再掩盖新题零请求；时间比较全部解析 ISO/时区。
+- **VM 适配器（B）**：时钟恢复按首基准 epoch + 单调钟增量（/proc/uptime）
+  回拨，不再丢真实耗时（旧实现每 case 白吃一段耗时，攒过 ±300s 闸门拒跑
+  下一场）；多次 shift/失败可重试语义明确；~/memhall-artifacts 产物根进
+  沙箱可写白名单与三家 reset 清理（残留文件不再吃掉 fs_diff 的 created
+  证据）；Hermes.__init__ 网关身份按 self.name 取，子类不串账。
+- **口径与统计（C）**：check_compatibility 纳入 environment.sandbox 与真实
+  agent_version（明确不一致拒绝混合，缺字段判 unknown 拒绝 verified=true，
+  不默认当 sandbox=0/版本相同）；pass^k 增完整分母账本 pass_k_detail
+  （eligible/完整判定/覆盖率/缺失·invalid·human_review·degraded 分类/
+  保守下界）；延迟口径文档实现一致 + latency_coverage 摊账；stats_uncertainty
+  新增 --index 实验索引模式（memhall.experiment-index/1，formal 拒历史
+  run_id、一索引一臂，智能体数量不设上限），历史调用输出逐字不变。
+- **kylin-agent 专项（F）**：fork 源码逐条复核落地——-z 非零 rc 的 stdout
+  一律降级 AgentUnavailable（invalid_run，不再误判为 Reply 计分）；
+  HERMES_HOME 钉 ~/.kylin-agent-runtime；session_junk 对齐源码实证并加严
+  verify_reset；--version 严判（GUI 前端判 absent）；二进制引用/探测多
+  候选；P1 身份契约测试网（memhall-kylin-agent 归属、GATEWAY_AGENT_KEY
+  覆写、直连回落、Hermes 车道不变）。
+- **整合接缝**：runner 落账 manifest.environment.sandbox（运行路径此前
+  无人写这格，兼容校验会把所有新 run 判"未封存"）；F 两条 xfail(strict)
+  转正；stats --index 单智能体臂 ③ 区分度除零修复（如实标注不适用）。
+- 全回归 373 项（基线 293 + 新增 80）+ 离线 mock e2e
+  （sample→run→verify→report→aggregate→stats --index）全链路通过。
+
 ## [Unreleased] — A 档小修全档（2026-10-14）
 
 依据 docs/audit/roadmap-20261014.md A1–A8（检测与披露，不动判卷口径）：

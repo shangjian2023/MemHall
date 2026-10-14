@@ -448,6 +448,11 @@ def main() -> int:
         if any(x != x for v in per_agent.values() for x in v):
             print(f"  {CAP_ZH[cap]:<5} 未测（本轮 run 无该能力计分探测点）")
             continue
+        # 区分度是"跨智能体"的描述量：单智能体臂（逐家索引/冒烟口径）
+        # 没有组间方差可言，不硬算 0 除——如实标注不适用
+        if len(per_agent) < 2:
+            print(f"  {CAP_ZH[cap]:<5} 不适用（单智能体臂，无组间方差）")
+            continue
         means = [sum(v) / len(v) for v in per_agent.values()]
         between = sum((m - sum(means) / len(means)) ** 2 for m in means) / (len(means) - 1)
         within = sum(sum((x - sum(v) / len(v)) ** 2 for x in v) / (len(v) - 1)
