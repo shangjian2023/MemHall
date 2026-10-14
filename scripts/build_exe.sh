@@ -5,14 +5,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-rm -rf build dist/MemHall dist/MemHall.exe "dist/麟阁MemHall-单文件版.exe"
-uv run pyinstaller --noconfirm memhall.spec
+# 2026-10-14 事故修复：禁止 rm -rf build——该目录被 build/judge-review-20261014
+# 等共享产物占用，PyInstaller 工作区改用 build/exe 子目录
+rm -rf build/exe dist/MemHall dist/MemHall.exe "dist/麟阁MemHall-单文件版.exe"
+uv run pyinstaller --noconfirm --workpath build/exe --distpath dist memhall.spec
 mkdir -p dist/MemHall/cases
 cp cases/suite.yaml dist/MemHall/cases/
 for name in full gen chains challenge-v2 development-v2; do
   cp -r "cases/$name" "dist/MemHall/cases/$name"
 done
-uv run pyinstaller --noconfirm memhall-onefile.spec
+uv run pyinstaller --noconfirm --workpath build/exe --distpath dist memhall-onefile.spec
 mv dist/MemHall.exe "dist/麟阁MemHall-单文件版.exe"
 du -sh dist/MemHall "dist/麟阁MemHall-单文件版.exe"
 echo "完成：onedir=dist/MemHall/ · 单文件=dist/麟阁MemHall-单文件版.exe"
