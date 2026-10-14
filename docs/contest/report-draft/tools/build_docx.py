@@ -299,6 +299,7 @@ def style_setup(doc):
         h.font.name = ASCII_FONT
         h.font.size = Pt(size)
         h.font.bold = bold
+        h.font.color.rgb = RGBColor(0, 0, 0)  # 默认模板 Heading 是主题蓝，必须压成黑色
         h.element.get_or_add_rPr()
         rf = h.element.rPr.get_or_add_rFonts()
         rf.set(qn("w:eastAsia"), ea)
@@ -321,10 +322,10 @@ def heading(doc, text, figs, tabs):
     if level == 1:
         p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for r in p.runs:
-            set_font(r, ea=EA_HEAD, size=16, bold=True)
+            set_font(r, ea=EA_HEAD, size=16, bold=True, color=RGBColor(0, 0, 0))
     else:
         for r in p.runs:
-            set_font(r, ea=EA_BODY, size=12, bold=True)
+            set_font(r, ea=EA_BODY, size=12, bold=True, color=RGBColor(0, 0, 0))
     return p
 
 
