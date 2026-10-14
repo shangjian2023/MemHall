@@ -207,10 +207,16 @@ def _percentile(sorted_xs: list[float], p: float) -> float:
 
 
 def latency_summary(run_dir: Path) -> dict | None:
-    """A6 延迟一等指标：run 目录全部真实回复的耗时分布（p50/p95/max/均值）。
+    """A6 延迟一等指标：run 目录全部计时回复的耗时分布（p50/p95/max/均值）。
 
-    latency_ms=0 的占位回复（RUNTIME_ERROR）与瞬时 mock 回复都如实计入——
-    分布本身就是口径（mock 快、真模型慢一望即知），不做价值闸门。"""
+    口径（文档=实现）：分布只收 latency_ms>0 的计时样本。
+    - 真实成功回复：latency_ms>0 → 计入；
+    - 占位错误（[RUNTIME_ERROR]，runner 固定写 latency_ms=0）→ 不计入，
+      无计时语义；
+    - 0ms 非占位（瞬时/mock 回复，整型毫秒截断）→ 不计入，视为未计时；
+    - 缺 latency_ms 字段（旧证据）→ 不计入。
+    未计入的有多少、为什么，由 latency_coverage 单独摊账——分布数字
+    看着干净不等于采样覆盖完整。"""
     values: list[float] = []
     cases_dir = run_dir / "cases"
     if not cases_dir.is_dir():
@@ -242,6 +248,52 @@ def latency_summary(run_dir: Path) -> dict | None:
         "p95_ms": round(_percentile(xs, 95)),
         "max_ms": round(xs[-1]),
         "mean_ms": round(sum(xs) / len(xs)),
+    }
+
+
+def latency_coverage(run_dir: Path) -> dict | None:
+    """延迟采样覆盖账本：回复总量与计入/未计入分类（口径见 latency_summary）。
+
+    latency_summary 的 n 只是分子；没有这份账，"p95 基于几次采样、剔了
+    几次"就只存在于读代码的人脑子里。"""
+    total = timed = zero = placeholder = missing = 0
+    cases_dir = run_dir / "cases"
+    if not cases_dir.is_dir():
+        return None
+    for ev_file in sorted(cases_dir.glob("*/evidence.jsonl")):
+        try:
+            lines = ev_file.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("type") != "dialogue":
+                continue
+            for r in (ev.get("payload") or {}).get("replies") or []:
+                total += 1
+                ms = r.get("latency_ms")
+                if ms is None:
+                    missing += 1
+                elif ms > 0:
+                    timed += 1
+                else:
+                    zero += 1
+                    if str(r.get("text") or "").startswith("[RUNTIME_ERROR]"):
+                        placeholder += 1
+    if not total:
+        return None
+    return {
+        "n_replies": total,
+        "n_timed": timed,
+        "n_zero_ms": zero,
+        "n_zero_ms_placeholder": placeholder,
+        "n_missing_latency_ms": missing,
+        "coverage": round(timed / total, 4),
     }
 
 

@@ -58,6 +58,13 @@ def test_same_paper_across_history_and_agents(tmp_path):
     paper = make_paper(load_pack("quick"))
     a = finished_run(tmp_path, paper)
     b = finished_run(tmp_path, paper, "mock-peer")
+    # C 轮口径封印：runner 侧 environment.sandbox 接线前，测试内补封
+    # （沙箱口径进兼容身份后，未封存只能得到"未验证"而非 verified）
+    for directory in (a, b):
+        path = directory / "manifest.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest["environment"] = {"sandbox": "off"}
+        path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
     for directory in (a, b):
         assert verify_run(directory).ok
         assert load_paper(directory / "paper.json").paper_id == paper.paper_id

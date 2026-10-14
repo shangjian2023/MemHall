@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memhall.report.metrics import CAP_LABELS_ZH, CAP_ORDER
+from memhall.report.compatibility import sandbox_state
+from memhall.report.metrics import CAP_LABELS_ZH, CAP_ORDER, latency_coverage
 from memhall.schema.evidence import Verdict
 from memhall.schema.models_case import MemoryCase
 
@@ -55,6 +56,18 @@ def render_report(
             + f"　思考强度：{thinking}"
             f"（{rt.get('requests', 0)} 次请求实测归并）"
         )
+    # 执行口径的沙箱面：主矩阵 sandbox=1，对照臂另立；跨轮兼容检查据此
+    # 核对。未封存要亮出来，不能让读者以为核验过。
+    sandbox = sandbox_state(manifest)
+    if sandbox == "on":
+        lines.append("- 沙箱口径：**开启**（bwrap 强制隔离，写面白名单）")
+    elif sandbox == "off":
+        lines.append("- 沙箱口径：关闭（OS 级隔离未启用）")
+    else:
+        lines.append(
+            "- ⚠️ 沙箱口径：**未封存**（environment.sandbox 缺失或不可识别）"
+            "——与其它轮聚合/比较只能得到『未验证』结论"
+        )
     tu = manifest.get("token_usage")
     if tu:
         lines.append(
@@ -62,13 +75,29 @@ def render_report(
             f" tokens / {tu.get('requests', 0)} 次请求"
             f"（错误 {tu.get('errors', 0)}）"
         )
+    elif rt:
+        # 有模型流量却没账单：沉默会被读成"0 元"；0 记账与未记账必须可区分
+        lines.append("- Token 消耗：**未记账**（网关无账单≠0 元，真实费用未知）")
     lat = metrics.get("latency")
     if lat:
+        note = f"（{lat['n']} 次计时回复"
+        cov = latency_coverage(run_dir) or {}
+        untimed = cov.get("n_replies", 0) - cov.get("n_timed", 0)
+        if untimed:
+            zero = cov.get("n_zero_ms", 0)
+            ph = cov.get("n_zero_ms_placeholder", 0)
+            note += (
+                f"；另有 {untimed} 次未计入：占位错误 {ph}"
+                f"·瞬时0ms {zero - ph}·缺字段 {cov.get('n_missing_latency_ms', 0)}"
+                f"，采样覆盖率 {cov.get('coverage', 1):.0%}）"
+            )
+        else:
+            note += "，占位/未计时回复不计）"
         lines.append(
             f"- 回复延迟：p50 {lat['p50_ms'] / 1000:.1f}s · "
             f"p95 {lat['p95_ms'] / 1000:.1f}s · "
             f"最长 {lat['max_ms'] / 1000:.1f}s"
-            f"（{lat['n']} 次真实回复，占位回复不计）"
+            f"{note}"
         )
     lines.append(
         f"- 代码版本：`{manifest.get('git_hash', '?')}`　用例数："
