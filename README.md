@@ -266,4 +266,6 @@ memhall/
 
 ## 状态
 
+**v2.0.0**（2026-10-14）——评审修复轮定版：UTC 起点/模型改写生命周期/网关账单序号对账、时钟恢复计入真实耗时、产物根纳入隔离边界、口径校验（sandbox+真实版本）、pass^k 完整分母账本、实验索引统计（--index）、OS 级 bwrap 沙箱、kylin-agent 第 9 适配器（fork 源码级复核）、固定试卷体系；四家正式矩阵（sandbox=1）进行中，成绩以实验归档为准。
+
 **v1.3.2**（2026-10-12）——终榜 v3（n=4 + chains 附表；统计口径更正见审计说明）、用例轮换（--rotate-count/--seed）、报告附图第二梯队 +5 张、模型（网关改写）下拉、openKylin 原生 LocalChannel。版本历史与口径变更见 [CHANGELOG.md](CHANGELOG.md)。
