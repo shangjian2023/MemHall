@@ -33,7 +33,7 @@ CLI、数据契约、插件示例、评分边界和校准流程见 [题库与扩
 
 ## 终榜先看
 
-> 2026-10-13 审计更正：本批 full/chains 归档均只有评委 A（`judge.model_b=null`），为规则 + 单 LLM 评委实测；`--judge dual` 是配置模式名称，双评委功能需另配 B。评委 A 与被测智能体同一模型标识（统一网关只授权该模型）——同模型偏袒风险如实披露，校准出口是人工抽检（`scripts/judge_audit_sample.py` 盲评工作表）与单/双判对照。实测原始分数保持不变，统计脚本已剔除 diagnostic、修正四轮功效，并新增按题聚类的稳健检验（②b，见下文脚注）。归档完整性单独见 `docs/audit/review-20261013/verification.json`。
+> 2026-10-13 审计更正：本批 full/chains 归档均只有评委 A（`judge.model_b=null`），为规则 + 单 LLM 评委实测；`--judge dual` 是配置模式名称，双评委功能需另配 B。评委 A 与被测智能体同一模型标识（统一网关只授权该模型）——同模型偏袒风险如实披露，校准出口是人工双人盲评（72 条工作表已于 2026-10-14 从 14 轮通过核验的归档导出，`python -m memhall calibrate`，状态 awaiting_human_labels，见 [`docs/audit/blind-review-20261014/`](docs/audit/blind-review-20261014/README.md)）与单/双判对照。实测原始分数保持不变，统计脚本已剔除 diagnostic、修正四轮功效，并新增按题聚类的稳健检验（②b，见下文脚注）。归档完整性单独见 `docs/audit/review-20261013/verification.json`。
 
 > **本次参赛材料（2026-10-13）**：[可编辑 Word 作品介绍](docs/contest/submission/MemHall-作品介绍-可编辑版.docx) · [材料与修改指引](docs/contest/submission/README.md) · [全面审计报告](docs/audit/review-20261013/MemHall-全面审计报告.md)。Word 对照命题要求组织，附公开实验表、样例与来源；现存二进制仍需按审计修复重建验收。
 
@@ -83,7 +83,7 @@ CLI、数据契约、插件示例、评分边界和校准流程见 [题库与扩
 - **五态判定 + 分层判卷**。正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用——不止判对错，还判「记错的样子」；规则判不了的升级 LLM judge（配置 B 后可做双评委交叉仲裁）（锚例随提示词下发、仲裁评委 A/B 轮值），未决单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
 - **评测诚实优先**（design §5 明规则）。口径 v1→v3 全程留痕（R01–R60 共 60 项专项排查，见 [review-tasks](docs/review-tasks.md)）；敢报分差：同一批证据换判卷口径，六轮总体全部下移（0.8–19 分）、维度级 −45～+27 分非单向，掉分机制已抽查证实（脚本判卷把判不了的点剔出分母，幸存者偏差低估与高估并存）；数字必须带口径出行。
 - **公平性工程**。统一网关强制同后端同模型——对照才有意义；逐请求 token 记账、限速排队、429 指数退避；heldout 池公开 seed 支持复现，但不能抵御定向重构（威胁模型见 [dataset-card §8](docs/dataset-card.md)）；对外分享产物先过脱敏脚本（R54）。
-- **把完整智能体框架当黑盒横评，业界没有现成尺子**。主流长期记忆基准（LoCoMo / LongMemEval / MemoryAgentBench / MemBench）全是"记忆模块对比"——同一段历史喂给各家记忆 API 再出题；最接近的 OmniMemEval agent 轨道也走记忆插件协议。本基准不解析任何一家记忆内部格式：subprocess 驱动完整 CLI（九个适配器：openKylin 真机 hermes / kylinbot / openclaw / kylin-agent + 本机 claude / qwen / opencode / hermes + mock 基线），判据锚定环境侧证据（文件终态字节级哈希 + 行为判定），各家痕迹异构照样同一把尺——接口层的已知妥协逐条披露在 [dataset-card §8 适配器妥协清单](docs/dataset-card.md)，OS 级沙箱（bwrap 整根只读 + 白名单可写）为可选强化层。
+- **把完整智能体框架当黑盒横评，业界没有现成尺子**。主流长期记忆基准（LoCoMo / LongMemEval / MemoryAgentBench / MemBench）全是"记忆模块对比"——同一段历史喂给各家记忆 API 再出题；最接近的 OmniMemEval agent 轨道也走记忆插件协议。本基准不解析任何一家记忆内部格式：subprocess 驱动完整 CLI（九个适配器：openKylin 真机 hermes / kylinbot / openclaw / kylin-agent + 本机 claude / qwen / opencode / hermes + mock 基线；kylin-agent 适配器已接入——独立网关身份修复在集成分支 `codex/integrate-20261014`——VM 真机待验收，尚无实测成绩，不引用 Hermes 分数推断），判据锚定环境侧证据（文件终态字节级哈希 + 行为判定），各家痕迹异构照样同一把尺——接口层的已知妥协逐条披露在 [dataset-card §8 适配器妥协清单](docs/dataset-card.md)，OS 级沙箱（bwrap 整根只读 + 白名单可写）为可选强化层。
 - **openKylin 深度验证**。真机系统级测试：重启存活 / 拨钟隔天 / 多用户隔离 / 断网存活（hermes 真机 4/4）；断网项目证明本地记忆库存活，不代表云端模型离线仍可应答；.deb 在 openKylin 目标机原生构建（wheel ABI 与目标机 Python 精确匹配）；评测收尾 UKUI 桌面通知 + 雷达图自动弹出。
 
 ## 三分钟上手

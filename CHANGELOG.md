@@ -36,6 +36,16 @@ Unreleased 节（A 档 A1–A8、B8 OS 沙箱、kylin-agent 适配器、题库�
 - **整合接缝**：runner 落账 manifest.environment.sandbox（运行路径此前
   无人写这格，兼容校验会把所有新 run 判"未封存"）；F 两条 xfail(strict)
   转正；stats --index 单智能体臂 ③ 区分度除零修复（如实标注不适用）。
+
+### E 档：参赛材料复核与人工盲评导出（2026-10-14）
+
+- **72 条双人盲评工作表已实际导出**（`python -m memhall calibrate`，`--per-capability 12 --seed 20261014`）：抽样框 = 14/18 通过完整核验的历史归档中 judge 判定（非降级、语义探测）共 472 条；六维各 12、题族 35、correct 52 / 错误态 17 / 待复核 3。工作表隐藏智能体/模型/机器判定，受限映射（run/probe/证据指纹）另存 answer-key。**状态 awaiting_human_labels：真人标签到齐前材料中不存在也不允许出现一致率、κ、F1。**
+- 新增 `docs/audit/blind-review-20261014/`：抽样协议（种子、框构成表、未采样偏差——over_persist 框内仅 6 条故 0 入样、三家覆盖 36/18/18、human_review 入表不进统计分母）、双人独立副本、分歧复核与终裁模板；kylin-agent 无历史归档，待 D 验收后另出补充表。
+- 新增 `docs/audit/submission-readiness-20261014.md`：按赛题交付 a–e 与六项评分细则逐项对照，版本索引（Release v1.3.2 旧二进制 / 集成分支 dadc601 修复源码 / 本材料分支 BASE 4185672），剩余扣分点按可补救性排序（视频、deb 重建试装、D 正式成绩、人工标签、归档缺口）。
+- README / benchmark-v2 / 作品介绍（submission-content.json 源 + 重建 Word）同步：判卷校准状态改为"表已导出、待真人标签"；kylin-agent 表述固化为"适配器已接入（独立网关身份修复在集成分支）、VM 待验收、无实测成绩，不引用 Hermes 分数推断"；旧 judge_audit_sample 指针替换为 calibrate CLI。
+- 新增材料一致性测试 `tests/test_blind_review_materials.py`：在库盲评三件套指纹对账、双人副本与底表一致、终裁模板 sample_id 对齐。
+
+
 - 全回归 373 项（基线 293 + 新增 80）+ 离线 mock e2e
   （sample→run→verify→report→aggregate→stats --index）全链路通过。
 
