@@ -513,6 +513,30 @@ def test_index_stats_end_to_end(tmp_path, capsys, monkeypatch):
     assert "不自动等于显著排名" in out
 
 
+def test_index_stats_single_round_arm(tmp_path, capsys, monkeypatch):
+    """单轮臂（gen/development-v2 的 1 轮口径）不崩：①③⑤ 如实标注不适用，
+    ⑥ 标准差显示 —，pass^k 不出现（rounds<2 无分母）。"""
+    root = _matrix(tmp_path, rounds=1)
+    index = _write_index(tmp_path, "single-round.json", {
+        "schema": "memhall.experiment-index/1",
+        "experiment_id": "dev-1round",
+        "purpose": "formal",
+        "suite": "challenge-v2",
+        "runs": _index_entries(root),
+    })
+    module = _load_stats_module()
+    monkeypatch.setattr(sys, "argv", ["stats_uncertainty.py", str(root), "--index", str(index)])
+    rc = module.main()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "⑥ 正式统计" in out
+    assert "± —" in out                       # 单轮无样本标准差
+    assert "单轮，无轮间对可比" in out          # ①
+    assert "不适用（单轮臂" in out             # ③
+    assert "单轮臂 σ 不可估" in out            # ⑤
+    assert "pass^1 条件" not in out            # rounds<2 不报逐家 pass^k（⑥脚注提法不算）
+
+
 def test_index_rejects_historical_and_exploratory_runs(tmp_path, capsys, monkeypatch):
     module = _load_stats_module()
     root = tmp_path / RUNS_ROOT_MARKER

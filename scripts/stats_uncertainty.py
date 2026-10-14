@@ -292,11 +292,12 @@ def _formal_stats(runs: dict[str, list[Path]], vd: dict[str, list[dict[str, str]
         statuses = status_pool(dirs)
         scores = [overall(r) for r in vd[agent]]
         mean = sum(scores) / rounds
-        std = _std(scores)
+        # 单轮无样本标准差（n-1=0），如实显示 —；多轮但该维度只测过一轮同理
+        std_s = f"{_std(scores):.1%}" if rounds > 1 else "—"
         ci = bootstrap_ci(clusters, "__overall__", rounds=rounds).get("ci95")
         ci_s = f"（95% CI {ci[0]:.0%}~{ci[1]:.0%}）" if ci else ""
         detail = pass_k_detail(statuses, "__overall__", rounds)
-        line = f"  {agent}: 总分 {mean:.1%} ± {std:.1%}{ci_s}（n={rounds} 轮）"
+        line = f"  {agent}: 总分 {mean:.1%} ± {std_s}{ci_s}（n={rounds} 轮）"
         if detail:
             line += (
                 f"　pass^{detail['k']} 条件 {detail['rate_conditional']:.1%}"
@@ -326,7 +327,7 @@ def _formal_stats(runs: dict[str, list[Path]], vd: dict[str, list[dict[str, str]
             )
             known = [v for v in per_round if v is not None]
             m = sum(known) / len(known)
-            s = _std(known)
+            s_s = f"{_std(known):.0%}" if len(known) > 1 else "—"
             pk = pass_k_detail(statuses, cap, rounds)
             pk_s = (
                 f" · pass^{pk['k']} {pk['rate_conditional']:.0%}"
@@ -334,7 +335,7 @@ def _formal_stats(runs: dict[str, list[Path]], vd: dict[str, list[dict[str, str]
                 if pk
                 else ""
             )
-            print(f"    {CAP_ZH[cap]:<5} 均值 {m:.0%} ± {s:.0%}　各轮 {cells}{pk_s}")
+            print(f"    {CAP_ZH[cap]:<5} 均值 {m:.0%} ± {s_s}　各轮 {cells}{pk_s}")
 
 
 def main() -> int:
@@ -379,6 +380,10 @@ def main() -> int:
                      if None not in xy]
                 agrees.append(exact / len(common))
                 flips.append(sum(1 for x, y in b if x != y) / len(b))
+        # 单轮臂（gen/development-v2 的 1 轮口径）没有轮间对可比——如实跳过
+        if not agrees:
+            print(f"  {a:<9} 单轮，无轮间对可比")
+            continue
         print(f"  {a:<9} 六态一致 {min(agrees):.1%}–{max(agrees):.1%}"
               f"（均值 {sum(agrees) / len(agrees):.1%}）　"
               f"对错翻转 {min(flips):.0%}–{max(flips):.0%}"
@@ -453,6 +458,10 @@ def main() -> int:
         if len(per_agent) < 2:
             print(f"  {CAP_ZH[cap]:<5} 不适用（单智能体臂，无组间方差）")
             continue
+        # 单轮臂组内 df=0，轮间方差分母为零——如实标注不适用
+        if n_r < 2:
+            print(f"  {CAP_ZH[cap]:<5} 不适用（单轮臂，无组内方差）")
+            continue
         means = [sum(v) / len(v) for v in per_agent.values()]
         between = sum((m - sum(means) / len(means)) ** 2 for m in means) / (len(means) - 1)
         within = sum(sum((x - sum(v) / len(v)) ** 2 for x in v) / (len(v) - 1)
@@ -485,6 +494,9 @@ def main() -> int:
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
             a, b = names[i], names[j]
+            if n_r < 2:
+                print(f"  {a} vs {b}: 单轮臂 σ 不可估，跳过功效估计")
+                continue
             sa = _std(overall_by_agent[a])
             sb = _std(overall_by_agent[b])
             delta, n = required_rounds(overall_by_agent[a], overall_by_agent[b])
