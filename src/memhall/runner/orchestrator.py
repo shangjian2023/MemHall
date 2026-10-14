@@ -1108,6 +1108,12 @@ def _write_manifest(
     from memhall.gateway import model_backend
 
     manifest["model_backend"] = model_backend(model_override)
+    # 评审口径封存（A/C 接缝）：本轮 OS 级沙箱开关，与执行侧同源判定
+    # （adapters.sandbox 读 MEMHALL_SANDBOX）。C 侧 compatibility 按此归一
+    # on/off；这格缺失时新归档一律判"沙箱口径未封存"，不能默认当 off
+    from memhall.adapters.sandbox import sandbox_enabled
+
+    manifest["environment"] = {"sandbox": "on" if sandbox_enabled() else "off"}
     if clock_restore_failed:
         # R33：时钟残留警报——这些 case 之后系统时间可能仍 +N 天，
         # 后续 run 的时间语义（temporal 族）需对照本字段核查
