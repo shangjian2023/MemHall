@@ -16,7 +16,7 @@ SPEC = {  # 样式 → (eastAsia 允许集, 字号允许集, 允许加粗)
     "Heading 1": ({"黑体"}, {16.0}, {True}),
     "Heading 2": ({"宋体"}, {12.0}, {True}),
     "Heading 3": ({"宋体"}, {12.0}, {True}),
-    "Normal": ({"宋体", "楷体", "黑体"}, {9.0, 10.5, 11.0, 12.0}, {None, True, False}),
+    "Normal": ({"宋体", "楷体", "黑体"}, {9.0, 10.5, 11.0, 12.0, 16.0, 26.0}, {None, True, False}),  # 16/26=目录与封面（builder 按规范生成）
 }
 
 bad, style_stats = [], Counter()
