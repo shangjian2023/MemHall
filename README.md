@@ -1,272 +1,100 @@
 # 麟阁 MemHall
 
-**面向 openKylin 生态的智能体长期记忆评测基准**
+**面向 openKylin 的智能体长期记忆自动化评测基准**
 
-A Memory Benchmark for Agents on the openKylin Ecosystem
+把“记得住、改得对、分得清、用得上”变成可执行、可解释、可复查的测试。
 
 [![CI](https://github.com/shangjian2023/MemHall/actions/workflows/ci.yml/badge.svg)](https://github.com/shangjian2023/MemHall/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-242%20passing-brightgreen)](tests/)
 
-> 名字取自麒麟阁——汉代评定功臣、画像记名的殿堂：给记忆能力优秀的智能体立榜。
->
-> 镜像：[Gitee · mazhuoran23/MemHall](https://gitee.com/mazhuoran23/MemHall)
+麟阁用 **教 → 隔 → 考** 三阶段剧本驱动完整智能体：先教约定，再加入干扰，最后检查回答与实际任务。对话、记忆快照、行动和文件变化连接成证据，输出六维画像、错误原因和逐题复查入口。
 
-openKylin 生态里已经跑着 KylinBot、OpenClaw、Hermes Agent 等智能体，但没人能回答「它们的记性到底谁好、好在哪一维」。麟阁用「教 → 隔 → 考」三阶段剧本驱动任意智能体，把对话日志、记忆快照、操作记录、文件变化统一为证据，自动判卷出六维能力雷达——全自动、可复现、对证据负责。
+**已接入 Hermes、kylin-agent、KylinBot、OpenClaw；五套题包共181题。** 支持固定试卷、真实任务检查和逐题证据复查，服务智能体选型、问题定位与版本回归。
 
-> **EN** · MemHall is an automated, reproducible benchmark for agents' long-term memory on openKylin: teach→gap→exam scripts drive any agent; dialogs, memory snapshots, actions and file changes become traceable evidence; scoring is automatic and outputs a six-dimension radar. Final board (LLM-judged, 4-round mean±std): hermes 74.6% ± 2.8 ≈ openclaw 72.5% ± 4.9 > kylinbot 58.5% ± 6.8 (descriptive results; exploratory paired-vote p-values do not adjust for repeated-case dependence — see measurement limits).
+[作品介绍与报告](docs/contest/submission/README.md) · [设计说明](design.md) · [题库与扩展](docs/benchmark-v2.md) · [演示流程](docs/demo-script.md) · [贡献指南](CONTRIBUTING.md)
 
-## 本轮题库与评测升级
+## 四方面了解作品
 
-保留原 49 道核心题，新增 **72 道测试题（24 个场景模板）+ 39 道开发题（13 个不同模板，含"只有读过记忆才答得出"的 canary 读侧探针试点）**。可复现生成器可扩到 1008 实例；模板数与实例数分别统计。新增固定试卷、批量运行、题包版本校验、按题族统计、文件内容验收、插件入口与人工盲评工具。新题包的真实智能体实验尚未进行，下面的历史成绩仍是 full/chains 原口径。
-
-```bash
-python -m memhall sample -c cases/challenge-v2 --count 24 --seed 20261013 --max-per-family 1 -o build/paper-24.json
-python -m memhall run -a mock --paper build/paper-24.json
-python -m memhall generate --seed 20261013 --variants 42 -o build/pool-1008
-# 配好真实车道后，所有轮次使用同一试卷：
-python -m memhall batch --paper build/paper-24.json --adapters hermes kylinbot openclaw --repeats 2 --judge llm
-```
-
-CLI、数据契约、插件示例、评分边界和校准流程见 [题库与扩展使用说明](docs/benchmark-v2.md)。[题库升级版作品介绍（Word）](docs/contest/submission/MemHall-作品介绍-题库升级版.docx) 从原可编辑版复制并追加本轮说明，便于继续修改；原文件保留。
-
-## 终榜先看
-
-> 2026-10-13 审计更正：本批 full/chains 归档均只有评委 A（`judge.model_b=null`），为规则 + 单 LLM 评委实测；`--judge dual` 是配置模式名称（v2.0.0 起双评委机制移除，CLI 新名 `--judge llm`，`dual` 保留为等价别名）。评委 A 与被测智能体同一模型标识（统一网关只授权该模型）——同模型偏袒风险如实披露，校准出口是人工双人盲评（72 条工作表已于 2026-10-14 从 14 轮通过核验的归档导出，`python -m memhall calibrate`，状态 awaiting_human_labels，见 [`docs/audit/blind-review-20261014/`](docs/audit/blind-review-20261014/README.md)）。实测原始分数保持不变，统计脚本已剔除 diagnostic、修正四轮功效，并新增按题聚类的稳健检验（②b，见下文脚注）。归档完整性单独见 `docs/audit/review-20261013/verification.json`。
-
-> **本次参赛材料（2026-10-13）**：[可编辑 Word 作品介绍](docs/contest/submission/MemHall-作品介绍-可编辑版.docx) · [材料与修改指引](docs/contest/submission/README.md) · [全面审计报告](docs/audit/review-20261013/MemHall-全面审计报告.md)。Word 对照命题要求组织，附公开实验表、样例与来源；现存二进制仍需按审计修复重建验收。
-
-三智能体马拉松：**full 45 题 × 4 轮**（2026-10-10 两轮 + 10-11/12 r3/r4 两轮），统一模型 qwen3.7-plus，LLM 判卷（评测器三处修复后全量重跑，见[演进注记](#终榜演进注记)；正式口径 = full + chains——chains 4 题 × 2 轮（r3/r4）已跑并入[附表](#chains-任务链口径)）。**本批实测可定位三家能力差异；头部差距不足以据此排序。**
-
-<p align="center">
-  <img src="images/radar-final-dual.png" width="440" alt="终榜三智能体六维雷达图">
-</p>
-<p align="center"><sub>三智能体六维对比（LLM 判卷、四轮 mean；完整表与口径见<a href="#评测口径速览">下文</a>）</sub></p>
-
-| 智能体 | 总体（四轮 mean±std） | 长期保持 | 记忆调用 | 动态更新 | 相近区分 | 边界识别 | 任务复用 |
-|---|---|---|---|---|---|---|---|
-| **hermes** | **74.6% ± 2.8** | 86.5% | 65.4% | 48.6% | 87.5% | 82.6% | 67.9% |
-| **openclaw** | **72.5% ± 4.9** | 92.3% | 76.9% | 60.4% | 96.9% | 39.6% | 89.3% |
-| **kylinbot** | **58.5% ± 6.8** | 63.5% | 68.6% | 17.0% | 46.9% | 74.8% | 60.7% |
-
-\* 探索性配对票检验（仅 score 探测；重复题跨轮相关性未校正）：hermes vs kylinbot p<0.001、kylinbot vs openclaw p≈0.002；hermes vs openclaw p≈0.752。按题聚类复核（独立单元=题，同题各轮方向票合并净方向后再检验，见 `scripts/stats_uncertainty.py` ②b）：三对均回到不显著（p=0.163 / 0.121 / 0.572）——分组方向一致，但 n=4 轮的样本量撑不起显著性结论。头部差距仅约 2.1 个百分点，小样本观测方差下的近似功效估计需约 58 轮。p 值用于描述本批数据，不作为普遍排名或独立样本推断。
-
-**chains 任务链口径**（4 题 × 2 轮，r3/r4；13 探测点中 10 个计分，只覆盖长期保持/任务复用两维）：
-
-| 智能体 | 总体（两轮 mean±std） | 长期保持 | 任务复用 |
-|---|---|---|---|
-| **hermes** | **40.0% ± 0.0** | 100.0% | 25.0% |
-| **openclaw** | **40.0% ± 0.0** | 100.0% | 25.0% |
-| **kylinbot** | **25.0% ± 7.1** | 75.0% | 12.5% |
-
-链上「记了但用不上」是三家共同短板；hermes/openclaw 两轮**逐题零翻转**（六态一致率 100%），kylinbot 90.0%（10 个计分探测）。
-
-<p align="center">
-  <img src="images/fig-six-dim.png" width="720" alt="六维分数分组柱状图（mean±std 与各轮实际值）">
-</p>
-<p align="center"><sub>六维分数 mean±std（n=4 轮；白色圆点=四轮极值 min/max，误差棒=样本标准差；Okabe-Ito 色盲安全配色；<code>scripts/make_readme_figures.py</code> 零 LLM 可复现）</sub></p>
-
-形态比总分有信息量：hermes 六维最均衡（边界识别 83% 三家最高，但 ±11 轮间波动大）；openclaw 记忆调用/任务复用双高（77%/89%）却是**边界识别塌方（40%）**——该忘的忘不掉（over_persist 两轮各 12/87，稳定缺陷签名）；kylinbot 动态更新（17%）与相近区分（47%）拖垮总分，边界识别 75%±5 反而最稳——「记该记的」做到了，「改得动、分得清」没做到。
-
-**终榜演进注记**：初版终榜（2026-10-05，openclaw 67.1 > kylinbot 52.4 > hermes 44.4）测于评测器三处缺陷修复之前——判卷客户端遇一次非 200 即全场失效（86e354d 修复）、openclaw fresh 沙箱无 DB 被误判导出失败（fcf7077 修复）、VM NAT 大出站包 TLS 损坏未治理（宿主中继恢复）。旧数据中 hermes 两轮 22.7/66.1 的离群方差、47% 的轮间一致率，混有上述仪器噪声；修复后同配置重跑（六场、执行期适配器错误 0–1 条/场），hermes 两轮 73.0/72.7、一致率 71%。2026-10-12 r3/r4 扩轮至 n=4（含 chains 8 场；hermes-r3-full 一轮判卷遇 DNS 挂死，事后从封存证据补判，verdicts 留痕可对账），kylinbot 的均值低于两家；探索性配对票呈现差异，但未校正同题跨轮相关性，不能直接作为普遍排名的显著性结论。历版终榜均留档（旧 run 与 manifest 不删改），本榜为当前口径。
-
-## 特色与创新
-
-<p align="center">
-  <img src="images/pipeline-dark.svg" width="880" alt="评测管线架构图：评测器、openKylin 被测环境、证据、判卷、统一模型网关">
-</p>
-<p align="center"><sub>评测管线全景：剧本引擎经 SSH 车道驱动真机智能体，本批被测流量配置为经统一网关，四类证据带哈希封印，规则与单 LLM 评委判卷出六维报告</sub></p>
-
-- **「教 → 隔 → 考」三阶段剧本，不是简单问答**。教学注入 → 干扰隔离 → 多时点探测（含拨钟跨天），六维能力独立出分：长期保持 / 记忆调用 / 动态更新 / 相近区分 / 边界识别 / 任务复用。题库 full 45 + gen 21 + chains 4（六会话长链对齐 LongMemEval/LoCoMo）+ heldout 21（运行时生成加试池，公开 seed 仍可重构）；正式口径 = full + chains（终榜 v3：full 45 × 4 轮成榜 + chains 4 × 2 轮附表）。
-- **证据即真相**。对话、记忆快照、操作记录、文件变化统一为证据流，每条判定可下钻到证据哈希；canary 金丝雀教学时点判（probe 段删除洗白不了 over_persist）+ 超串干扰防线（188 个干扰项 100% 拒绝）。
-- **五态判定 + 分层判卷**。正确 / 遗漏 / 混淆 / 错误持久化 / 错误复用——不止判对错，还判「记错的样子」；规则判不了的升级 LLM 评委（锚例随提示词下发，一票定案），未决单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
-- **评测诚实优先**（design §5 明规则）。口径 v1→v3 全程留痕（R01–R60 共 60 项专项排查，见 [review-tasks](docs/review-tasks.md)）；敢报分差：同一批证据换判卷口径，六轮总体全部下移（0.8–19 分）、维度级 −45～+27 分非单向，掉分机制已抽查证实（脚本判卷把判不了的点剔出分母，幸存者偏差低估与高估并存）；数字必须带口径出行。
-- **公平性工程**。统一网关强制同后端同模型——对照才有意义；逐请求 token 记账、限速排队、429 指数退避；heldout 池公开 seed 支持复现，但不能抵御定向重构（威胁模型见 [dataset-card §8](docs/dataset-card.md)）；对外分享产物先过脱敏脚本（R54）。
-- **把完整智能体框架当黑盒横评，业界没有现成尺子**。主流长期记忆基准（LoCoMo / LongMemEval / MemoryAgentBench / MemBench）全是"记忆模块对比"——同一段历史喂给各家记忆 API 再出题；最接近的 OmniMemEval agent 轨道也走记忆插件协议。本基准不解析任何一家记忆内部格式：subprocess 驱动完整 CLI（九个适配器：openKylin 真机 hermes / kylinbot / openclaw / kylin-agent + 本机 claude / qwen / opencode / hermes + mock 基线；kylin-agent 适配器已接入——独立网关身份修复在集成分支 `codex/integrate-20261014`——VM 真机待验收，尚无实测成绩，不引用 Hermes 分数推断），判据锚定环境侧证据（文件终态字节级哈希 + 行为判定），各家痕迹异构照样同一把尺——接口层的已知妥协逐条披露在 [dataset-card §8 适配器妥协清单](docs/dataset-card.md)，OS 级沙箱（bwrap 整根只读 + 白名单可写）为可选强化层。
-- **openKylin 深度验证**。真机系统级测试：重启存活 / 拨钟隔天 / 多用户隔离 / 断网存活（hermes 真机 4/4）；断网项目证明本地记忆库存活，不代表云端模型离线仍可应答；.deb 在 openKylin 目标机原生构建（wheel ABI 与目标机 Python 精确匹配）；评测收尾 UKUI 桌面通知 + 雷达图自动弹出。
-
-## 三分钟上手
-
-| 我想… | 入口 |
+| 方面 | 核心内容 |
 |---|---|
-| **双击就用**（Windows） | [Releases](https://github.com/shangjian2023/MemHall/releases) 下载 `MemHall-onefile-v1.3.2.exe`，双击进 Web UI；选 mock 适配器跑一轮，离线零成本 |
-| **装到 openKylin** | `sudo dpkg -i memhall_*_*.deb`（Python wheels 内置；系统 Python/pip 需已安装；见[安装节](#安装openkylin--debian-系)） |
-| 看全流程 | [实机演示讲稿](docs/demo-script.md)；真实视频链接待团队补齐。2026-10-13 核验的 v1.3.2 Release 只有 exe/deb 附件，原链接未提供视频 |
-| 三条命令试用 | `uv sync --group dev` → `uv run memhall doctor` → `uv run memhall run -a mock -c cases/full -o runs` |
+| **项目背景** | 长期助理不仅要记住信息，还要更新旧约定、区分相似项目、遵守记忆边界。 |
+| **技术架构** | 统一适配器、三阶段执行、规则与语义判卷、证据归档，连接从题目到报告的全过程。 |
+| **应用场景** | 检查目录、偏好和模板复用，定位记忆机制问题，持续验证智能体版本更新。 |
+| **创新与麒麟价值** | 原生与远程同一契约、系统事件测试、UKUI桌面触达、原生发行封装，以及固定试卷和持续回归。 |
 
-Web UI（`uv run memhall ui`）里可以选适配器和用例库发起评测，问答与记忆快照逐条直播（SSE）；exe 双击默认走 pywebview 原生窗口。
+## 六项能力，分别回答六个问题
+
+| 能力 | 观察什么 |
+|---|---|
+| 长期保持 | 经历后续交互，还能使用原有信息吗？ |
+| 记忆调用 | 需要时，能找到相关约定吗？ |
+| 动态更新 | 用户改口后，旧信息失效了吗？ |
+| 相近区分 | 相似项目和任务会串台吗？ |
+| 边界识别 | 不应保留的信息会在后续继续使用吗？ |
+| 任务复用 | 记住的信息真正落实到文件和行动了吗？ |
+
+目录更新案例同时检查“回答哪个路径”和“文件建在哪里”；边界案例检查明确禁止保留的合成信息是否在后续被复述。[真实案例与证据入口](docs/contest/submission/README.md#真实案例与证据)。
+
+## 为 openKylin 设计的使用流程
+
+- **原生运行，也可远程管理。** 本机与SSH通道共享适配契约，同机执行无需绕行SSH服务。
+- **系统事件可测。** 提供重启、拨钟、多用户权限和断网后本地记忆检查；当前系统测试最小实现面向Hermes，断网存储检查不代表云端模型离线推理。
+- **桌面触达。** 应用入口与图形会话完成通知，便于在UKUI桌面发起测试、返回报告。
+- **面向目标机封装。** 原生.deb构建脚本封装程序、题库和冻结的Python依赖；发行版本验收按实际记录确认。
+- **持续回归。** 固定试卷、历史轮换、确定性参数生成，支持复现与扩大覆盖。
+- **运行条件可核查。** 网关对经过它的请求设置模型并按来源记账；可选文件系统沙箱限制写入范围。
 
 ## 快速开始
 
-```bash
-uv sync --group dev          # 装依赖（uv，Python ≥ 3.11）
-
-uv run memhall doctor        # 一键发现本机/评测机智能体 + 评测环境体检
-                             # 三路探测：本机（PATH+配置目录+版本）、openKylin VM
-                             # （SSH 单往返复合探测，含 brain.db 记忆库在位）、
-                             # 环境就绪度（密钥/SSH/网关可达），仿 brew doctor
-
-# 一轮评测
-uv run memhall run -a mock -c cases/full -o runs      # Mock 适配器，离线零成本
-uv run memhall run -a hermes -c cases/full -o runs    # 真智能体（SSH 驱动 VM）
-# 适配器：mock / hermes / kylinbot / openclaw / kylin-agent（VM 内）/
-#         hermes-local / claude-local / qwen-local / opencode（本机）
-# 产物：runs/<run_id>/{manifest.json, verdicts.jsonl, metrics.json, radar.png, report.md}
-#       每条判定可下钻证据哈希；manifest 记被测智能体版本/模型口径/token 记账
-
-uv run memhall report runs/<run_id>   # 对已有 run 重渲染报告（缺 verdicts 时从证据重放）
-uv run memhall compare runs/A runs/B  # 对比雷达 + 判定翻转明细 + 方向翻转分桶检验
-uv run memhall verify runs/<run_id>   # 证据完整性校验（payload 哈希逐条复算 + 产物封印对账）
-uv run memhall stability runs/A runs/B  # 重跑稳定性：一致率 / pass^k / 翻转明细报告
-uv run memhall vm status              # openKylin VM 生命周期（快照/回滚/健康检查）
-uv run memhall aggregate runs/A runs/B  # N 轮聚合：六维 mean±std + bootstrap 95% CI
-
-# 可复现的题目轮换（实验抽样用途；正式排名仍使用 full + chains）
-uv run memhall run -a mock -c cases/full -o runs --rotate-count 12 --seed 20261011
-# 轮换会读取 runs/*/manifest.json，在跨进程锁内优先选择历史频次较低的题，
-# 并把 seed、case_id、能力/难度分布写入本轮 manifest。
-
-uv run memhall systest -a hermes      # 系统级测试：重启/拨钟/多用户/断网（真机真做）
-
-uv run pytest tests/ -q               # 测试（含端到端冒烟）
-```
-
-### 统一模型对照（推荐）
-
-将被测智能体配置为经本地网关，可约束后端与模型条件；具体配置需在各智能体中完成：
+需要 Python 3.11 或更新版本及 uv。先用模拟适配器检查全流程：
 
 ```bash
-export GATEWAY_UPSTREAM_URL=... GATEWAY_UPSTREAM_KEY=... GATEWAY_MODEL=qwen3.7-plus
-uv run memhall gateway --host 0.0.0.0        # 监听 8311；模型一律网关说了算
-# 网关内置：逐请求记账、转发最小间隔（GATEWAY_MIN_INTERVAL=8s 默认，防上游限流掐线）、
-#           429/5xx 指数退避（2·2ⁿ 封顶 30s，尊重 Retry-After，被测侧无感）
-export GATEWAY_URL=http://127.0.0.1:8311/v1          # 本机智能体（.env）
-export GATEWAY_VM_URL=http://192.168.61.1:8311/v1    # VM 内智能体（hermes/kylinbot）
-uv run memhall gateway --report                      # 按智能体出 token 账单
-# claude-local 走 anthropic 协议不进统一车道（配了 GATEWAY_URL 会显式报错）
+uv sync --frozen --group dev
+uv run memhall doctor
+uv run memhall run -a mock -c quick --judge scripted -o runs
+uv run memhall verify runs/<run_id>
 ```
 
-### LLM 评委判卷（规则 + 单 LLM 评委）
+`mock` 不调用真实模型，只验证工具流程。打开界面：
 
 ```bash
-# 替代默认离线脚本判卷；锚例随提示词下发，无效票转人工复核
-export JUDGE_A_BASE_URL=... JUDGE_A_MODEL=... JUDGE_A_KEY=...
-uv run memhall run -a mock --judge llm
-# --judge dual 为历史别名（等价 llm；manifest 协议 id 沿用 dual 以兼容历史归档）
-# v2.0.0 起不再支持双评委交叉仲裁；判卷可信性由金标准门禁+诱饵负样本+人工盲评校准
+uv run memhall ui
 ```
 
-### 第三方使用（自带已装好的智能体）
-
-前提只有一个：目标智能体已安装且配好了你自己的 key。麟阁不内置任何凭据。
-
-1. `pip install -e .`（或装 deb/exe），`memhall doctor` 体检——自动发现本机已装智能体；
-2. 在 `.env` 给被测智能体配 LLM 端点之一：直连（`AGENT_LLM_*`）或统一网关（`GATEWAY_*`）；
-3. `memhall run -a <适配器> -c cases/full` 开跑。VM 型适配器另需 `VM_HOST/VM_USER/VM_PASS`。
-
-机器相关的默认值全部可环境变量覆盖（见 [.env.example](.env.example)）；沙箱一律建在
-`~/.memhall*/` 下，不碰智能体的真实配置与真实记忆。
-
-## 安装（openKylin / Debian 系）
+真实评测需要已安装、已配置的智能体，以及模型和评委端点。配置项见 [.env.example](.env.example)；使用新测试目录，按适配器说明准备测试环境。
 
 ```bash
-sudo dpkg -i memhall_*_*.deb     # 内置 Python wheels；系统 Python/pip 需已安装（版本号随发行）
-memhall run -a mock -c /usr/share/memhall/cases/full -o ~/memhall-runs
-dpkg -r memhall                     # 卸载干净（prerm 清 /usr/lib/memhall）
+# 所有对照运行使用同一份固定试卷
+uv run memhall sample -c cases/full --count 45 --seed 20261016 -o build/paper.json
+uv run memhall run -a hermes --paper build/paper.json --judge llm -o runs
+uv run memhall verify runs/<run_id>
 ```
 
-系统目录只读：run 产物写 `~/memhall-runs`，配置读 `~/memhall.env`。
-包构建在 openKylin 目标机上原生完成（`scripts/build_deb_vm.sh`：清华源拉依赖 wheel → 组装离线安装树 → dpkg-deb），保证 wheel ABI 与目标机 Python 精确匹配、可复现。
+内置适配器：`mock`、`hermes`、`kylinbot`、`kylin-agent`、`openclaw`、`hermes-local`、`claude-local`、`qwen-local`、`opencode`。接入与扩展见 [适配器契约](docs/contracts/README.md) 和 [扩展说明](docs/benchmark-v2.md)。系统级测试涉及真实重启、时间与网络操作，应在专用测试环境单独安排。
 
-## 安装（Windows）
+## 结果怎样阅读
 
-`scripts/build_exe.sh` 打包两种发行物：`dist/MemHall/`（onedir，启动快）与 `dist/麟阁MemHall-单文件版.exe`（单文件，可直发）。双击即进 Web UI 原生窗口。
+先确认题包、配置与有效范围，再看六维结果，最后进入代表性题目核查证据。规则探测检查文件等确定性条件，在线语义探测调用LLM评委；无法可靠判断的项目进入复核，运行无效单列。计分项与诊断项按题目定义分别处理。
 
-## 平台支持（分级）
+归档包含题目、原始证据、逐项判定、指标和报告。`verify` 检查完整性与变化，人工复核检查语义判定；两者承担不同工作。比较结果应同时报告输入条件、重复次数与有效分母。
 
-主力线是 openKylin：级别越高，验证深度越深——Tier 1 的真机系统级测试（重启/拨钟/多用户/断网）只能在 openKylin 真机上做，是其他平台复制不了的验证深度。
+## 安装与交付
 
-| 级别 | 平台 | 验证深度 | 证据 |
-|---|---|---|---|
-| **Tier 1 旗舰** | openKylin 3.0 | 全链路验收：全量测试 + 真机系统级测试（重启存活/拨钟隔天/多用户隔离/断网存活）+ 目标机原生构建 .deb + UKUI 桌面通知 | [CI](https://github.com/shangjian2023/MemHall/actions/workflows/ci.yml) · [build_deb_vm.sh](scripts/build_deb_vm.sh) · 上文安装节 |
-| Tier 2 | 主流 Linux · Windows 10/11 | 核心功能等价：CI 矩阵（ubuntu/windows × Python 3.11/3.12）每提交跑题库门禁 + 全量测试；Windows 另有 exe 发行 | [CI](https://github.com/shangjian2023/MemHall/actions/workflows/ci.yml) · 上文安装节 |
-| Tier 3 | macOS / 其他 Linux | 尽力而为：纯 Python 源码安装（uv/pip），未持续验证 | — |
+openKylin原生打包入口为 [build_deb_vm.sh](scripts/build_deb_vm.sh)，Windows打包入口为 [build_exe.sh](scripts/build_exe.sh)。构建准备需要获取依赖；.deb安装阶段使用包内Python依赖，系统需满足包声明的基础条件。对应发行物的安装、启动和卸载状态以验收记录为准。
 
-注：WSL 能跑但无增益——评测目标在 VM 里，多一层反而慢，不作为支持目标。
-六维评测、双智能体判卷、雷达图、报告全链路平台无关；平台差异仅在安装方式与控制台编码。
+[提交材料目录](docs/contest/submission/README.md) 提供当前作品介绍、完整报告与演示入口。历史文档和数据保留用于追溯，不作为当前排行榜。
 
-## 评测口径速览
+## 开发与协作
 
-- **判定态**：正确 / 遗漏 / 混淆 / 记错（编造）/ 错误持久化 / 错误复用，运行无效单列不计分母；规则判不了的升级语义判卷（脚本判卷 → 双 LLM judge 交叉仲裁），未决判定单列 HUMAN_REVIEW 待人工复核，不计入运行无效。
-
-<p align="center">
-  <img src="images/fig-verdict-mix.png" width="720" alt="六态判定构成堆积条形图">
-</p>
-<p align="center"><sub>判定构成（十二场 run，100% 堆积）——不止判对错，还判「记错的样子」：openclaw 的 over_persist（该删没删）独大、kylinbot 遗漏主导、hermes 六态最均衡，一眼可读</sub></p>
-- **评分口径 v3**（2026-10-05，R01–R60 整改留痕见 [review-tasks](docs/review-tasks.md)）：探测点 score / diagnostic 分层——存储态断言（memory.*）与 actions 断言只进故障定位表（没存 / 存了没用上 / 存了但内容错 / 该删没删），不进六维分母；canary 教学时点判；无有效探测的维输出「未测」不画轴；报告附「未决按错计」保守下界与按用例等权总分。旧 run 可 `memhall report runs/<id>` 按新口径重渲染。
-- **正式口径 = full + chains**；heldout 为运行时生成加试池（`gen_cases.py --seed 4210` 评测时现场生成，题目文本不入库、seed 公布保复现）；全量跑 ≥2 轮报 mean±std + bootstrap 95% CI（`memhall aggregate`）。
-- **LLM 重判 vs 脚本判卷**：六轮总体分全部更低（0.8–19 分，方向一致），掉分集中在记忆调用维（六轮 −16～−39 分）；但口径差不是单向的——边界识别/任务复用维 dual 反而更高（最高 +12/+27 分），机制是脚本把判不了的探测点剔出分母，幸存者偏差低估与高估并存（模式匹配把语义答错的回答计对也已抽查证实）。脚本判卷数字仅存档对账（`verdicts.scripted.jsonl`），不用于排名。（口径对照数据来自初版终榜 run 的 R25 留档；现役终榜 run 一律 dual 直判，无脚本侧对照。）
-
-<p align="center">
-  <img src="images/fig-dual-vs-scripted.png" width="560" alt="LLM 评委 vs 脚本判卷哑铃图">
-</p>
-<p align="center"><sub>同一批证据、两种判卷口径（空心=脚本判卷，实心=LLM 判卷；初版终榜 run 留档数据）——六轮全部下移不是判官严，是脚本判卷的分母幸存者偏差被摘除</sub></p>
-- **测量边界**（`uv run python scripts/stats_uncertainty.py` 可复现）：仅 score 探测进入六维、总体和不确定度统计。四轮同探测点六态一致率均值为 openclaw 83.6%、hermes 75.0%、kylinbot 71.2%；对错翻转均值约 12%/21%/21%。探索性配对票的 p 值未校正同题跨轮相关性；轮级功效估计使用实际轮数、样本标准差，头部需约 58 轮。能力标签取各次运行的题目快照，维度方差比只作描述，不误当 ANOVA F 值。
-
-<p align="center">
-  <img src="images/fig-uncertainty.png" width="720" alt="测量可信度面板：两轮一致率与配对符号检验">
-</p>
-<p align="center"><sub>测量边界：(a) 66 个计分探测的四轮两两六态一致率与对错翻转率；(b) 探索性配对票 p 值（log 轴，虚线=0.05；未校正同题跨轮相关性）</sub></p>
-
-<p align="center">
-  <img src="images/fig-separation.png" width="560" alt="维度区分度棒棒糖图">
-</p>
-<p align="center"><sub>六维组间/组内方差比（n=4/组，描述性）：边界识别 9.9、相近区分 7.4、长期保持 4.7、动态更新 2.6、任务复用 1.2、记忆调用 0.8。能力按运行题目快照分组；这些比值不是 ANOVA F 统计量，不附显著性结论。</sub></p>
-
-## 文档
-
-| 文档 | 状态 | 内容 |
-|---|---|---|
-| [design.md](design.md) | **正式** | 总体技术设计（交付物 a 底稿） |
-| [team-plan.md](team-plan.md) | **正式** | 五人分工、4 周排期、协作规约 |
-| [environment.md](environment.md) | **正式** | 环境基线与搭建步骤 |
-| [docs/contracts/](docs/contracts/README.md) | **契约** | 接口单一真相源（adapter / case / evidence-verdict） |
-| [docs/dataset-card.md](docs/dataset-card.md) | **正式** | 用例库数据集说明卡（含威胁模型 §8、测量边界 §9） |
-| [docs/review-tasks.md](docs/review-tasks.md) | 过程 | 评测设计专项排查（R01–R60）与评分口径演进 |
-| [docs/demo-script.md](docs/demo-script.md) | 过程 | 演示视频分镜脚本 |
-| [okim-bench/README.md](okim-bench/README.md) | 归档 | W1 评分原型（权威实现在 src/memhall/scoring） |
-| [CHANGELOG.md](CHANGELOG.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区 | 版本记账 · 贡献指南 · 安全策略 · 行为准则 |
-
-## 目录结构
-
-```
-memhall/
-├── design.md / team-plan.md / environment.md   # 三份基准文档
-├── docs/            # 方案文档 + contracts/（接口契约）
-├── okim-bench/      # W1 评分原型（已归档；权威实现在 src/memhall/scoring）
-├── src/memhall/     # 源码包
-│   ├── adapters/    # 智能体适配器（mock/hermes/kylinbot/claude/qwen/opencode…）
-│   ├── runner/      # 三阶段编排
-│   ├── schema/      # case/evidence/verdict 数据模型
-│   ├── scoring/     # 规则判卷 + 六维指标
-│   ├── report/      # 报告与雷达图
-│   ├── ui/          # Web UI（FastAPI + SSE 评测直播）
-│   └── cli.py / discovery.py / notify.py / systests.py
-├── cases/           # 用例库（full 43 / gen 21 / chains 4 / heldout 21※）
-├── scripts/         # deb/exe 打包、VM 通道、判卷自检等脚本
-└── tests/           # 端到端与适配器测试
+```bash
+uv run pytest tests/ -q
+uv run ruff check .
+uv run mypy
 ```
 
-> ※ 正式口径 = **full + chains**；**heldout 为运行时生成加试池**，评测时现场生成，题目文本不入公开仓库，seed 公布保复现；held-out 威胁模型详见 dataset-card §8。
+[CI配置](.github/workflows/ci.yml) 包含题库门禁、离线判卷自检与Linux/Windows测试矩阵；openKylin系统级行为另在目标环境验证。
 
-## 贡献与许可
+[数据集说明](docs/dataset-card.md) · [接口契约](docs/contracts/README.md) · [环境说明](environment.md) · [版本记录](CHANGELOG.md) · [安全反馈](SECURITY.md)
 
-- 出题四规矩与适配器契约见 [CONTRIBUTING.md](CONTRIBUTING.md)；评测口径变更必须在 CHANGELOG 记口径而非只记数字。
-- Apache-2.0（见 [LICENSE](LICENSE)）。
-
-## 状态
-
-**v2.0.0**（2026-10-14）——评审修复轮定版：UTC 起点/模型改写生命周期/网关账单序号对账、时钟恢复计入真实耗时、产物根纳入隔离边界、口径校验（sandbox+真实版本）、pass^k 完整分母账本、实验索引统计（--index）、OS 级 bwrap 沙箱、kylin-agent 第 9 适配器（fork 源码级复核）、固定试卷体系；四家正式矩阵（sandbox=1）进行中，成绩以实验归档为准。
-
-**v1.3.2**（2026-10-12）——终榜 v3（n=4 + chains 附表；统计口径更正见审计说明）、用例轮换（--rotate-count/--seed）、报告附图第二梯队 +5 张、模型（网关改写）下拉、openKylin 原生 LocalChannel。版本历史与口径变更见 [CHANGELOG.md](CHANGELOG.md)。
+欢迎贡献新任务、适配器和真实失败案例。许可证：[Apache-2.0](LICENSE)。
