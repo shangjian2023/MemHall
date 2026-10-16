@@ -1,0 +1,436 @@
+{
+  "schema_version": "1.0",
+  "verified_date": "2026-10-16",
+  "purpose": "可核验的作品内容和证据导航，不预测得分。",
+  "path_base": "repository_root",
+  "rubric_source": {
+    "path": "docs/contest/ai_open_kylin_open_kylin_benchmark_XaCQyZepC8.pdf",
+    "role": "命题原文第4节评分标准",
+    "sha256": "0f47d308d0c9ea2d11fecd6ec1b7bc230c258b4b446cbf1b672b27a398943ca0",
+    "distribution": "tracked_repository_file",
+    "pages": [
+      2,
+      3
+    ],
+    "weights": [
+      15,
+      25,
+      25,
+      15,
+      10,
+      10
+    ],
+    "weight_total": 100,
+    "not_substituted_by": "docs/audit/review-20261013/official-criteria.json 为赛道通用四维，不替代本命题六维。",
+    "repository_sha256": "0f47d308d0c9ea2d11fecd6ec1b7bc230c258b4b446cbf1b672b27a398943ca0",
+    "repository_matches_submission": true
+  },
+  "inventory": {
+    "method": "memhall.datasets.load_pack，按有效题目而非目录YAML总数统计",
+    "suites": {
+      "full": 45,
+      "chains": 4,
+      "challenge-v2": 72,
+      "development-v2": 39,
+      "gen": 21
+    },
+    "total_cases": 181,
+    "builtin_adapter_count": 9
+  },
+  "evidence_semantics": {
+    "source_and_tests": "文件存在与源码审阅不等于本次测试运行通过。",
+    "mock": "确定性模拟，仅验证工具流程和已知行为。",
+    "real_cases": "两个真实案例用于展示判定与证据，不构成总体能力排名。",
+    "archive_integrity": "完整性校验不单独证明语义评分正确或比较公平。",
+    "distribution": "local_submission_artifact 需要随提交包附带，不能假设公开仓库已有。"
+  },
+  "criteria": [
+    {
+      "id": "generality",
+      "name": "任务定义与通用性",
+      "weight_percent": 15,
+      "summary": "统一适配器连接完整智能体，本机与SSH共享执行接口。接入事实不等于公平能力排名。",
+      "evidence": [
+        {
+          "path": "src/memhall/adapters/base.py",
+          "role": "适配器契约",
+          "sha256": "d049f2b7c41ddd7ee30bba9ffc02a32ccde15673bfc1113ede32eb0dd629010f",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "94f84c0ef440f2ce2439fdca59500819614222a602ce4c4d93c53598e57c71be",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/adapters/__init__.py",
+          "role": "九个内置适配器注册",
+          "sha256": "4fd28b5a3cd555070cea8b9291a2743e3bd5ed85ee3ddef43c31827e9b4ddd0a",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "ea36702e910d00934aa93f4cfb9bac4a37b1578b1305e9fa9c9934af63e972f8",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/adapters/remote.py",
+          "role": "本机/SSH通道",
+          "sha256": "cd5bb6659290511d6330ffe6ee3fa9cec785006f341300970d00ee9a32b65c6a",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "b410adf1786c1e6c54aa099429cfb8efe798f099d341d16e88559dd9816026dd",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "docs/contracts/adapter.md",
+          "role": "接口说明",
+          "sha256": "fd2d80548e80a4396d551922d30ee41dd387ffa7f2cb12b5718b3db32e0049e6",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "fd2d80548e80a4396d551922d30ee41dd387ffa7f2cb12b5718b3db32e0049e6",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "tests/test_local_channel.py",
+          "role": "本机通道测试源代码",
+          "sha256": "fa2a2f0de5ba80a4023ade9e715c44cbcf2ab08c9ca0b482b6913054edff4208",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "fa2a2f0de5ba80a4023ade9e715c44cbcf2ab08c9ca0b482b6913054edff4208",
+          "repository_matches_submission": true
+        }
+      ]
+    },
+    {
+      "id": "dataset",
+      "name": "数据设计质量",
+      "weight_percent": 25,
+      "summary": "五套题包181题；固定试卷、模板分离和参数生成支持扩展。变体数不等于独立场景数。",
+      "evidence": [
+        {
+          "path": "src/memhall/schema/models_case.py",
+          "role": "题目数据结构",
+          "sha256": "9cba29cee1ee7a4a0e70b686f860422e6c174a379570846abed387801c31ee11",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "986ad7dd678728cdf48fd632c56369b29f02079f0c60c4743680cf6b923d6e7f",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "cases/full/suite.yaml",
+          "role": "核心45题题包声明",
+          "sha256": "dcec461280b66c7ac48685486e836fb47366f3901c040463fbfa78e9292da514",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "390b94a1a8652f4ce685fdd0015515a9e2c2ed7187e940485a6d9d335783c2be",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "cases/full/update-001.yaml",
+          "role": "目录更新公开题",
+          "sha256": "7a8eb4b3d93c28da7bcc2b36522e7d2b6e0aacdca0808e300d5f63d4563d1055",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "7a8eb4b3d93c28da7bcc2b36522e7d2b6e0aacdca0808e300d5f63d4563d1055",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "cases/full/boundary-002.yaml",
+          "role": "记忆边界公开题",
+          "sha256": "1f9a00c8f2cd9cabe6d8757d57fe0f5f9178cbc5edfc933726addcbb6e28e035",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "1f9a00c8f2cd9cabe6d8757d57fe0f5f9178cbc5edfc933726addcbb6e28e035",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/generation.py",
+          "role": "参数生成",
+          "sha256": "35d1483df62aa5401baa1b8e9de3405494c27354b2bf4ccf67c5657888339cdd",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "04c31c0928408ae0019485484f15037537722d394de1800a630de1c705f1a477",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/sampling.py",
+          "role": "固定试卷",
+          "sha256": "d59eda1ad23eddb9a74755ccf26dbddc4de67142506c49014af44efb3b61a921",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "c3afd054abae51e3997101e602612c023f64e7328ff24389041914263f29c239",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "tests/test_challenge_v2.py",
+          "role": "题库扩展测试源代码",
+          "sha256": "552b53e6c390f95262f1d16b0a61eaa010b9e438e1ca9d92acef0302dd93f505",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "0ae4d2c18b1f8207559f27c83a5c68025df42bf71f2161dde6f003c541f2fdd2",
+          "repository_matches_submission": false
+        }
+      ]
+    },
+    {
+      "id": "scoring",
+      "name": "自动评分能力",
+      "weight_percent": 25,
+      "summary": "确定性规则与语义判卷按题目处理，输出类别、理由和证据；无法可靠判断的项目进入复核。",
+      "evidence": [
+        {
+          "path": "src/memhall/scoring/engine.py",
+          "role": "评分编排",
+          "sha256": "320e3241ccd98e93bbace96acad25afb790c43caa93d9c66914976a9ed39a040",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "26cb166e3b5f5e29b746bc160957add905d3d64d450cedb5754b8ac09bd0cfbc",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/scoring/rules.py",
+          "role": "确定性规则",
+          "sha256": "d1fece716871d50eeebdfbf0981578565ea62b791cc654c3b1609c5baa253207",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "df4887d108eff50321f2a73cc3aa801729bd472e80727bcb0499badcbb465d6c",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/scoring/judge.py",
+          "role": "语义判卷",
+          "sha256": "ad433296de2dce81f18adeffcf1a1fa75fff75666f7b89f4b2e49ceb49b43e0d",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "515e5339acd3828451044d7b10f52996fcb8201cdc4c7faeac2c67d3278b5bdf",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/schema/evidence.py",
+          "role": "证据与判定格式",
+          "sha256": "26f7c9ee7dad4a4d60267b47cf72ed7baacae0310437a03d2f9475adca1232a0",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "26f7c9ee7dad4a4d60267b47cf72ed7baacae0310437a03d2f9475adca1232a0",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "scripts/judge_selftest.py",
+          "role": "离线自检入口",
+          "sha256": "57a93d91c8634fa0b897a72e1b4040e1556f8edd3a6c76dbc8dc5ba58586aeca",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "57a93d91c8634fa0b897a72e1b4040e1556f8edd3a6c76dbc8dc5ba58586aeca",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "tests/test_p1_judge.py",
+          "role": "判卷测试源代码",
+          "sha256": "edc024cffed724c953bce7129d3e6cea80bf03d279fd0d5e0ce335198c7e0d75",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "20426a8fcaa6a23f654e5b2186b510268c969a81f7732cf07cc9b9b50729a198",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "docs/contest/submission/current-experiment-20261015/selected-evidence/20261015-115547-kylin-agent--update-001.jsonl",
+          "role": "真实案例证据摘录，非完整归档",
+          "sha256": "dd274ca26054d15d015b1103cfa99909ab070eaa7baf546e56fe64ba3c423333",
+          "distribution": "local_submission_artifact",
+          "public_path": "docs/contest/submission/current-experiment-20261015/selected-evidence/20261015-115547-kylin-agent--update-001.jsonl"
+        },
+        {
+          "path": "docs/contest/submission/current-experiment-20261015/selected-evidence/20261015-115547-kylin-agent--boundary-002.jsonl",
+          "role": "真实边界案例摘录，非完整归档",
+          "sha256": "7d05d65601ae9329ba5ac260405c3deea0c1cbfc74985381be606e44ed331324",
+          "distribution": "local_submission_artifact",
+          "public_path": "docs/contest/submission/current-experiment-20261015/selected-evidence/20261015-115547-kylin-agent--boundary-002.jsonl"
+        }
+      ]
+    },
+    {
+      "id": "reproducibility",
+      "name": "稳定性与可复现性",
+      "weight_percent": 15,
+      "summary": "固定试卷、归档校验与重复运行支持追踪；mock验证工具链，不证明真实智能体稳定性。",
+      "evidence": [
+        {
+          "path": "src/memhall/sampling.py",
+          "role": "输入封存与指纹校验",
+          "sha256": "d59eda1ad23eddb9a74755ccf26dbddc4de67142506c49014af44efb3b61a921",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "c3afd054abae51e3997101e602612c023f64e7328ff24389041914263f29c239",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/runner/case_rotation.py",
+          "role": "历史轮换与来源记录",
+          "sha256": "e4418f0b706253bca65f4af84d356f63049394c289934af9356084a5b9b8557b",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "e4418f0b706253bca65f4af84d356f63049394c289934af9356084a5b9b8557b",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/report/stability.py",
+          "role": "重复运行一致性分析",
+          "sha256": "b9c5851ab4590fe09c07889d2c997956eea00585151a05d89af4bafb79a344ff",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "b9c5851ab4590fe09c07889d2c997956eea00585151a05d89af4bafb79a344ff",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "tests/test_runner_integrity.py",
+          "role": "归档完整性测试源代码",
+          "sha256": "8345eca70c6e7e129750eb269897492a3378818000ea85a579c965380245a86c",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "c6a0888ba619bc4694d16a93cad3f219e2e0cc53c6221d802850f733d68625a6",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "tests/test_benchmark_papers.py",
+          "role": "固定试卷测试源代码",
+          "sha256": "0663449e4ae55385cdc0b331299f0ddaaec348090315e0eab298e67db90b1615",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "0663449e4ae55385cdc0b331299f0ddaaec348090315e0eab298e67db90b1615",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "uv.lock",
+          "role": "依赖锁",
+          "sha256": "19a8ccda5ad89007405caad2c0e0de6b1ac2d0346af883deff609e5814ec114b",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "19a8ccda5ad89007405caad2c0e0de6b1ac2d0346af883deff609e5814ec114b",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "build/deb-refresh-20261016/acceptance-result.json",
+          "role": "本地目标机mock两轮与verify检查记录",
+          "sha256": "4e8029a6f1b6e873ae30d4a67132c1218fbaacb31a49dd999ff789e3398b0752",
+          "distribution": "local_submission_artifact",
+          "public_path": "docs/contest/evidence/20261016/acceptance-result.json"
+        }
+      ]
+    },
+    {
+      "id": "metrics",
+      "name": "指标完整性",
+      "weight_percent": 10,
+      "summary": "按六项能力汇总有效计分，报告错误类型、未决范围与逐题复查入口；本导航不发布旧比较分数。",
+      "evidence": [
+        {
+          "path": "src/memhall/report/metrics.py",
+          "role": "指标计算",
+          "sha256": "b28d31f0778874ed11732dd8dbe17d8c92ac6431771100299ea3258433954776",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "b28d31f0778874ed11732dd8dbe17d8c92ac6431771100299ea3258433954776",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/report/radar.py",
+          "role": "六维雷达",
+          "sha256": "d04116a25c8af301bac4a7b95f5dde1d4c2dcfe9813dea1774533ee4c385f050",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "d04116a25c8af301bac4a7b95f5dde1d4c2dcfe9813dea1774533ee4c385f050",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/report/panels.py",
+          "role": "结果诊断图",
+          "sha256": "97bf4fb299a3402a6efda00cb28b5418d5bd88aa5a1116ccb3d6f6440234c837",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "769217564c20eded28fd4e1aa759c92ceb519a2dc1ccccfe9be6ed44e639e30f",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "src/memhall/report/report.py",
+          "role": "报告组织",
+          "sha256": "cb60c8b82d0565d615ab306caf068a170b9913f71d5998202e950c121f3a9259",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "3a80a1c12f7ff82543cfa21bdf2cc9010b55196eb411656513f3e515a0c38f9a",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "tests/test_report_panels.py",
+          "role": "报告测试源代码",
+          "sha256": "7cdcd859cb75e41fc12a8fc806a000001868595a30dbfe445533464b14e5952c",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "7cdcd859cb75e41fc12a8fc806a000001868595a30dbfe445533464b14e5952c",
+          "repository_matches_submission": true
+        }
+      ]
+    },
+    {
+      "id": "engineering",
+      "name": "创新性与工程可落地性",
+      "weight_percent": 10,
+      "summary": "面向麒麟原生执行、系统事件、桌面通知和.deb封装，配合模型归因及受控文件写入。",
+      "evidence": [
+        {
+          "path": "src/memhall/systests.py",
+          "role": "系统事件测试，当前最小实现Hermes",
+          "sha256": "4a126c3e82491d6f7201dacfa0dcd9050ec74f4d5d18cad3c99e3183773136ef",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "4a126c3e82491d6f7201dacfa0dcd9050ec74f4d5d18cad3c99e3183773136ef",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/notify.py",
+          "role": "桌面通知与打开结果",
+          "sha256": "5c722e6907c8aff66daa4ce57aad179530bed6233c2e109ac86a07b2caefc319",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "5c722e6907c8aff66daa4ce57aad179530bed6233c2e109ac86a07b2caefc319",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/vm.py",
+          "role": "虚拟机生命周期与健康检查",
+          "sha256": "c678298eded04cbca332d893ce7f4caffcbd839ea658c7607edeb14821315472",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "c678298eded04cbca332d893ce7f4caffcbd839ea658c7607edeb14821315472",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/gateway.py",
+          "role": "模型设置与来源用量",
+          "sha256": "28d813f87c1c1a0255eef988ab698199844553fd08e8792e850d4debfc2ba46b",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "28d813f87c1c1a0255eef988ab698199844553fd08e8792e850d4debfc2ba46b",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "src/memhall/adapters/sandbox.py",
+          "role": "可选文件系统写入隔离",
+          "sha256": "c611c8325727663a2d53b3f15b07d33f0c0966394a7e38fdb05c69b301f1db72",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "c611c8325727663a2d53b3f15b07d33f0c0966394a7e38fdb05c69b301f1db72",
+          "repository_matches_submission": true
+        },
+        {
+          "path": "scripts/build_deb_vm.sh",
+          "role": "目标机原生封装，含桌面入口",
+          "sha256": "b3018b0b0b24c3a775486a8f2b02c42a041d655c963d25dc559c3e1af5dd93c3",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "a03138ad949c965750fe3d691dfe008e50dc1da7abb42bedc409819d98f31502",
+          "repository_matches_submission": false
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "role": "CI定义，非本次通过记录",
+          "sha256": "0b9745d30e5e306d839f8a6c942309813b16a6ae4a840f71ae82a8639f302de6",
+          "distribution": "tracked_repository_file",
+          "repository_sha256": "09cf660c0966881f11f31cfe965d5b3cb046bee47df1a050603e9ba5621ce8ee",
+          "repository_matches_submission": false
+        },
+        {
+          "path": "build/deb-refresh-20261016/install-final-result.json",
+          "role": "本地目标机安装结果与配置保留记录",
+          "sha256": "f66bdaab796b679b932dd7f2febcd22ac5dc24f48e6e5fa7c9b3db2ac75fc94d",
+          "distribution": "local_submission_artifact",
+          "public_path": "docs/contest/evidence/20261016/install-final-result.json"
+        }
+      ]
+    }
+  ],
+  "packaging_scope": {
+    "install_record": "build/deb-refresh-20261016/install-final-result.json",
+    "install_result": "PASS",
+    "mock_acceptance_record": "build/deb-refresh-20261016/acceptance-result.json",
+    "mock_acceptance_result": "PASS",
+    "verified_scope": [
+      "目标机版本入口",
+      "两轮mock quick执行",
+      "两轮归档verify",
+      "稳定性命令退出成功",
+      "安装记录中的旧运行环境与配置保留"
+    ],
+    "not_claimed": [
+      "由mock证明真实智能体能力",
+      "完整卸载验收",
+      "所有框架系统测试均通过",
+      "云端模型离线推理"
+    ]
+  },
+  "repository_reference": {
+    "base_commit": "cb1f1bb663d089c6a56cdd12b5040b9b74c22ede",
+    "meaning": "repository_sha256 refers to the public code at base_commit; sha256 refers to the submitted local snapshot. Documentation publication does not change runtime source."
+  }
+}

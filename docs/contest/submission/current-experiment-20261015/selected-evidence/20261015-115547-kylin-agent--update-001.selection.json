@@ -1,0 +1,13 @@
+{
+  "original_sha256": "210de73cfd75bf10683ec3309a49c67bea73fa5efe6e0b78f7a2e04ca0f2e331",
+  "included_types": [
+    "dialogue",
+    "memory_snapshot",
+    "actions"
+  ],
+  "omitted_types": [
+    "fs_diff"
+  ],
+  "reason": "Omit unrelated home-directory path inventories; selected records preserve original payload and hash.",
+  "not_a_complete_evidence_file": true
+}

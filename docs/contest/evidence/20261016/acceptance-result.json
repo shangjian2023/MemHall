@@ -1,0 +1,58 @@
+{
+  "result": "PASS",
+  "checks": [
+    {
+      "command": [
+        "/usr/bin/memhall",
+        "--version"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/memhall",
+        "run",
+        "-a",
+        "mock",
+        "-c",
+        "quick",
+        "--judge",
+        "scripted",
+        "-o",
+        "/home/okim/memhall-releases/deb-2.0.0-clean-20261016-79353466f1/acceptance/round-1"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/memhall",
+        "run",
+        "-a",
+        "mock",
+        "-c",
+        "quick",
+        "--judge",
+        "scripted",
+        "-o",
+        "/home/okim/memhall-releases/deb-2.0.0-clean-20261016-79353466f1/acceptance/round-2"
+      ],
+      "exit": 0
+    },
+    {
+      "verify": "/home/okim/memhall-releases/deb-2.0.0-clean-20261016-79353466f1/acceptance/round-1/20261016-055532-mock",
+      "exit": 0
+    },
+    {
+      "verify": "/home/okim/memhall-releases/deb-2.0.0-clean-20261016-79353466f1/acceptance/round-2/20261016-055535-mock",
+      "exit": 0
+    },
+    {
+      "stability_exit": 0
+    }
+  ],
+  "demo_ui_pid": 86368,
+  "demo_home": "/home/okim/memhall-releases/deb-2.0.0-clean-20261016-79353466f1/isolated-demo-home",
+  "selected_run": "20261015-054036-kylin-agent",
+  "separate_lock": true,
+  "network_model_calls": 0
+}

@@ -1,0 +1,19 @@
+# 麟阁 MemHall
+
+> 面向openKylin的智能体长期记忆评测工具。教、隔、考三阶段连接题目、真实执行、判定与证据报告。
+
+## 项目文档
+
+- [项目入口](README.md)：功能、六项能力、配置与运行方法。
+- [作品与证据导航](docs/contest/REVIEW_GUIDE.md)：原题六评分维度及对应材料。
+- [机读证据索引](docs/contest/review-evidence.json)：证据路径、文件哈希、来源范围。
+- [提交材料](docs/contest/submission/README.md)：最新交付文件与公开范围。
+- [设计说明](design.md)：架构与执行流程。
+- [题库说明](docs/dataset-card.md)：数据范围与测量边界。
+- [扩展说明](docs/benchmark-v2.md)：固定试卷、生成和扩展入口。
+- [接口契约](docs/contracts/README.md)：适配器、题目、证据与判定。
+- [原始命题](docs/contest/ai_open_kylin_open_kylin_benchmark_XaCQyZepC8.pdf)：任务要求及六项评分标准。
+
+## 事实范围
+
+五套题包181题，九个内置适配器。模拟样例验证工具流程；真实案例展示具体行为。接入数量、归档完整性与公平能力排名是不同事项。量化结论需要对应配置、运行及证据；本索引不提供旧排行榜或预期得分。

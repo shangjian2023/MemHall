@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "version": "2.0.0",
+    "python": "3.12.2"
+  },
+  "legacy_runtime_preserved": true,
+  "legacy_runtime_sha256": "97883f51dd563fa647cd992afa0b2aa33d4b8edf48820f33400f0a5e6691db53",
+  "config_preserved": true,
+  "deb_sha256": "4016b61bfb0a7672621846c9d33981fc3a02f0511287f9522c2a27af2ef7756e",
+  "source_directory": "/home/okim/memhall-releases/deb-2.0.0-clean-20261016-79353466f1",
+  "result": "PASS"
+}
