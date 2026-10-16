@@ -5,3 +5,5 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 *.csv -text
+# Preserve upstream license bytes so published SHA256 values remain verifiable.
+docs/compliance/**/licenses/** -text

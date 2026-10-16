@@ -100,3 +100,24 @@ uv run mypy
 [数据集说明](docs/dataset-card.md) · [接口契约](docs/contracts/README.md) · [环境说明](environment.md) · [版本记录](CHANGELOG.md) · [安全反馈](SECURITY.md)
 
 欢迎贡献新任务、适配器和真实失败案例。许可证：[Apache-2.0](LICENSE)。
+
+## 开源治理与长期维护
+
+项目由维护团队负责，以GitHub为主仓库、Gitee为镜像，通过Issue、PR和版本记录公开协作。题库、评分口径、适配器及交付文档共同维护；涉及结果可比性的变更记录影响与验证依据。
+
+| 内容 | 执行规则与入口 |
+|---|---|
+| 许可与依赖 | [第三方说明](THIRD_PARTY_NOTICES.md)：锁定依赖，收集各组件许可原文，分发义务另行复核 |
+| 贡献与审阅 | [贡献指南](CONTRIBUTING.md)：问题复现、题库标准、接口约定、测试和文档同步 |
+| 职责与决策 | [治理规则](GOVERNANCE.md)：核心维护、模块复核、贡献参与及交接 |
+| 维护与发布 | [维护手册](docs/maintenance.md)：问题优先级、检查命令、发行校验和支持边界 |
+| 长期路线 | [路线图](docs/ROADMAP.md)：稳定交付、证据与评分改进、麒麟场景共建 |
+
+仓库提供可执行的文档入口检查、运行依赖清单与许可材料生成、发行附件SHA256生成及复验工具；前两项接入CI。许可资料收集不替代对分发条件的人工审核。
+
+```bash
+uv run python scripts/check_governance.py
+uv run python scripts/dependency_inventory.py --output build/compliance --check
+```
+
+欢迎麒麟用户贡献办公与研发场景，欢迎框架开发者完善适配器和证据采集。长期工作通过公开问题、贡献审阅和版本验收逐步推进。

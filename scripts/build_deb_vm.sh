@@ -30,6 +30,11 @@ STAGE="$WORK/memhall"
 mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/share/memhall/scripts" "$STAGE/usr/bin" \
   "$STAGE/usr/share/applications" "$STAGE/usr/share/pixmaps" "$STAGE/usr/share/doc/memhall"
 cp -r "$W" "$STAGE/usr/share/memhall/wheels"
+# Inspect the exact downloaded wheel set in an isolated staging directory.
+# Never install build-time inventory dependencies into the system interpreter.
+pip3 install --quiet --no-index --no-deps --target "$WORK/license-pylib" "$W"/*.whl
+PYTHONPATH="$WORK/license-pylib" python3 scripts/dependency_inventory.py \
+  --output "$STAGE/usr/share/doc/memhall/third-party" --check
 mkdir -p "$STAGE/usr/share/memhall/cases"
 cp cases/suite.yaml "$STAGE/usr/share/memhall/cases/"
 for name in full gen chains challenge-v2 development-v2; do

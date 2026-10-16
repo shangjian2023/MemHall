@@ -16,5 +16,11 @@ for name in full gen chains challenge-v2 development-v2; do
 done
 uv run pyinstaller --noconfirm --workpath build/exe --distpath dist memhall-onefile.spec
 mv dist/MemHall.exe "dist/麟阁MemHall-单文件版.exe"
+
+# Preserve dependency license texts alongside both distribution forms.
+uv run python scripts/dependency_inventory.py --output build/exe-compliance --check
+cp -r build/exe-compliance dist/MemHall/THIRD_PARTY_LICENSES
+cp LICENSE dist/MemHall/LICENSE
+tar -a -cf dist/THIRD_PARTY_LICENSES-windows.zip -C build/exe-compliance .
 du -sh dist/MemHall "dist/麟阁MemHall-单文件版.exe"
 echo "完成：onedir=dist/MemHall/ · 单文件=dist/麟阁MemHall-单文件版.exe"

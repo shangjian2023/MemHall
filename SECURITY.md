@@ -2,12 +2,12 @@
 
 ## 支持范围
 
-最新 dev 分支与最近一个 tag 版本。
+main主线与最近一个正式发布版本；旧版本问题按可复现性和影响评估，不承诺固定维护年限或响应时限。
 
 ## 上报渠道
 
 安全问题请勿开公开 issue——发邮件至维护者（仓库 Owner 页可见联系方式），
-或用 GitHub 私有安全通告（Security → Report a vulnerability）。
+或在仓库开启私密漏洞报告功能时使用 GitHub 私有安全通告（Security → Report a vulnerability）。不附真实密钥或未脱敏用户数据。
 
 ## 威胁面速览（评测工具特有）
 

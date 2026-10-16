@@ -18,6 +18,25 @@ env:
   UV_DEFAULT_INDEX: https://pypi.org/simple
 
 jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --dev --frozen
+      - name: 治理文档与链接检查
+        run: uv run python scripts/check_governance.py
+      - name: 运行依赖版本与许可资料
+        run: uv run python scripts/dependency_inventory.py --output build/compliance --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-dependency-licenses-linux-py312
+          path: build/compliance/
+          if-no-files-found: error
+
   lint:
     # 静态门禁：ruff（语法/惯用法，P0 期间靠它逮到过真 NameError）+ mypy（宽松档）
     runs-on: ubuntu-latest
@@ -69,7 +88,7 @@ jobs:
     # T23：tag（v*）触发——Windows runner 出 exe 双发行物挂 GitHub Release；
     # deb 是 openKylin 目标机原生构建物（build_deb_vm.sh），不走 CI
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [lint, test]
+    needs: [lint, test, governance]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -88,9 +107,17 @@ jobs:
         run: |
           bash scripts/build_exe.sh
           tar -a -cf dist/MemHall-windows-onedir.zip -C dist MemHall
+          uv run python scripts/release_checksums.py --output build/windows-release-checks \
+            "dist/麟阁MemHall-单文件版.exe" dist/MemHall-windows-onedir.zip \
+            dist/THIRD_PARTY_LICENSES-windows.zip
+          cp build/windows-release-checks/SHA256SUMS.txt dist/SHA256SUMS-windows.txt
+          cp build/windows-release-checks/release-manifest.json dist/release-manifest-windows.json
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/麟阁MemHall-单文件版.exe
             dist/MemHall-windows-onedir.zip
+            dist/THIRD_PARTY_LICENSES-windows.zip
+            dist/SHA256SUMS-windows.txt
+            dist/release-manifest-windows.json
