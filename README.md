@@ -81,7 +81,7 @@ uv run memhall verify runs/<run_id>
 
 ## 安装与交付
 
-openKylin原生打包入口为 [build_deb_vm.sh](scripts/build_deb_vm.sh)，Windows打包入口为 [build_exe.sh](scripts/build_exe.sh)。构建准备需要获取依赖；.deb安装阶段使用包内Python依赖，系统需满足包声明的基础条件。对应发行物的安装、启动和卸载状态以验收记录为准。
+openKylin原生打包入口为 [build_deb_vm.sh](scripts/build_deb_vm.sh)，Windows打包入口为 [build_exe.sh](scripts/build_exe.sh)。构建准备需要获取依赖；.deb安装阶段使用包内Python依赖，系统需满足包声明的基础条件。2026-10-16 的 2.0.0 已在现有 VM 完成升级、启动、两轮 mock、verify 与 stability 验收，详情见[装机记录](docs/audit/deb-2.0.0-20261016.md)；干净机安装和显式卸载尚未验收。
 
 [提交材料目录](docs/contest/submission/README.md) 提供当前作品介绍、完整报告与演示入口。历史文档和数据保留用于追溯，不作为当前排行榜。
 
