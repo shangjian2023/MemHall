@@ -56,9 +56,10 @@ DEOF
 
 cat > "$STAGE/usr/bin/memhall" <<'WEOF'
 #!/bin/sh
-export PYTHONPATH=/usr/lib/memhall/pylib${PYTHONPATH:+:$PYTHONPATH}
+export PYTHONPATH=/usr/lib/memhall/@VERSION@/pylib${PYTHONPATH:+:$PYTHONPATH}
 exec python3 -c 'import sys; from memhall.cli import main; sys.exit(main())' "$@"
 WEOF
+sed -i "s/@VERSION@/$VERSION/g" "$STAGE/usr/bin/memhall"
 chmod 755 "$STAGE/usr/bin/memhall"
 
 cat > "$STAGE/DEBIAN/control" <<CEOF
@@ -80,13 +81,18 @@ cat > "$STAGE/DEBIAN/postinst" <<'PEOF'
 #!/bin/sh
 set -e
 pip3 install --quiet --no-index --no-deps --upgrade --break-system-packages \
-  --target /usr/lib/memhall/pylib /usr/share/memhall/wheels/*.whl
+  --target /usr/lib/memhall/@VERSION@/pylib /usr/share/memhall/wheels/*.whl
 PEOF
+sed -i "s/@VERSION@/$VERSION/g" "$STAGE/DEBIAN/postinst"
 
 cat > "$STAGE/DEBIAN/prerm" <<'REOF'
 #!/bin/sh
-rm -rf /usr/lib/memhall/pylib
+# 运行中的评测可能仍在导入旧版本依赖；升级时保留，显式卸载才清理。
+case "$1" in
+  remove|deconfigure) rm -rf /usr/lib/memhall/@VERSION@/pylib ;;
+esac
 REOF
+sed -i "s/@VERSION@/$VERSION/g" "$STAGE/DEBIAN/prerm"
 chmod 755 "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/prerm"
 
 # T22：deb 元数据达标——copyright + changelog（dpkg 标准位置）

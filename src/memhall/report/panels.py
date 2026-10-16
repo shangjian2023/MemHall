@@ -156,7 +156,7 @@ def _caliber(run_dir: Path, verdicts, cases: dict) -> str | None:
     ax.set_yticks(ys)
     ax.set_yticklabels([r[0] for r in rows], fontsize=9.5)
     ax.set_xlim(0, 100)
-    ax.set_xlabel("正确率（%）　空心=脚本判卷 · 实心=双 LLM 判卷")
+    ax.set_xlabel("正确率（%）　空心=脚本判卷 · 实心=LLM 判卷")
     ax.xaxis.grid(True, color="0.88", linewidth=0.7)
     ax.set_axisbelow(True)
     for spine in ("top", "right", "left"):

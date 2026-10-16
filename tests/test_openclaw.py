@@ -88,6 +88,9 @@ def test_send_parses_exec_envelope(tmp_path, monkeypatch):
     send_cmd = ch.calls[-1]
     assert "--message-file" in send_cmd and "agent exec" in send_cmd
     assert "--config ~/.memhall-openclaw/openclaw.json" in send_cmd
+    # agent exec otherwise pins workspace to the launch directory, ignoring
+    # the workspace in config (installed OpenClaw 2026.9.8 regression).
+    assert "--cwd ~/.memhall-openclaw/workspace" in send_cmd
     assert "笔记在哪" not in send_cmd                     # 消息走 stdin 不上命令行
     assert ch.stdins[-1] == "你记的我的笔记在哪？"
 

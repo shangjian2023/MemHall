@@ -34,6 +34,25 @@ def test_ui_app_core_endpoints(tmp_path, monkeypatch):
     assert r3.status_code == 200 and "麟阁" in r3.text
 
 
+def test_config_ignores_retired_judge_b_without_erasing_old_config(tmp_path, monkeypatch):
+    env_path = tmp_path / "memhall.env"
+    original = 'JUDGE_B_KEY="legacy-secret"\nJUDGE_B_MODEL="old-model"\n'
+    env_path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(uiapp, "ENV_PATH", env_path)
+    monkeypatch.setattr(uiapp, "load_dotenv", lambda: [])
+    monkeypatch.setenv("JUDGE_B_KEY", "legacy-secret")
+    c = TestClient(create_app())
+    response = c.get("/api/config")
+    assert not any(item["key"].startswith("JUDGE_B_") for item in response.json()["items"])
+    assert "legacy-secret" not in response.text
+    saved = c.post("/api/config", json={"updates": {"JUDGE_B_MODEL": "new-model"}})
+    assert saved.json()["saved"] == 0
+    assert env_path.read_text(encoding="utf-8") == original
+    page = c.get("/").text
+    assert "JUDGE_B" not in page
+    assert "双判仲裁" not in page
+
+
 def test_ui_start_blocked_when_gateway_down(tmp_path, monkeypatch):
     """UI 发车必须过上游预检（10-09 实锤：预检只接在 CLI，VM 上从 UI 发车
     直接冲进死网关/毒解析，2 用例纯超时假忙才被发现）。"""

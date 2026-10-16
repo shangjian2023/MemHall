@@ -93,7 +93,7 @@ def _finish_run(
         judge_info.update(
             {
                 "model_a": os.environ.get("JUDGE_A_MODEL", ""),
-                "model_b": os.environ.get("JUDGE_B_MODEL"),
+                "model_b": None,
             }
         )
     manifest["judge"] = judge_info

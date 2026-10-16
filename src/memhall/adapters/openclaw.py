@@ -2,7 +2,8 @@
 
 实测对接方式（2026-10-03 VM 联调定案，OpenClaw 2026.9.8）：
 - send:    `openclaw agent exec --config <sandbox>/openclaw.json --state-dir <sandbox>
-           --model memhall-gw/<m> --message-file <tmp> --json --timeout N`
+           --cwd <sandbox>/workspace --model memhall-gw/<m>
+           --message-file <tmp> --json --timeout N`
            —— exec 是官方无头单回合通道：每次独立进程=天然跨会话，长期记忆
            只靠 sqlite 记忆库（memory_search 跨会话召回实测通），正中考点；
            回复取 --json 信封的 final 字段（ok=false 或空 final → AgentUnavailable）
@@ -103,8 +104,7 @@ class OpenClawAdapter(VmAdapterMixin, AgentAdapter):
 
     def _config_json(self, s: dict) -> str:
         """沙箱 openclaw.json：单一 provider，mode=replace 隔绝环境配置漂移。"""
-        return json.dumps(
-            {
+        config = {
                 "models": {
                     "mode": "replace",
                     "providers": {
@@ -132,10 +132,14 @@ class OpenClawAdapter(VmAdapterMixin, AgentAdapter):
                         "workspace": STATE_DIR + "/workspace",
                     }
                 },
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+            }
+        # Installed OpenClaw documents memory.search.provider=none as its
+        # explicit keyword-only backend. Opt in for a separately identified
+        # run profile; do not silently change historical/default profiles.
+        memory_provider = os.environ.get("OPENCLAW_MEMORY_SEARCH_PROVIDER", "").strip()
+        if memory_provider:
+            config["memory"] = {"search": {"provider": memory_provider}}
+        return json.dumps(config, ensure_ascii=False, indent=2)
 
     def reset(self) -> None:
         s = self._llm_settings()
@@ -163,9 +167,17 @@ class OpenClawAdapter(VmAdapterMixin, AgentAdapter):
         script = (
             'd=$(mktemp -t mh-oc.XXXXXX) && cat > "$d" && '
             f"export PATH=$HOME/.local/bin:$PATH && "
+            # Some global state/config is initialized before exec handles its
+            # flags, so isolate it from process startup, not just at exec time.
+            f"OPENCLAW_STATE_DIR={STATE_DIR} "
+            f"OPENCLAW_CONFIG_PATH={STATE_DIR}/openclaw.json "
             f"timeout {SEND_TIMEOUT_S} {OPENCLAW_BIN} agent exec "
             f"--config {STATE_DIR}/openclaw.json "
             f"--state-dir {STATE_DIR} "
+            # agent exec pins workspace to --cwd or process.cwd(), overriding
+            # agents.defaults.workspace in the config. Pin both the tool cwd
+            # and memory workspace to the resettable writable state directory.
+            f"--cwd {STATE_DIR}/workspace "
             f"--model {self._provider_model} "
             f'--message-file "$d" --json --timeout 260 2>/dev/null; '
             'rc=$?; rm -f "$d"; exit $rc'

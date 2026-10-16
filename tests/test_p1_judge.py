@@ -10,7 +10,7 @@ import pytest
 import memhall.scoring.judge as jm
 from memhall.schema.evidence import Evidence, EvidencePhase, EvidenceType
 from memhall.schema.models_case import Anchor, JudgeProbe
-from memhall.scoring.engine import _answer_for
+from memhall.scoring.engine import _answer_for, _judge_verdict
 from memhall.scoring.judge import ScriptedJudge
 from memhall.scoring.rules import EvidenceStore
 
@@ -24,6 +24,18 @@ def _probe(anchors=None) -> JudgeProbe:
                      "dont_know": "omission"},
         anchors=anchors or [Anchor(reply="你的代码目录是 ~/work/src。",
                                    expect_verdict="old_path")])
+
+
+def test_single_judge_does_not_emit_empty_second_judge(monkeypatch):
+    judge = jm.OpenAICompatJudge("A", "http://unused", "model-a", "unused")
+    monkeypatch.setattr(judge, "complete", lambda prompt:
+                        '{"verdict":"new_path","confidence":0.9,"evidence_refs":["t"],"reason":"r"}')
+    verdict = _judge_verdict(_probe(), EvidenceStore([]), "run-1", 1, judge)
+    assert verdict.judge_meta is not None
+    assert verdict.judge_meta.judge_a.model == judge.name
+    assert verdict.judge_meta.judge_a.agreed is False
+    assert verdict.judge_meta.judge_b is None
+    assert verdict.judge_meta.arbiter is None
 
 
 # ---------- T09 httpx 客户端 ----------

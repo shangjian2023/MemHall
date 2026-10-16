@@ -1,7 +1,7 @@
 """评分引擎：case 探测点 × 证据 → 契约 03 Verdict 列表。
 
 RuleProbe -> 断言链（scoring/rules.py，确定性）
-JudgeProbe -> 判卷器（scripted 离线 / 双 LLM judge 在线，scoring/judge.py）
+JudgeProbe -> 判卷器（scripted 离线 / 单 LLM 评委在线，scoring/judge.py）
 """
 
 from __future__ import annotations
@@ -100,16 +100,10 @@ def _judge_verdict(probe: JudgeProbe, store: EvidenceStore, run_id: str, seq: in
             meta = JudgeMeta(
                 judge_a=JudgeMetaItem(model=outcome.judge_a or "",
                                       verdict=_raw_verdict(outcome.judge_a_raw, probe),
-                                      # R56：agreed 只在双票均有效时有定义，
-                                      # 双票皆无效(None==None)不得误报 True
-                                      agreed=(outcome.judge_a_raw is not None
-                                              and outcome.judge_a_raw == outcome.judge_b_raw)),
-                judge_b=JudgeMetaItem(model=outcome.judge_b or "",
-                                      verdict=_raw_verdict(outcome.judge_b_raw, probe),
-                                      agreed=(outcome.judge_a_raw is not None
-                                              and outcome.judge_a_raw == outcome.judge_b_raw)),
+                                      agreed=False),
+                judge_b=None,
                 prompt_version=JUDGE_PROMPT_VERSION,
-                arbiter="arbitration（A/B 轮值，见 reason）" if outcome.arbitrated else None,
+                arbiter=None,
             )
         except RuntimeError as e:
             # judge 端点彻底不可用：降级脚本判卷，评测不因 judge 挂而报废。

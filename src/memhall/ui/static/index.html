@@ -410,7 +410,7 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
             <img id="rdPMix" alt="分能力判定构成（错误集中在哪一维、什么形态）">
           </figure>
           <figure id="rdCalFig" style="display:none">
-            <figcaption>判卷口径对比（双判 vs 脚本）</figcaption>
+            <figcaption>判卷口径对比（LLM vs 脚本）</figcaption>
             <img id="rdPCal" alt="同证据两判卷口径的判定差">
           </figure>
           <figure id="rdLatFig" style="display:none">
@@ -460,7 +460,7 @@ footer{margin-top:36px;text-align:center;color:var(--faint);font-size:12px}
         <div class="cfg-sub" id="cfgVmSub">被测智能体跑在 openKylin VM 里：麟阁靠这条 SSH 驱动它发消息、取记忆证据，体检页"评测机"段同源</div>
         <div class="cfg-grid" id="cfgVM"></div>
         <h2.sec>判卷 LLM —— 选「LLM 判卷」时才联网</h2>
-        <div class="cfg-sub">脚本判卷离线零成本。选 LLM 判卷时用 JUDGE_A 组打分（当前 qwen 单判），JUDGE_B 配置后才启用双判仲裁。被测智能体自己的模型后端不在这里——各智能体安装时就已配好（如 kylinbot 的 config.toml）</div>
+        <div class="cfg-sub">脚本判卷离线零成本。选 LLM 判卷时使用 JUDGE_A 组配置，由单个 LLM 评委依据评分标准和锚例打分。被测智能体自己的模型后端由各智能体配置（如 kylinbot 的 config.toml）。</div>
         <div class="cfg-grid" id="cfgJudge"></div>
         <h2.sec>网关防护 —— RPM 超限会掐连接</h2>
         <div class="cfg-sub">判卷请求最小间隔 / kylinbot 单发间隔，单位秒；两者都为压住网关限速</div>
@@ -1213,7 +1213,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeCase();}});
 /* ---------- 配置 ---------- */
 let cfgLoaded=false;
 const CFG_GROUPS=[
-  ["cfgVM",/^VM_/],["cfgJudge",/^JUDGE_(A|B)_/],["cfgMisc",/^(KYLINBOT_SEND_INTERVAL|JUDGE_MIN_INTERVAL)$/]];
+  ["cfgVM",/^VM_/],["cfgJudge",/^JUDGE_A_/],["cfgMisc",/^(KYLINBOT_SEND_INTERVAL|JUDGE_MIN_INTERVAL)$/]];
 async function loadConfig(){
   try{
     const d=await api("/api/config");cfgLoaded=true;
@@ -1230,7 +1230,7 @@ async function loadConfig(){
       const items=d.items.filter(i=>re.test(i.key));
       box.innerHTML=items.map(i=>`
         <div class="cfg-item"><label>${esc(i.key)} ${i.set&&!i.value?'<span class="pill ok" style="font-size:10.5px">已设置</span>':""}</label>
-          <input type="${["VM_PASS","AGENT_LLM_KEY","JUDGE_A_KEY","JUDGE_B_KEY"].includes(i.key)?"password":"text"}"
+          <input type="${["VM_PASS","AGENT_LLM_KEY","JUDGE_A_KEY"].includes(i.key)?"password":"text"}"
             data-k="${esc(i.key)}" value="${esc(i.value)}"
             placeholder="${i.set&&!i.value?"留空保持不变":""}"></div>`).join("");
     }

@@ -50,7 +50,7 @@ def test_end_to_end_pipeline(tmp_path: Path):
     invalid = [v for v in verdicts if v.verdict == VerdictValue.INVALID_RUN]
     assert not invalid, [f"{v.probe_id}: {v.explanation}" for v in invalid]
     # 判卷未决（脚本判不了的语义边界）转人工不计分——离线跑允许少量，
-    # 设计口径：LLM 双判下人工复核率 <5%（design.md §6.1）
+    # 设计目标：人工复核率 <5%（design.md §6.1）；此处只验离线 mock 链路。
     review = [v for v in verdicts if v.verdict == VerdictValue.HUMAN_REVIEW]
     assert len(review) <= 8, [v.probe_id for v in review]
 

@@ -141,7 +141,7 @@ def render_report(
     if jm:
         model = f"（{jm.get('model_a', '')}）" if jm.get("model_a") else ""
         actual_mode = (
-            ("双 LLM 评委" if jm.get("model_b") else "单 LLM 评委（B 未配置）")
+            ("双 LLM 评委（历史归档）" if jm.get("model_b") else "单 LLM 评委")
             if jm.get("mode") == "dual"
             else jm.get("mode", "?")
         )

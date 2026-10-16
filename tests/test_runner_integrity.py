@@ -18,7 +18,7 @@ from memhall.scoring.engine import evaluate_case
 REPO = Path(__file__).parent.parent
 
 
-def _finish_mock_run(root: Path, cases):
+def _finish_mock_run(root: Path, cases, judge_mode="scripted"):
     root.mkdir(parents=True, exist_ok=True)
     run_id, stores = run_suite(MockAdapter(), cases, root, "mock")
     run_dir = root / run_id
@@ -32,8 +32,22 @@ def _finish_mock_run(root: Path, cases):
     _finish_run(
         run_dir, run_id, manifest, verdicts,
         {case.case_id: case for case in cases},
+        judge_mode=judge_mode,
     )
     return run_dir, verdicts
+
+
+def test_single_judge_manifest_ignores_legacy_b_environment(tmp_path, monkeypatch):
+    """旧配置存在时，新归档不能误报双评委并改变报告与聚合口径。"""
+    monkeypatch.setenv("JUDGE_A_MODEL", "judge-a")
+    monkeypatch.setenv("JUDGE_B_MODEL", "obsolete-judge-b")
+    cases = load_cases(REPO / "cases" / "full")[:1]
+    run_dir, _ = _finish_mock_run(tmp_path, cases, judge_mode="dual")
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["judge"]["model_a"] == "judge-a"
+    assert manifest["judge"]["model_b"] is None
+    assert manifest["scoring_protocol"]["judge"]["model_b"] is None
+    assert "双 LLM 评委" not in (run_dir / "report.md").read_text(encoding="utf-8")
 
 
 def test_verifier_accepts_case_without_optional_confound_phase(tmp_path: Path):

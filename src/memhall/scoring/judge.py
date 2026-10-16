@@ -215,7 +215,7 @@ def _bigrams(s: str) -> set[str]:
     return {a + b for a, b in zip(cs, cs[1:], strict=False)}
 
 
-# ---------- 双 LLM judge（移植自 okim-bench，适配 verdict_map）----------
+# ---------- LLM 评委（移植自 okim-bench，适配 verdict_map）----------
 
 # 判卷提示词版本——进 manifest，排除"判卷口径漂了"的质疑（design.md §10）
 # 2026-10-04：锚例进提示词（契约 02 few-shot 防漂移首次落地）
@@ -258,7 +258,7 @@ def _anchors_block(probe: JudgeProbe) -> str:
 
 
 class OpenAICompatJudge:
-    """OpenAI 兼容端点评委，key 从环境变量读取（JUDGE_A_/JUDGE_B_ 前缀）。"""
+    """OpenAI 兼容端点评委，key 从 JUDGE_A_ 环境变量读取。"""
 
     def __init__(self, name: str, base_url: str, model: str, api_key: str,
                  temperature: float | None = None):

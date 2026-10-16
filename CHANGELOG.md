@@ -2,6 +2,11 @@
 
 ## [2.0.0] — 2026-10-14
 
+2026-10-16 装机修订：设置页、配置 API、环境模板和当前说明统一为单 LLM
+评委；新 manifest 的 model_b 固定为 null，新判决不再生成空 B 评委或仲裁
+元数据。历史双评委归档仍可读取。deb 的 Python 依赖改放版本目录，升级
+保留运行中任务所需的旧依赖；安装与录屏证据见 docs/audit/deb-2.0.0-20261016.md。
+
 首个"可信评测工程"完整版：本轮（judge-review-20261014）评审修复 + 以下各
 Unreleased 节（A 档 A1–A8、B8 OS 沙箱、kylin-agent 适配器、题库与可复现
 评测升级、参赛审计修复）随本版本一并发布。
@@ -52,7 +57,7 @@ Unreleased 节（A 档 A1–A8、B8 OS 沙箱、kylin-agent 适配器、题库�
 - 新增材料一致性测试 `tests/test_blind_review_materials.py`：在库盲评三件套指纹对账、双人副本与底表一致、终裁模板 sample_id 对齐。
 
 
-- 全回归 377 项（基线 293 + 修复轮 80 + 盲评材料 4）+ 离线 mock e2e
+- 全回归 378 项（基线 293 + 修复轮 80 + 盲评材料 4 + 判卷定版 1）+ 离线 mock e2e
   （sample→run→verify→report→aggregate→stats --index）全链路通过。
 
 ## [Unreleased] — A 档小修全档（2026-10-14）
