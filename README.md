@@ -1,5 +1,7 @@
 # 麟阁 MemHall
 
+![麟阁 MemHall：三阶段评测、六维能力画像、逐题证据复查与麒麟桌面集成](images/readme/hero.svg)
+
 **面向 openKylin 的智能体长期记忆自动化评测基准**
 
 把“记得住、改得对、分得清、用得上”变成可执行、可解释、可复查的测试。
@@ -15,6 +17,27 @@
 [作品介绍与报告](docs/contest/submission/README.md) · [设计说明](design.md) · [题库与扩展](docs/benchmark-v2.md) · [演示流程](docs/demo-script.md) · [贡献指南](CONTRIBUTING.md)
 
 评审阅读可从[命题评分项与证据导航](docs/contest/REVIEW_GUIDE.md)进入，再按[机读证据索引](docs/contest/review-evidence.json)核对实现、测试与真实案例。索引中的哈希对应本次本地提交材料快照，核验时请使用随包文件。
+
+## 先看效果
+
+一次评测，把六项能力和逐题证据放在同一份报告里。下面是 **kylin-agent 的一次真实归档示例**，用于展示报告的阅读方式。
+
+![真实评测报告：六维雷达与各项能力得分](images/readme/report.png)
+
+<details>
+<summary>展开查看逐题判定与证据入口</summary>
+
+![逐题判定：结果、用途、判卷方式与判定说明](images/readme/evidence.png)
+
+每项结果都能回到具体题目与原始证据，便于定位问题和复查。
+
+</details>
+
+## 从教会约定，到检查实际行动
+
+同一个剧本贯穿教学、干扰与检查；既看回答，也看文件和行动。
+
+![教、隔、考三阶段，以及贯穿全程的证据留存](images/readme/workflow.png)
 
 ## 四方面了解作品
 
@@ -46,6 +69,15 @@
 - **面向目标机封装。** 原生.deb构建脚本封装程序、题库和冻结的Python依赖；发行版本验收按实际记录确认。
 - **持续回归。** 固定试卷、历史轮换、确定性参数生成，支持复现与扩大覆盖。
 - **运行条件可核查。** 网关对经过它的请求设置模型并按来源记账；可选文件系统沙箱限制写入范围。
+
+<details>
+<summary>查看 UKUI 桌面通知与结果打开效果</summary>
+
+![UKUI 桌面：历史归档回看通知与结果图打开效果](images/readme/ukui-notification.png)
+
+真实麒麟桌面演示，使用已完成归档回看通知与结果打开流程；图中通知已标明“历史归档回看”。
+
+</details>
 
 ## 快速开始
 

@@ -1,0 +1,23 @@
+{
+  "description": "README illustrations and unchanged real application captures. No comparative benchmark chart is used.",
+  "files": {
+    "workflow.png": {
+      "source": "docs/contest/submission/assets/refined/phases.png",
+      "sha256": "97a5464569ddf3e4ddb7cd53dba7e39fe7ed8d5f06382f0595c91ccb3f2d7ba0"
+    },
+    "report.png": {
+      "source": "docs/contest/submission/assets/refined/ui-report.png",
+      "sha256": "43ac24a7354ee770b7ed302b4a785767d4971c8abe5e4286ea4295916304573b"
+    },
+    "evidence.png": {
+      "source": "docs/contest/submission/assets/refined/ui-report-evidence.png",
+      "sha256": "4a6d4864e8b67f4fa0c253e2d9c11f61c0445149a7384e258f5b3be0eeda0c97"
+    },
+    "ukui-notification.png": {
+      "source": "docs/contest/submission/assets/refined/desktop-notification.png",
+      "sha256": "8f6223f535e3e721ba743ec7ac56ad69c24c5997eea74ab24c3c0dd6cd99a55a"
+    }
+  },
+  "report_run": "20261015-054036-kylin-agent",
+  "notification_context": "Historical archive replay in a real UKUI desktop session, not a newly finished run."
+}
