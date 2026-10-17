@@ -16,8 +16,89 @@
     "ukui-notification.png": {
       "source": "docs/contest/submission/assets/refined/desktop-notification.png",
       "sha256": "8f6223f535e3e721ba743ec7ac56ad69c24c5997eea74ab24c3c0dd6cd99a55a"
+    },
+    "architecture-detail.png": {
+      "source": "docs/contest/submission/assets/refined/original-arch.png",
+      "sha256": "57480249741428e9a0c9a06d9853b28518e724ba311ccdbb7eb62343403dcd27"
+    },
+    "agent-discovery.png": {
+      "source": "docs/contest/submission/assets/refined/agent-discovery.png",
+      "sha256": "8a42c9d3bfe29ec9c7674b65318e15da09e470b602f125ad6204e3a6586869f5"
+    },
+    "gateway.png": {
+      "source": "docs/contest/submission/assets/refined/gateway.png",
+      "sha256": "97ec71f90a60e23446d2abb7cffadd181a4ab05d45a206282612100f361b3818"
+    },
+    "sandbox.png": {
+      "source": "docs/contest/submission/assets/refined/sandbox.png",
+      "sha256": "7c22d974af20d188ea38aaca79d7fa19b2f770b9ba524c611eba6a09a05407cb"
+    },
+    "verdicts.png": {
+      "source": "docs/contest/submission/assets/refined/verdict-flow.png",
+      "sha256": "4c79dc7885f7597186e40557baa9425bbfecdabeaaef2f0ed245b7dce1ed5da9"
+    },
+    "archive.png": {
+      "source": "docs/contest/submission/assets/refined/evidence.png",
+      "sha256": "91f72d052edf43f4422df660f591d5b4bf509975b1bdc40af9dead5297124d15"
+    },
+    "case-update.png": {
+      "source": "docs/contest/submission/assets/refined/contribution-behavior.png",
+      "sha256": "2e2144a287e44f7b5fee39bfc9193ced9dcd8565773d2f939f9aa412686297da"
+    },
+    "case-boundary.png": {
+      "source": "docs/contest/submission/assets/refined/contribution-boundary.png",
+      "sha256": "c1b7275673756636fbf60862e6f4961bb2405ae5327b26b5bfe7089e15f88340"
     }
   },
   "report_run": "20261015-054036-kylin-agent",
-  "notification_context": "Historical archive replay in a real UKUI desktop session, not a newly finished run."
+  "notification_context": "Historical archive replay in a real UKUI desktop session, not a newly finished run.",
+  "generated": {
+    "architecture.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "171665596a379c7ee680f3c709658c860ae2aa2da5303fc6f135b91051926571"
+    },
+    "capabilities.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "0d95926cbabc3268d0b4349833ba9d8ea369ee750f35b1767b732f89953552d9"
+    },
+    "collaboration.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "6ca689d7162d26a773a7a6357909abf4752da3d3cb62c47aa83aef4b47112750"
+    },
+    "delivery.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "59721b5c4f1ed1b32cb604b7ce1f268696ec7c0b694086fc29fdf7a26b7d46cb"
+    },
+    "ecosystem.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "6110a0face8ffde4e91bb22a5c01f997c23e2be8be5040edce57d8492a8babf0"
+    },
+    "kylin.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "aa534e2e17ef6b9b0dbec82b75ee08558940cdb0b7ab91714d1ddbd0678e7c7f"
+    },
+    "paired-check.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "341ca517e1a037bc055d06cf96ed69a195315bb274ac5f3f5330a843581f5061"
+    },
+    "quickstart.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "026415d477cf13d9f481af333c8683f32bfa328c46e407f22a290d7f12960757"
+    },
+    "scenarios.svg": {
+      "source": "scripts/build_readme_visuals.py",
+      "kind": "explanatory SVG, not an application capture",
+      "sha256": "b9f1c2edd4c8587e11a9c4494463ce972403989cd3d8639ba1a0873a04f8491b"
+    }
+  },
+  "case_run": "20261015-115547-kylin-agent",
+  "case_source": "docs/contest/submission/current-experiment-20261015/selected-evidence/"
 }
